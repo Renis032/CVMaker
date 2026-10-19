@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ job.title }}</h1>
+  <div class="muted">
+    {{ job.company }} · {{ job.location }}{% if job.remote %} · remote{% endif %}
+    {% if job.posted_at %} · posted {{ job.posted_at[:10] }}{% endif %}{% if job.salary %} · {{ job.salary }}{% endif %}
+    · <span class="pill">{{ job.source }}</span> <span class="pill">{{ status }}</span>
+  </div>
+  <div class="row" style="margin-top:12px">
+    {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Open posting / apply ↗</a>{% endif %}
+    <form method="post" action="/job/{{ job.id }}/status" class="row">
+      <button class="secondary" name="status" value="liked">♥ Like</button>
+      <button class="secondary" name="status" value="applied">✓ Mark applied</button>
+      <button class="secondary" name="status" value="hidden">✕ Hide</button>
+    </form>
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>Tailor my CV for this job</h2>
+    <form method="post" action="/job/{{ job.id }}/tailor" data-slow>
+      <label>Role profile</label>
+      <select name="role_id">
+        <option value="">None - tailor to the posting only</option>
+        {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+      </select>
+      <label>Extra instructions (optional)</label>
+      <textarea name="instructions" placeholder="e.g. emphasise the Spring Boot project, keep it to one page"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button type="submit">Generate tailored CV</button>
+        <span class="busy muted">Claude is tailoring your CV… (~1 min)</span>
+      </div>
+    </form>
+    <p class="muted" style="margin-top:12px">
+      Want a stronger result? <a href="/interview?job_id={{ job.id }}">Answer a few questions about this job's requirements first</a>.
+    </p>
+    {% if cvs %}
+    <h3 style="margin-top:14px">Generated CVs</h3>
+    <ul class="tight">{% for c in cvs %}<li><a href="/cv/{{ c.id }}">CV #{{ c.id }}</a></li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>How well do I fit?</h2>
+    {% if fit %}
+      <div class="score {{ 's-hi' if fit.rating >= 7 else 's-mid' if fit.rating >= 4 else 's-lo' }}" style="font-size:28px">{{ fit.rating }}/10</div>
+      <p>{{ fit.verdict }}</p>
+      <h3>Pros <span class="muted">(how much it helps)</span></h3>
+      <table class="fit">{% for p in fit.pros | sort(attribute="rating", reverse=True) %}
+        <tr><td class="rating s-hi">{{ p.rating }}/10</td><td>{{ p.point }}</td></tr>{% endfor %}</table>
+      <h3 style="margin-top:10px">Cons <span class="muted">(how serious)</span></h3>
+      <table class="fit">{% for p in fit.cons | sort(attribute="rating", reverse=True) %}
+        <tr><td class="rating {{ 's-lo' if p.rating < 4 else 's-mid' if p.rating < 7 else 's-bad' }}">{{ p.rating }}/10</td><td>{{ p.point }}</td></tr>{% endfor %}</table>
+    {% endif %}
+    <form method="post" action="/job/{{ job.id }}/fit" data-slow style="margin-top:10px">
+      <button class="secondary" type="submit">{{ 'Re-check' if fit else 'Check my fit with Claude' }}</button>
+      <span class="busy muted">Checking…</span>
+    </form>
+  </div>
+</div>
+
+<div class="card" id="github">
+  <div class="row" style="justify-content:space-between">
+    <h2 style="margin:0">My GitHub projects for this job</h2>
+    <form method="post" action="/job/{{ job.id }}/github" data-slow class="row">
+      {% if gh %}<label style="font-weight:400;color:inherit;margin:0"><input type="checkbox" name="refresh" value="1"> re-read repos</label>{% endif %}
+      <button class="secondary" type="submit">{{ 'Re-check' if gh else 'Check my GitHub' }}</button>
+      <span class="busy muted">Reading your repos and comparing… (~1-2 min)</span>
+    </form>
+  </div>
+  {% if gh %}
+    <p>{{ gh.summary }}</p>
+    {% if gh.matches %}
+    <h3>Relevant repos</h3>
+    {% for m in gh.matches %}
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <div class="row" style="justify-content:space-between">
+        <div><span class="score {{ 's-hi' if m.relevance >= 7 else 's-mid' if m.relevance >= 5 else 's-lo' }}">{{ m.relevance }}/10</span>
+          <a href="{{ m.url }}" target="_blank" rel="noopener"><strong>{{ m.repo }}</strong></a> <span class="pill">{{ m.language }}</span></div>
+        {% if m.url.rstrip('/').lower() in profile_links %}
+          <span class="pill">linked in profile</span>
+        {% elif m.profile_project %}
+          <form method="post" action="/job/{{ job.id }}/github/add"><input type="hidden" name="repo" value="{{ m.repo }}">
+            <button class="secondary" type="submit" title="Links the repo to '{{ m.profile_project }}' and adds these bullets as material for tailored CVs">+ Add evidence to "{{ m.profile_project }}"</button></form>
+        {% else %}
+          <form method="post" action="/job/{{ job.id }}/github/add"><input type="hidden" name="repo" value="{{ m.repo }}">
+            <button class="secondary" type="submit" title="Adds it to your projects so tailored CVs can use it">+ Add to my profile</button></form>
+        {% endif %}
+      </div>
+      <p style="margin:6px 0">{{ m.why }}</p>
+      {% if m.covers_requirements %}<div>{% for r in m.covers_requirements %}<span class="pill">{{ r }}</span>{% endfor %}</div>{% endif %}
+      <div class="two" style="margin-top:6px">
+        <div><div class="muted">CV bullets</div><ul class="tight">{% for b in m.cv_bullets %}<li>{{ b | md_bold }}</li>{% endfor %}</ul></div>
+        <div><div class="muted">Make it stronger</div><ul class="tight">{% for b in m.improvements %}<li>{{ b }}</li>{% endfor %}</ul></div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}<p class="muted">None of your public repos is relevant to this job.</p>{% endif %}
+
+    {% for idea in gh.ideas %}
+    <div style="border:1px dashed var(--accent);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <h3 style="margin:0 0 4px">💡 Project idea: {{ idea.title }} <span class="muted">· {{ idea.estimated_effort }}</span></h3>
+      <p style="margin:0 0 6px">{{ idea.pitch }}</p>
+      <div>{% for t in idea.tech_stack %}<span class="pill">{{ t }}</span>{% endfor %}</div>
+      <div class="two" style="margin-top:6px">
+        <div>
+          <div class="muted">Covers</div><ul class="tight">{% for r in idea.covers_requirements %}<li>{{ r }}</li>{% endfor %}</ul>
+          <div class="muted">Features</div><ul class="tight">{% for f in idea.features %}<li>{{ f }}</li>{% endfor %}</ul>
+        </div>
+        <div>
+          <div class="muted">MVP plan</div><ol style="margin:4px 0;padding-left:20px">{% for s in idea.mvp_plan %}<li>{{ s }}</li>{% endfor %}</ol>
+          {% if idea.stretch_goals %}<div class="muted">Stretch goals</div><ul class="tight">{% for s in idea.stretch_goals %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px">CV bullet once built:</div>
+      <div>{{ idea.cv_bullet_preview | md_bold }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Compares your public repos (README, files, build files) with this job. Shows which repos to highlight, or suggests a project to build if none fits.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Job description</h2>
+  {% if fetch_error %}<div class="err">{{ fetch_error }}</div>{% endif %}
+  <div class="desc">{{ job.description or "No description available - open the posting." }}</div>
+</div>
+{% endblock %}

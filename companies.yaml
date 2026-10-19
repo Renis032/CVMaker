@@ -1,0 +1,51 @@
+# Companies whose own job boards are searched, grouped by country code (REMOTE = remote-first companies).
+#
+# type:
+#   greenhouse / lever / ashby / smartrecruiters  -> slug = the company's id on that hiring platform
+#   careerpage -> url = any careers page; Claude picks out the job links (render: true runs headless
+#                 Chrome first, for sites that build the list with JavaScript)
+#
+# To find a company's hiring platform, open one of its job postings and look at the URL:
+#   boards.greenhouse.io/<slug>, jobs.lever.co/<slug>, jobs.ashbyhq.com/<slug>, jobs.smartrecruiters.com/<slug>
+# Anything else -> use careerpage.
+#
+# All entries below were checked against the live APIs on 2026-10-19.
+
+BG:
+  - name: EGT (Euro Games Technology)
+    type: careerpage
+    url: https://www.egt.com/careers/
+    default_location: Sofia, Bulgaria
+  - name: Commerzbank
+    type: careerpage
+    url: https://jobs.commerzbank.com/index.php?ac=search_result&search_criterion_keyword=developer
+    render: true
+  - name: Bosch
+    type: smartrecruiters
+    slug: BoschGroup
+  - name: Experian
+    type: smartrecruiters
+    slug: Experian
+  - name: Endava
+    type: smartrecruiters
+    slug: Endava
+  - name: Uber
+    type: smartrecruiters
+    slug: Uber
+  - name: SumUp
+    type: greenhouse
+    slug: sumup
+  - name: Tide
+    type: greenhouse
+    slug: tide
+
+REMOTE:
+  - name: GitLab
+    type: greenhouse
+    slug: gitlab
+  - name: Canonical
+    type: greenhouse
+    slug: canonical
+  - name: Elastic
+    type: greenhouse
+    slug: elastic

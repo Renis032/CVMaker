@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}My profile - CVMaker{% endblock %}
+{% block content %}
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+<div class="two">
+  <div class="card">
+    <h2>Import my CV</h2>
+    <p class="muted">Upload your CV as a PDF. Claude reads it into your profile; this replaces the current profile.</p>
+    <form method="post" action="/profile/import" enctype="multipart/form-data" data-slow class="row">
+      <input type="file" name="cv" accept="application/pdf" required>
+      <button type="submit">Import</button>
+      <span class="busy muted">Reading your CV…</span>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Photo</h2>
+    <p class="muted">{{ "A photo is set and appears on your CVs." if has_photo else "No photo yet." }}</p>
+    <form method="post" action="/profile/photo" enctype="multipart/form-data" class="row">
+      <input type="file" name="photo" accept="image/png,image/jpeg" required>
+      <button class="secondary" type="submit">Upload</button>
+    </form>
+  </div>
+</div>
+
+{% if profile %}
+<div class="card">
+  <h2>Improve my profile</h2>
+  <p class="muted">Claude asks about the gaps in your profile and adds your answers. Your answers are the only new facts that go into your CVs.</p>
+  <a class="btn" href="/interview">Start an interview</a>
+  {% if profile.extra_facts or profile.preferences %}
+  <div class="two" style="margin-top:12px">
+    <div><h3>Facts from interviews</h3><ul class="tight">{% for f in profile.extra_facts %}<li>{{ f }}</li>{% endfor %}</ul></div>
+    <div><h3>Preferences</h3><ul class="tight">{% for f in profile.preferences %}<li>{{ f }}</li>{% endfor %}</ul></div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>Edit profile (JSON)</h2>
+    <form method="post" action="/profile/save">
+      <textarea name="profile_json" style="min-height:900px;font-family:ui-monospace,monospace;font-size:12px">{{ profile_json }}</textarea>
+      <div style="margin-top:8px"><button type="submit">Save</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Base CV preview</h2>
+    <iframe class="cv" src="/profile/preview"></iframe>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

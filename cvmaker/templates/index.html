@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Find jobs</h1>
+  <div class="row muted" style="margin-bottom:6px">
+    Fill from a role profile:
+    {% for r in roles %}<a class="pill" style="{{ 'background:#1f3a5a;color:#fff' if chosen_role and chosen_role.id == r.id }}" href="/?role={{ r.id }}">{{ r.name }}</a>{% endfor %}
+    <a class="pill" href="/roles">+ manage</a>
+  </div>
+  <form method="post" action="/search" data-slow>
+    <div class="grid">
+      <div>
+        <label>Job title must contain one of</label>
+        <input type="text" name="role_keywords" value="{{ criteria.role_keywords | join(', ') }}">
+      </div>
+      <div>
+        <label>Skills (used for ranking and remote board search)</label>
+        <input type="text" name="skill_keywords" value="{{ criteria.skill_keywords | join(', ') }}">
+      </div>
+      <div>
+        <label>Exclude titles containing</label>
+        <input type="text" name="exclude" value="{{ criteria.exclude | join(', ') }}">
+      </div>
+      <div>
+        <label>Countries (codes; configured: {{ countries | join(', ') }})</label>
+        <input type="text" name="countries" value="{{ criteria.countries | join(', ') }}">
+      </div>
+      <div>
+        <label>Accepted remote regions</label>
+        <input type="text" name="remote_regions" value="{{ criteria.remote_regions | join(', ') }}">
+      </div>
+      <div>
+        <label>Max posting age (days)</label>
+        <input type="number" name="max_age_days" value="{{ criteria.max_age_days }}">
+      </div>
+    </div>
+    <label>Sources (none ticked = all)</label>
+    <div class="row">
+      {% for s in all_sources %}
+        <label style="font-weight:400;color:inherit;margin:0 10px 0 0">
+          <input type="checkbox" name="sources" value="{{ s }}" {% if s in criteria.sources %}checked{% endif %}>
+          {{ s }}{% if s == "jsearch" %} (LinkedIn/Indeed{% if not rapidapi %}, needs RAPIDAPI_KEY{% endif %}){% endif %}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label style="font-weight:400;color:inherit;margin:0">
+        <input type="checkbox" name="include_remote" value="true" {% if criteria.include_remote %}checked{% endif %}> Include fully remote jobs
+      </label>
+      <button type="submit">Search</button>
+      <span class="busy muted">Searching all sources… this can take up to a minute.</span>
+    </div>
+  </form>
+</div>
+
+{% if last and only_last %}
+<div class="card">
+  <div class="muted">
+    Last search: {{ last.job_ids | length }} matching jobs in {{ last.seconds }}s ·
+    {% for k, v in last.counts.items() %}<span class="pill">{{ k }}: {{ v }}</span>{% endfor %}
+  </div>
+  {% for e in last.errors %}<div class="err" style="margin-top:8px">{{ e }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="tabs" style="margin-bottom:10px">
+    <a href="/" class="{{ 'on' if not status and not only_last }}">All saved</a>
+    {% if last %}<a href="/?only_last=1" class="{{ 'on' if only_last }}">Last search</a>{% endif %}
+    <a href="/?status=new" class="{{ 'on' if status == 'new' }}">New</a>
+    <a href="/?status=liked" class="{{ 'on' if status == 'liked' }}">Liked</a>
+    <a href="/?status=applied" class="{{ 'on' if status == 'applied' }}">Applied</a>
+    <a href="/?status=hidden" class="{{ 'on' if status == 'hidden' }}">Hidden</a>
+  </div>
+  {% if not rows %}
+    <p class="muted">No jobs yet - run a search.</p>
+  {% else %}
+  <table>
+    <tr><th>Score</th><th>Job</th><th>Location</th><th>Source</th><th></th></tr>
+    {% for r in rows %}{% set j = r.job %}
+    <tr>
+      <td class="score {{ 's-hi' if r.score >= 60 else 's-mid' if r.score >= 30 else 's-lo' }}">{{ r.score }}</td>
+      <td>
+        <a href="/job/{{ j.id }}"><strong>{{ j.title }}</strong></a><br>
+        <span class="muted">{{ j.company }}{% if j.posted_at %} · {{ j.posted_at[:10] }}{% endif %}{% if j.salary %} · {{ j.salary }}{% endif %}</span>
+        {% if r.status != 'new' %}<span class="pill">{{ r.status }}</span>{% endif %}
+      </td>
+      <td>{{ j.location }}{% if j.remote %} <span class="pill">remote</span>{% endif %}</td>
+      <td><span class="pill">{{ j.source }}</span></td>
+      <td style="white-space:nowrap">
+        <form method="post" action="/job/{{ j.id }}/status" style="display:inline">
+          <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+          <button class="secondary" name="status" value="liked" title="Like">♥</button>
+          <button class="secondary" name="status" value="hidden" title="Hide">✕</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

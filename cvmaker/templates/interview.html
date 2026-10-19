@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Interview - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>A few questions{% if job %} for {{ job.title }} at {{ job.company }}{% endif %}</h1>
+  <p class="muted">Answer what applies and leave the rest blank. Only what you write here is added to your profile; nothing is made up.</p>
+  <form method="post" action="/interview" data-slow>
+    <input type="hidden" name="job_id" value="{{ job_id }}">
+    {% for q in questions %}
+      <input type="hidden" name="q_{{ q.id }}" value="{{ q.question }}">
+      <label style="color:var(--ink);font-size:15px;margin-top:16px">{{ loop.index }}. {{ q.question }}</label>
+      <div class="muted" style="margin-bottom:4px">{{ q.why }}</div>
+      <textarea name="a_{{ q.id }}"></textarea>
+    {% endfor %}
+    <div class="row" style="margin-top:14px">
+      <button type="submit">Save answers to my profile</button>
+      <span class="busy muted">Updating your profile…</span>
+    </div>
+  </form>
+</div>
+{% endblock %}

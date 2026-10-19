@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}CV for {{ job.title if job else role.name if role else "role" }} - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{% if job %}CV for {{ job.title }} · {{ job.company }}{% elif role %}General CV · {{ role.name }}{% else %}CV #{{ cv_id }}{% endif %}</h1>
+  <div class="row">
+    <a class="btn" href="/cv/{{ cv_id }}/pdf">Download PDF</a>
+    {% if job %}
+    <a class="btn secondary" href="/job/{{ job.id }}">Back to job</a>
+    {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
+    {% else %}<a class="btn secondary" href="/roles">Back to role profiles</a>{% endif %}
+    <span class="muted">{{ pdf_name }} · Estimated match: <strong>{{ t.match_score }}/100</strong></span>
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>Requirements you match</h2>
+    <ul class="tight">{% for s in t.matched_requirements %}<li>{{ s }}</li>{% endfor %}</ul>
+    <h2 style="margin-top:14px">Requirements your profile doesn't show</h2>
+    {% if t.missing_requirements %}
+      <ul class="tight">{% for s in t.missing_requirements %}<li>{{ s }}</li>{% endfor %}</ul>
+      <p class="muted">These were left out because they aren't in your profile. If you do have them, add them through the interview and regenerate.</p>
+    {% else %}<p class="muted">None.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>What was changed</h2>
+    <ul class="tight">{% for s in t.changes_made %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% if t.questions_to_strengthen %}
+    <h2 style="margin-top:14px">Questions that could strengthen it</h2>
+    <ul class="tight">{% for s in t.questions_to_strengthen %}<li>{{ s }}</li>{% endfor %}</ul>
+    <a class="btn secondary" href="/interview{% if job %}?job_id={{ job.id }}{% endif %}">Answer questions, then regenerate</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Preview</h2>
+  <iframe class="cv" src="/cv/{{ cv_id }}/preview"></iframe>
+</div>
+{% endblock %}

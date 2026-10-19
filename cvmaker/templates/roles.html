@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Role profiles - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Role profiles</h1>
+  <p class="muted">A role profile is how you want to present yourself for one kind of job. Choose one when tailoring a CV for a posting, generate a general CV for the role, or use it to fill the search form.</p>
+</div>
+
+{% for r in roles %}
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h2 style="margin:0">{{ r.name }}</h2>
+    <div class="row">
+      <a class="btn secondary" href="/?role={{ r.id }}">Search with this role</a>
+      <a class="btn secondary" href="/roles?edit={{ r.id }}#edit">Edit</a>
+      <form method="post" action="/roles/{{ r.id }}/delete" onsubmit="return confirm('Delete {{ r.name }}?')">
+        <button class="secondary" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% if r.headline %}<p style="margin:8px 0 4px"><strong>{{ r.headline }}</strong></p>{% endif %}
+  {% if r.focus %}<p class="muted" style="margin:0 0 6px">{{ r.focus }}</p>{% endif %}
+  <div>{% for s in r.key_skills %}<span class="pill">{{ s }}</span>{% endfor %}</div>
+  <form method="post" action="/roles/{{ r.id }}/cv" data-slow class="row" style="margin-top:12px">
+    <input type="text" name="instructions" placeholder="Extra instructions (optional)" style="flex:1;min-width:220px">
+    <button type="submit">Generate CV for this role</button>
+    <span class="busy muted">Claude is writing it… (~1 min)</span>
+  </form>
+  {% if cvs[r.id] %}
+  <div class="muted" style="margin-top:8px">Generated: {% for c in cvs[r.id] %}<a href="/cv/{{ c.id }}">#{{ c.id }}</a> {% endfor %}</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div class="card" id="edit">
+  <h2>{{ "Edit " ~ editing.name if editing.id else "New role profile" }}</h2>
+  <form method="post" action="/roles/save">
+    <input type="hidden" name="id" value="{{ editing.id }}">
+    <div class="grid">
+      <div><label>Name</label><input type="text" name="name" value="{{ editing.name }}" required placeholder="e.g. Full-stack (Java + React)"></div>
+      <div><label>Headline on the CV</label><input type="text" name="headline" value="{{ editing.headline }}"></div>
+    </div>
+    <label>Focus - how should the CV present you?</label>
+    <textarea name="focus" placeholder="What to lead with, what to shorten, what to avoid">{{ editing.focus }}</textarea>
+    <div class="grid">
+      <div><label>Key skills to lead with</label><input type="text" name="key_skills" value="{{ editing.key_skills | join(', ') }}"></div>
+      <div><label>Search: job title contains</label><input type="text" name="role_keywords" value="{{ editing.role_keywords | join(', ') }}"></div>
+      <div><label>Search: skills</label><input type="text" name="skill_keywords" value="{{ editing.skill_keywords | join(', ') }}"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="submit">Save</button>
+      {% if editing.id %}<a class="btn secondary" href="/roles">Cancel</a>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
