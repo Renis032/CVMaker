@@ -142,7 +142,11 @@ def job_fit(request: Request, job_id: str):
     if not profile:
         return RedirectResponse("/profile", status_code=303)
     job, _ = db.get_job(job_id)
-    fit = assistant.assess_fit(profile, ensure_description(job))
+    try:
+        repos_text = github.repos_for_prompt(github.fetch_repos(github.username(profile)), compact=True)
+    except Exception:
+        repos_text = ""
+    fit = assistant.assess_fit(profile, ensure_description(job), repos_text)
     db.cache_put(f"fit2:{job_id}", fit.model_dump())
     return RedirectResponse(f"/job/{job_id}", status_code=303)
 

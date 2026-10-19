@@ -139,11 +139,43 @@ class FitPoint(BaseModel):
     rating: int
 
 
+class ConPoint(BaseModel):
+    point: str
+    rating: int
+    advice: str
+
+
+class GapArea(BaseModel):
+    area: str
+    severity: int
+    why_it_matters: str
+    how_to_close: str
+    time_to_close: str
+
+
+class CVProjectType(BaseModel):
+    title: str
+    description: str
+    demonstrates: list[str]
+    why_employers_care: str
+
+
+class GapPlan(BaseModel):
+    recommendation: str
+    advice: str
+    lacking_areas: list[GapArea]
+    project_types: list[CVProjectType]
+    action_plan: list[str]
+    interview_framing: list[str]
+    closer_roles: list[str]
+
+
 class FitAssessment(BaseModel):
     rating: int
     verdict: str
     pros: list[FitPoint]
-    cons: list[FitPoint]
+    cons: list[ConPoint]
+    gap_plan: GapPlan
 
 
 class RepoMatch(BaseModel):

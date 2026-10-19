@@ -66,19 +66,27 @@ Keep everything already in the profile unless an answer explicitly corrects it. 
     )
 
 
-def assess_fit(profile: Profile, job: Job) -> FitAssessment:
-    system = """You are an honest technical recruiter judging how well this candidate fits this job.
+def assess_fit(profile: Profile, job: Job, repos_text: str = "") -> FitAssessment:
+    system = """You are an honest technical recruiter and career mentor judging how well this candidate fits this job.
 rating: overall fit from 1 (no realistic chance) to 10 (ideal candidate).
 verdict: one sentence.
 pros: concrete reasons the candidate fits, each rated 1-10 for how much it helps the application (10 = directly covers a must-have).
-cons: concrete gaps or risks, each rated 1-10 for how serious it is (10 = a must-have that is clearly missing, likely rejection).
+cons: concrete gaps or risks, each rated 1-10 for how serious it is (10 = a must-have that is clearly missing, likely rejection), each with advice: one or two sentences on the most effective way to improve it - what to learn or build, what to change on the CV or GitHub, or how to address it in the application - specific to this job and this candidate.
+Count something as evidence if the profile or the candidate's GitHub repos (README, files, build/config files) show it.
+
+gap_plan - how the candidate gets from where they are to being a strong candidate for this kind of job. Make it detailed when rating is 7 or lower, brief (top 2-3 gaps) when 8 or higher.
+- recommendation: one of "Apply now", "Apply now, but address the gaps", "Build first, then apply", "Target a closer role first" - followed by a short reason.
+- advice: a short paragraph of honest, practical guidance on how to proceed.
+- lacking_areas: each missing or weak area, severity 1-10 (10 = deal-breaker), why this employer cares, how to close it concretely (what to learn, what to build, what to practise), realistic time_to_close for someone working evenings.
+- project_types: 2-4 kinds of projects that would look strong on a CV for this listing - what they are, which requirements they prove, why employers in this domain value them. Prefer extending the candidate's existing projects when that is faster.
+- action_plan: ordered, concrete steps with rough timing (e.g. "Weeks 1-2: ...").
+- interview_framing: how to present the gaps honestly and positively (transferable experience, what they are doing about it). Never suggest overstating experience.
+- closer_roles: 2-4 job titles that match the candidate better right now and are stepping stones toward this one.
 Be realistic about seniority and must-have requirements; do not flatter."""
-    return llm.ask(
-        system,
-        f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}",
-        FitAssessment,
-        effort="medium",
-    )
+    content = f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}"
+    if repos_text:
+        content += f"\n\nCandidate's public GitHub repositories:\n{repos_text}"
+    return llm.ask(system, content, FitAssessment)
 
 
 def github_review(profile: Profile, job: Job, repos_text: str) -> GithubReview:

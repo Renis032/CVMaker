@@ -100,9 +100,16 @@ def fetch_repos(user: str) -> list[dict]:
     return repos
 
 
-def repos_for_prompt(repos: list[dict]) -> str:
+def repos_for_prompt(repos: list[dict], compact: bool = False) -> str:
     blocks = []
     for r in repos:
+        if compact:
+            blocks.append(
+                f"=== Repo: {r['name']} ({r['url']}) | {r['language']} | updated {r['updated']}\n"
+                f"Description: {r['description']}\nBuild/config files: {', '.join(r['build_files']) or '(none)'}\n"
+                f"README:\n{_clip(r['readme'], 1500) or '(none)'}"
+            )
+            continue
         files = "\n".join(r["files"])
         if r["file_count"] > len(r["files"]):
             files += f"\n[... {r['file_count'] - len(r['files'])} more files]"
