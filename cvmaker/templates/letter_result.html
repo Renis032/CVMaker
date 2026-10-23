@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Cover letter for {{ job.title }} - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Cover letter · {{ job.title }} · {{ job.company }}</h1>
+  <div class="row">
+    <a class="btn" href="/letter/{{ l.id }}/pdf">Download PDF</a>
+    <a class="btn secondary" href="/job/{{ job.id }}#letter">Back to job</a>
+    {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
+    <button class="secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('body').value); this.textContent='Copied ✓'">Copy text</button>
+    <span class="muted">{{ pdf_name }}</span>
+  </div>
+  {% if others %}<div class="muted" style="margin-top:8px">Other letters for this job: {% for o in others %}<a href="/letter/{{ o.id }}">#{{ o.id }}</a> {% endfor %}</div>{% endif %}
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>Edit</h2>
+    {% if saved %}<div class="pill new" style="margin-bottom:8px">Saved - PDF updated</div>{% endif %}
+    <form method="post" action="/letter/{{ l.id }}/save">
+      <textarea class="letter" id="body" name="body">{{ l.body }}</textarea>
+      <p class="muted">Paragraphs are separated by a blank line. Saving re-renders the PDF.</p>
+      <button type="submit">Save & update PDF</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>What it covers</h2>
+    <ul class="tight">{% for x in l.letter.emphasised %}<li>{{ x }}</li>{% endfor %}</ul>
+    {% if l.letter.left_out %}
+    <h2 style="margin-top:14px">Not claimed (not in your profile)</h2>
+    <ul class="tight">{% for x in l.letter.left_out %}<li>{{ x }}</li>{% endfor %}</ul>
+    {% endif %}
+    <h2 style="margin-top:14px">Preview</h2>
+    <iframe class="cv" style="height:900px" src="/letter/{{ l.id }}/preview"></iframe>
+  </div>
+</div>
+{% endblock %}

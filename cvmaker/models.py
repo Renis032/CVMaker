@@ -41,6 +41,11 @@ class Criteria(BaseModel):
     )
     sources: list[str] = Field(default_factory=list)
     max_age_days: int = 30
+    remote_only: bool = False
+    seniority: list[str] = Field(default_factory=list)
+    must_mention: list[str] = Field(default_factory=list)
+    salary_only: bool = False
+    min_score: int = 0
 
 
 class RoleProfile(BaseModel):
@@ -216,3 +221,75 @@ class ExtractedPosting(BaseModel):
 
 class ExtractedPostings(BaseModel):
     postings: list[ExtractedPosting]
+
+
+class CoverLetter(BaseModel):
+    greeting: str
+    paragraphs: list[str]
+    closing: str
+    emphasised: list[str]
+    left_out: list[str]
+
+
+class PrepQuestion(BaseModel):
+    category: str
+    question: str
+    why_they_ask: str
+    how_to_answer: str
+    your_evidence: str
+
+
+class StarStory(BaseModel):
+    title: str
+    situation: str
+    task: str
+    action: str
+    result: str
+    good_for: list[str]
+
+
+class PrepTopic(BaseModel):
+    topic: str
+    priority: int
+    why: str
+    what_to_revise: list[str]
+
+
+class GapAnswer(BaseModel):
+    gap: str
+    likely_question: str
+    honest_answer: str
+
+
+class InterviewPrep(BaseModel):
+    overview: str
+    about_the_role: list[str]
+    likely_questions: list[PrepQuestion]
+    star_stories: list[StarStory]
+    technical_topics: list[PrepTopic]
+    gap_answers: list[GapAnswer]
+    questions_to_ask: list[str]
+    checklist: list[str]
+
+
+class CategoryScore(BaseModel):
+    category: str
+    score: int
+    comment: str
+
+
+class CVScore(BaseModel):
+    overall: int
+    categories: list[CategoryScore]
+    strengths: list[str]
+    weaknesses: list[str]
+
+
+class CVComparison(BaseModel):
+    baseline: CVScore
+    tailored: CVScore
+    verdict: str
+    improved: list[str]
+    got_worse: list[str]
+    still_missing: list[str]
+    next_steps: list[str]

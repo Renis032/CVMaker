@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Companies - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Companies</h1>
+  <p class="muted">Every search also checks these companies' own job listings. Add a company by its website or careers page: the app finds the careers page and checks whether it runs on a hiring platform with a public API (Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Personio). If not, Claude reads the job links on the careers page. Saved in <code>companies.yaml</code>.</p>
+  <form method="post" action="/companies/discover" data-slow>
+    <div class="grid">
+      <div><label>Company name</label><input type="text" name="name" required value="{{ form.name if form }}" placeholder="e.g. Chaos"></div>
+      <div><label>Website or careers page</label><input type="text" name="url" required value="{{ form.url if form }}" placeholder="e.g. chaos.com or chaos.com/careers"></div>
+      <div><label>Country code (or REMOTE)</label><input type="text" name="group" value="{{ form.group if form else 'BG' }}"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button type="submit">Find their job listings</button>
+      <span class="busy muted">Looking at the site and the hiring platforms… (~10-60 s)</span>
+    </div>
+  </form>
+</div>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+{% if found %}
+<div class="card" style="border-color:var(--accent)">
+  <h2>{{ form.name }}: {{ found.type }}{% if found.slug %} · {{ found.slug }}{% endif %}</h2>
+  <ul class="tight">{% for n in found.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+  {% if postings is not none %}
+    <p><strong>{{ postings | length }} postings found right now</strong>{% if postings %}, for example:{% endif %}</p>
+    <ul class="tight">{% for p in postings[:8] %}<li>{{ p.title }} <span class="muted">· {{ p.location }}</span></li>{% endfor %}</ul>
+  {% endif %}
+  <form method="post" action="/companies/add" style="margin-top:10px">
+    <input type="hidden" name="name" value="{{ form.name }}">
+    <div class="grid">
+      <div><label>Type</label><select name="type">{% for t in types %}<option {% if t == found.type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <div><label>Board slug (hiring platforms)</label><input type="text" name="slug" value="{{ found.slug or '' }}"></div>
+      <div><label>Careers page URL (careerpage)</label><input type="text" name="url" value="{{ found.url or found.careers_url }}"></div>
+      <div><label>Country code (or REMOTE)</label><input type="text" name="group" value="{{ form.group }}"></div>
+      <div><label>Default location (when postings don't show one)</label><input type="text" name="default_location" placeholder="e.g. Sofia, Bulgaria"></div>
+    </div>
+    <label class="check" style="display:block;margin-top:8px"><input type="checkbox" name="render_js" value="true" {% if found.render %}checked{% endif %}> Render with Chrome first (for careerpage sites that load jobs with JavaScript)</label>
+    <button type="submit" style="margin-top:10px">Save company</button>
+  </form>
+</div>
+{% endif %}
+
+{% if tested %}
+<div class="card">
+  <h2>Test: {{ tested.name }}</h2>
+  {% if tested.error %}<div class="err">{{ tested.error }}</div>
+  {% else %}
+    <p><strong>{{ tested.postings | length }} postings</strong> (before any title/location filtering)</p>
+    <ul class="tight">{% for p in tested.postings[:15] %}<li><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a> <span class="muted">· {{ p.location }}{% if p.salary %} · {{ p.salary }}{% endif %}</span></li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% for group, items in groups.items() %}
+<div class="card">
+  <h2>{{ group }}</h2>
+  <table>
+    <tr><th>Company</th><th>Type</th><th>Board / page</th><th></th></tr>
+    {% for c in items %}
+    <tr>
+      <td><strong>{{ c.name }}</strong>{% if c.default_location %}<div class="muted">{{ c.default_location }}</div>{% endif %}</td>
+      <td><span class="pill">{{ c.type }}</span>{% if c.render %}<span class="pill">render</span>{% endif %}</td>
+      <td class="muted" style="word-break:break-all">{{ c.slug or c.url }}</td>
+      <td style="white-space:nowrap">
+        <form method="post" action="/companies/test" data-slow style="display:inline">
+          <input type="hidden" name="group" value="{{ group }}"><input type="hidden" name="name" value="{{ c.name }}">
+          <button class="secondary" type="submit">Test</button><span class="busy muted">…</span>
+        </form>
+        <form method="post" action="/companies/remove" style="display:inline" onsubmit="return confirm('Remove {{ c.name }}?')">
+          <input type="hidden" name="group" value="{{ group }}"><input type="hidden" name="name" value="{{ c.name }}">
+          <button class="secondary" type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endblock %}

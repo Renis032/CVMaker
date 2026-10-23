@@ -1,13 +1,14 @@
 import base64
 import re
 import subprocess
+from datetime import date
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
 from . import settings
-from .models import CVContent
+from .models import CoverLetter, CVContent, Job, Profile
 
 env = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
@@ -45,6 +46,28 @@ def cv_pdf(cv: CVContent, out_path: Path) -> Path:
         if _page_count(out_path) == 1:
             return out_path
     return _print_pdf(cv_html(cv), out_path)
+
+
+def letter_body(letter: CoverLetter, name: str) -> str:
+    """The editable plain text of a cover letter: greeting, paragraphs, sign-off and name."""
+    return "\n\n".join([letter.greeting, *letter.paragraphs, f"{letter.closing}\n{name}"])
+
+
+def letter_html(body: str, profile: Profile, job: Job) -> str:
+    c = profile.contact
+    return env.get_template("letter.html").render(
+        name=profile.name,
+        headline=profile.headline,
+        contact=[c.email, c.phone, c.linkedin, c.location],
+        date=date.today().strftime("%d %B %Y"),
+        company=job.company,
+        role=job.title,
+        paragraphs=[p.strip() for p in re.split(r"\n\s*\n", body.strip()) if p.strip()],
+    )
+
+
+def letter_pdf(body: str, profile: Profile, job: Job, out_path: Path) -> Path:
+    return _print_pdf(letter_html(body, profile, job), out_path)
 
 
 def _print_pdf(html: str, out_path: Path) -> Path:

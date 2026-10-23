@@ -2,14 +2,15 @@
 {% block title %}{{ job.title }} - CVMaker{% endblock %}
 {% block content %}
 <div class="card">
-  <h1>{{ job.title }}</h1>
+  <a class="muted" href="/">← All jobs</a>
+  <h1 style="margin-top:6px">{{ job.title }}</h1>
   <div class="muted">
     {{ job.company }} · {{ job.location }}{% if job.remote %} · remote{% endif %}
-    {% if job.posted_at %} · posted {{ job.posted_at[:10] }}{% endif %}{% if job.salary %} · {{ job.salary }}{% endif %}
+    {% if job.posted_at %} · posted {{ job.posted_at[:10] }}{% endif %}{% if job.salary %} · <strong style="color:var(--good)">{{ job.salary }}</strong>{% endif %}
     · <span class="pill">{{ job.source }}</span> <span class="pill">{{ status }}</span>
   </div>
-  <div class="row" style="margin-top:12px">
-    {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Open posting / apply ↗</a>{% endif %}
+  <div class="row" style="margin-top:14px">
+    {% if job.url %}<a class="btn" href="{{ job.url }}" target="_blank" rel="noopener">Open posting / apply ↗</a>{% endif %}
     <form method="post" action="/job/{{ job.id }}/status" class="row">
       <button class="secondary" name="status" value="liked">♥ Like</button>
       <button class="secondary" name="status" value="applied">✓ Mark applied</button>
@@ -39,7 +40,12 @@
     </p>
     {% if cvs %}
     <h3 style="margin-top:14px">Generated CVs</h3>
-    <ul class="tight">{% for c in cvs %}<li><a href="/cv/{{ c.id }}">CV #{{ c.id }}</a></li>{% endfor %}</ul>
+    <ul class="tight">{% for c in cvs %}<li>
+      <a href="/cv/{{ c.id }}">CV #{{ c.id }}</a> <span class="muted">· {{ c.created_at | ago }} · Claude's match estimate {{ c.match_score }}/100</span>
+      {% if c.rated is not none %} · rated <strong>{{ c.rated }}</strong> vs original {{ c.baseline_rated }}
+        <span class="{{ 'delta-up' if c.rated > c.baseline_rated else 'delta-down' if c.rated < c.baseline_rated }}">({{ '%+d' % (c.rated - c.baseline_rated) }})</span>
+      {% else %} · <a href="/cv/{{ c.id }}#rating">rate it vs. my original</a>{% endif %}
+    </li>{% endfor %}</ul>
     {% endif %}
   </div>
 
@@ -62,8 +68,52 @@
   </div>
 </div>
 
+<div class="two">
+  <div class="card" id="letter">
+    <h2>Cover letter</h2>
+    <form method="post" action="/job/{{ job.id }}/letter" data-slow>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        <div><label>Based on</label>
+          <select name="cv_id">
+            <option value="">My profile</option>
+            {% for c in cvs %}<option value="{{ c.id }}" {% if loop.first %}selected{% endif %}>CV #{{ c.id }}</option>{% endfor %}
+          </select></div>
+        <div><label>Language</label>
+          <select name="language">{% for l in ["English", "Bulgarian", "German"] %}<option>{{ l }}</option>{% endfor %}</select></div>
+        <div><label>Tone</label>
+          <select name="tone">{% for t in ["professional", "warm and personal", "concise and direct"] %}<option>{{ t }}</option>{% endfor %}</select></div>
+        <div><label>Length</label>
+          <select name="length"><option value="standard">standard (~300 words)</option><option value="short">short (~180 words)</option></select></div>
+      </div>
+      <label>Extra instructions (optional)</label>
+      <input type="text" name="instructions" placeholder="e.g. mention I can relocate to Berlin">
+      <div class="row" style="margin-top:10px">
+        <button type="submit">Write cover letter</button>
+        <span class="busy muted">Claude is writing it… (~1 min)</span>
+      </div>
+    </form>
+    {% if letters %}
+    <h3 style="margin-top:14px">Letters</h3>
+    <ul class="tight">{% for l in letters %}<li><a href="/letter/{{ l.id }}">Cover letter #{{ l.id }}</a> <span class="muted">· {{ l.created_at | ago }}</span></li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+
+  <div class="card" id="prep">
+    <h2>Interview prep</h2>
+    <p class="muted">Likely questions with answer outlines from your own experience, STAR stories, topics to revise, honest answers for your gaps, and questions to ask them.{% if not fit %} Run the fit check first for sharper gap answers.{% endif %}</p>
+    {% if has_prep %}
+      <a class="btn" href="/prep/{{ job.id }}">Open interview prep</a>
+    {% else %}
+    <form method="post" action="/prep/{{ job.id }}" data-slow class="row">
+      <button type="submit">Prepare me for this interview</button>
+      <span class="busy muted">Claude is preparing it… (~1-2 min)</span>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
 {% if fit %}{% set plan = fit.gap_plan %}
-<div class="card" id="plan" {% if fit.rating < 8 %}style="border-color:var(--warn)"{% endif %}>
+<div class="card" id="plan" {% if fit.rating < 8 %}style="border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn), var(--shadow)"{% endif %}>
   <details {% if fit.rating < 8 %}open{% endif %}>
     <summary style="cursor:pointer"><h2 style="display:inline">
       {% if fit.rating < 8 %}You're not a strong match yet - here's how to get there{% else %}How to become an even stronger candidate{% endif %}
@@ -88,7 +138,7 @@
     <h3 style="margin-top:14px">Projects that look strong on a CV for this job</h3>
     <div class="two">
       {% for p in plan.project_types %}
-      <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px">
+      <div class="tile">
         <strong>{{ p.title }}</strong>
         <p style="margin:4px 0">{{ p.description }}</p>
         <div>{% for d in p.demonstrates %}<span class="pill">{{ d }}</span>{% endfor %}</div>
@@ -118,8 +168,8 @@
 {% endif %}
 
 <div class="card" id="github">
-  <div class="row" style="justify-content:space-between">
-    <h2 style="margin:0">My GitHub projects for this job</h2>
+  <div class="section-title">
+    <h2>My GitHub projects for this job</h2>
     <form method="post" action="/job/{{ job.id }}/github" data-slow class="row">
       {% if gh %}<label style="font-weight:400;color:inherit;margin:0"><input type="checkbox" name="refresh" value="1"> re-read repos</label>{% endif %}
       <button class="secondary" type="submit">{{ 'Re-check' if gh else 'Check my GitHub' }}</button>
@@ -131,7 +181,7 @@
     {% if gh.matches %}
     <h3>Relevant repos</h3>
     {% for m in gh.matches %}
-    <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div class="tile" style="margin-bottom:10px">
       <div class="row" style="justify-content:space-between">
         <div><span class="score {{ 's-hi' if m.relevance >= 7 else 's-mid' if m.relevance >= 5 else 's-lo' }}">{{ m.relevance }}/10</span>
           <a href="{{ m.url }}" target="_blank" rel="noopener"><strong>{{ m.repo }}</strong></a> <span class="pill">{{ m.language }}</span></div>
@@ -156,7 +206,7 @@
     {% else %}<p class="muted">None of your public repos is relevant to this job.</p>{% endif %}
 
     {% for idea in gh.ideas %}
-    <div style="border:1px dashed var(--accent);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div class="tile idea" style="margin-bottom:10px">
       <h3 style="margin:0 0 4px">💡 Project idea: {{ idea.title }} <span class="muted">· {{ idea.estimated_effort }}</span></h3>
       <p style="margin:0 0 6px">{{ idea.pitch }}</p>
       <div>{% for t in idea.tech_stack %}<span class="pill">{{ t }}</span>{% endfor %}</div>

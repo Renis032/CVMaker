@@ -1,4 +1,5 @@
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -8,16 +9,36 @@ import yaml
 from . import db, settings
 from .countries import COUNTRY_TERMS
 from .models import Criteria, Job, Profile
-from .sources import BOARD_SOURCES, COMPANY_SOURCES
+from .salary import find_salary
+from .sources import BOARD_SOURCES, COMPANY_SOURCES, board_applies, board_has_key
+
+# One search at a time, whether started by hand or by the automatic schedule.
+search_lock = threading.Lock()
+
+SENIORITY_WORDS = {
+    "junior": ["junior", "jr", "entry", "graduate", "intern", "internship", "trainee", "младши"],
+    "senior": ["senior", "sr", "staff", "principal", "lead", "expert", "architect", "head", "старши"],
+}
+SENIORITY_LEVELS = ["junior", "mid", "senior"]
+
 
 def load_companies() -> dict[str, list[dict]]:
     with open(settings.COMPANIES_FILE) as f:
         return yaml.safe_load(f) or {}
 
 
+def seniority(job: Job) -> str:
+    text = f"{job.title} {' '.join(job.tags)}".lower()
+    for level, words in SENIORITY_WORDS.items():
+        if any(_contains(text, w) for w in words):
+            return level
+    return "mid"
+
+
 @dataclass
 class SearchResult:
     job_ids: list[str] = field(default_factory=list)
+    new_ids: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
 
@@ -62,6 +83,24 @@ def _title_ok(job: Job, criteria: Criteria) -> bool:
     return not criteria.role_keywords or any(_contains(title, k) for k in criteria.role_keywords)
 
 
+def _options_ok(job: Job, criteria: Criteria) -> bool:
+    if criteria.remote_only and not (job.remote or "remote" in job.location.lower()):
+        return False
+    if criteria.seniority and seniority(job) not in criteria.seniority:
+        return False
+    if criteria.salary_only and not job.salary:
+        return False
+    # Sources that list titles only have no description yet; keep them rather than drop unseen text.
+    if criteria.must_mention and job.description:
+        text = f"{job.title} {' '.join(job.tags)} {job.description}".lower()
+        return any(_contains(text, k) for k in criteria.must_mention)
+    return True
+
+
+def _keep(job: Job, criteria: Criteria) -> bool:
+    return _title_ok(job, criteria) and _location_ok(job, criteria) and _age_ok(job, criteria) and _options_ok(job, criteria)
+
+
 def score(job: Job, criteria: Criteria, profile: Profile | None) -> int:
     """Cheap keyword score (0-100) for ranking; the AI fit check on the job page is the real judgement."""
     text = f"{job.title} {' '.join(job.tags)} {job.description}".lower()
@@ -81,6 +120,11 @@ def _run_company(company: dict, criteria: Criteria) -> list[Job]:
 
 
 def run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
+    with search_lock:
+        return _run_search(criteria, profile)
+
+
+def _run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
     companies = load_companies()
     tasks = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -93,9 +137,9 @@ def run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
         for name, fn in BOARD_SOURCES.items():
             if criteria.sources and name not in criteria.sources:
                 continue
-            if name in ("remotive", "remoteok") and not criteria.include_remote:
+            if not board_applies(name, criteria):
                 continue
-            if name == "jsearch" and not settings.RAPIDAPI_KEY and "jsearch" not in criteria.sources:
+            if not board_has_key(name) and name not in criteria.sources:
                 continue
             tasks[pool.submit(fn, criteria)] = name
 
@@ -107,7 +151,10 @@ def run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
             except Exception as e:
                 result.errors.append(f"{label}: {e}")
                 continue
-            kept = [j for j in jobs if _title_ok(j, criteria) and _location_ok(j, criteria) and _age_ok(j, criteria)]
+            for j in jobs:
+                if not j.salary:
+                    j.salary = find_salary(f"{j.title}\n{j.description}")
+            kept = [j for j in jobs if _keep(j, criteria)]
             result.counts[label] = len(kept)
             for j in kept:
                 found[j.id] = j
@@ -120,6 +167,7 @@ def run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
 
     jobs = list(deduped.values())
     scores = {j.id: score(j, criteria, profile) for j in jobs}
-    db.upsert_jobs(jobs, scores)
+    jobs = [j for j in jobs if scores[j.id] >= criteria.min_score]
+    result.new_ids = db.upsert_jobs(jobs, scores)
     result.job_ids = [j.id for j in jobs]
     return result

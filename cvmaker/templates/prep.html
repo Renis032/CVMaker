@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Interview prep · {{ job.title }} - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Interview prep · {{ job.title }} · {{ job.company }}</h1>
+  <div class="row">
+    <a class="btn secondary" href="/job/{{ job.id }}">Back to job</a>
+    <form method="post" action="/prep/{{ job.id }}" data-slow class="row">
+      <button type="submit" class="{{ 'secondary' if prep }}">{{ 'Regenerate' if prep else 'Prepare me for this interview' }}</button>
+      <span class="busy muted">Claude is preparing it… (~1-2 min)</span>
+    </form>
+    {% if not has_fit %}<span class="muted">Tip: run "Check my fit" on the job page first for sharper gap answers.</span>{% endif %}
+  </div>
+</div>
+
+{% if prep %}
+<div class="card">
+  <p style="margin-top:0"><strong>{{ prep.overview }}</strong></p>
+  <div class="two">
+    <div><h3>About the role (from the posting)</h3><ul class="tight">{% for x in prep.about_the_role %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>Before the interview</h3><ul class="tight">{% for x in prep.checklist %}<li><label class="check"><input type="checkbox"> {{ x }}</label></li>{% endfor %}</ul></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Likely questions</h2>
+  {% for cat, qs in prep.likely_questions | groupby('category') %}
+    <h3 style="margin-top:12px">{{ cat | capitalize }}</h3>
+    {% for q in qs %}
+    <details class="tile" style="margin-bottom:8px">
+      <summary><strong>{{ q.question }}</strong></summary>
+      <div class="muted" style="margin-top:6px">Why they ask: {{ q.why_they_ask }}</div>
+      <p style="margin:6px 0">{{ q.how_to_answer }}</p>
+      <div class="advice">Your evidence: {{ q.your_evidence }}</div>
+    </details>
+    {% endfor %}
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Your STAR stories</h2>
+  <div class="two">
+    {% for st in prep.star_stories %}
+    <div class="tile">
+      <strong>{{ st.title }}</strong>
+      <div>{% for g in st.good_for %}<span class="pill">{{ g }}</span>{% endfor %}</div>
+      <p style="margin:6px 0"><strong>S:</strong> {{ st.situation }}</p>
+      <p style="margin:6px 0"><strong>T:</strong> {{ st.task }}</p>
+      <p style="margin:6px 0"><strong>A:</strong> {{ st.action }}</p>
+      <p style="margin:6px 0"><strong>R:</strong> {{ st.result }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>Topics to revise</h2>
+    <table class="fit">
+      {% for t in prep.technical_topics | sort(attribute="priority", reverse=True) %}
+      <tr>
+        <td class="rating {{ 's-bad' if t.priority >= 8 else 's-mid' if t.priority >= 5 else 's-lo' }}">{{ t.priority }}/10</td>
+        <td><strong>{{ t.topic }}</strong><div class="muted">{{ t.why }}</div>
+          <ul class="tight">{% for w in t.what_to_revise %}<li>{{ w }}</li>{% endfor %}</ul></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>Answering questions about your gaps</h2>
+    {% for g in prep.gap_answers %}
+    <div style="margin-bottom:10px">
+      <strong>{{ g.gap }}</strong>
+      <div class="muted">"{{ g.likely_question }}"</div>
+      <div class="advice">{{ g.honest_answer }}</div>
+    </div>
+    {% else %}<p class="muted">No major gaps.</p>{% endfor %}
+    <h2 style="margin-top:14px">Questions to ask them</h2>
+    <ul class="tight">{% for x in prep.questions_to_ask %}<li>{{ x }}</li>{% endfor %}</ul>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -9,8 +9,91 @@
     <a class="btn secondary" href="/job/{{ job.id }}">Back to job</a>
     {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
     {% else %}<a class="btn secondary" href="/roles">Back to role profiles</a>{% endif %}
-    <span class="muted">{{ pdf_name }} · Estimated match: <strong>{{ t.match_score }}/100</strong></span>
+    {% if job %}<a class="btn secondary" href="/job/{{ job.id }}#letter">Write a cover letter</a>{% endif %}
+    <span class="muted">{{ pdf_name }} · Claude's match estimate while tailoring: <strong>{{ t.match_score }}/100</strong></span>
   </div>
+</div>
+
+{% set vs = request.query_params.get('vs') or ('profile' if 'profile' in ratings else (ratings | list | first)) %}
+{% set r = ratings.get(vs) %}
+<div class="card" id="rating">
+  <div class="row" style="justify-content:space-between">
+    <h2 style="margin:0">Rate this CV against {% if r %}{{ r.label }}{% else %}another version{% endif %}</h2>
+    <form method="post" action="/cv/{{ cv_id }}/rate" data-slow class="row">
+      <select name="baseline" style="width:auto">
+        <option value="profile" {% if vs == 'profile' %}selected{% endif %}>vs. my original CV (profile)</option>
+        {% for o in others %}<option value="{{ o.id }}" {% if vs == o.id|string %}selected{% endif %}>vs. CV #{{ o.id }}</option>{% endfor %}
+      </select>
+      <button type="submit">{{ 'Rate again' if r else 'Rate & compare' }}</button>
+      <span class="busy muted">Scoring both versions and checking the PDFs… (~1-2 min)</span>
+    </form>
+  </div>
+  {% if ratings | length > 1 %}<div class="muted" style="margin-top:6px">Saved comparisons: {% for k, v in ratings.items() %}<a href="?vs={{ k }}#rating">{{ v.label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+  {% if not r %}
+    <p class="muted" style="margin-top:8px">Scores both versions on the same scale for this {{ 'job' if job else 'role' }}: overall chance of an interview, six categories, the job's keywords each one contains (measured, not guessed), and whether the PDF text reads cleanly for screening software (ATS).</p>
+  {% else %}{% set c = r.comparison %}
+    <div class="row" style="gap:28px;margin:12px 0">
+      <div><div class="muted">{{ r.label }}</div><div class="score s-mid" style="font-size:30px">{{ c.baseline.overall }}</div></div>
+      <div style="font-size:26px" class="muted">→</div>
+      <div><div class="muted">This CV (#{{ cv_id }})</div><div class="score s-hi" style="font-size:30px">{{ c.tailored.overall }}</div></div>
+      {% set d = c.tailored.overall - c.baseline.overall %}
+      <div class="{{ 'delta-up' if d > 0 else 'delta-down' if d < 0 }}" style="font-size:22px">{{ '%+d' % d }}</div>
+      <div style="flex:1;min-width:260px"><strong>{{ c.verdict }}</strong><div class="muted">rated {{ r.rated_at | ago }}</div></div>
+    </div>
+
+    <table class="fit">
+      <tr><th>Category</th><th>{{ r.label }}</th><th>This CV</th><th></th><th>Comment (this CV)</th></tr>
+      {% for cat in c.tailored.categories %}{% set b = (c.baseline.categories | selectattr('category', 'equalto', cat.category) | first) %}
+      <tr>
+        <td><strong>{{ cat.category }}</strong></td>
+        <td>{{ b.score if b else '-' }}/10</td>
+        <td><strong>{{ cat.score }}/10</strong></td>
+        <td>{% if b %}{% set dd = cat.score - b.score %}<span class="{{ 'delta-up' if dd > 0 else 'delta-down' if dd < 0 else 'muted' }}">{{ '%+d' % dd if dd else '=' }}</span>{% endif %}</td>
+        <td class="muted">{{ cat.comment }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <div class="two" style="margin-top:14px">
+      <div>
+        <h3>Improved</h3><ul class="tight">{% for x in c.improved %}<li>{{ x }}</li>{% endfor %}</ul>
+        {% if c.got_worse %}<h3 style="margin-top:10px">Got worse / lost</h3><ul class="tight">{% for x in c.got_worse %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div>
+        <h3>Next edits to raise the score</h3><ul class="tight">{% for x in c.next_steps %}<li>{{ x }}</li>{% endfor %}</ul>
+        {% if c.still_missing %}<h3 style="margin-top:10px">Missing from both (not in your profile)</h3><ul class="tight">{% for x in c.still_missing %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+
+    <div class="two" style="margin-top:14px">
+      <div>
+        {% set kb = r.keywords | selectattr(1) | list | length %}{% set kt = r.keywords | selectattr(2) | list | length %}
+        <h3>Job keywords in the CV <span class="muted">(measured: {{ kb }} → {{ kt }} of {{ r.keywords | length }})</span></h3>
+        {% if r.keywords %}
+        <table class="fit">
+          <tr><th>Keyword</th><th>{{ r.label }}</th><th>This CV</th></tr>
+          {% for k, b, n in r.keywords | sort(attribute=2) %}
+          <tr><td>{{ k }}</td><td class="{{ 'ok' if b else 'no' }}">{{ '✓' if b else '✗' }}</td><td class="{{ 'ok' if n else 'no' }}">{{ '✓' if n else '✗' }}</td></tr>
+          {% endfor %}
+        </table>
+        <p class="muted">A keyword missing from both usually means it's not in your profile. Add it through the interview if it's true.</p>
+        {% else %}<p class="muted">No known keywords found in the posting.</p>{% endif %}
+      </div>
+      <div>
+        <h3>ATS check: what screening software reads from the PDF</h3>
+        <table class="fit">
+          <tr><th>Check</th><th>{{ r.label }}</th><th>This CV</th></tr>
+          {% for a in r.ats_tailored %}{% set b = (r.ats_baseline | selectattr('check', 'equalto', a.check) | first) %}
+          <tr>
+            <td>{{ a.check }}<div class="muted">{{ a.detail }}</div></td>
+            <td class="{{ 'ok' if b and b.ok else 'no' }}">{{ ('✓' if b.ok else '✗') if b else '-' }}</td>
+            <td class="{{ 'ok' if a.ok else 'no' }}">{{ '✓' if a.ok else '✗' }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  {% endif %}
 </div>
 
 <div class="two">

@@ -3,13 +3,26 @@
 import json
 
 from . import llm, settings
-from .models import FitAssessment, GithubReview, InterviewQuestions, Job, Profile, RoleProfile, TailoredCV
+from .models import (
+    CoverLetter,
+    CVComparison,
+    CVContent,
+    FitAssessment,
+    GithubReview,
+    InterviewPrep,
+    InterviewQuestions,
+    Job,
+    Profile,
+    RoleProfile,
+    TailoredCV,
+)
 
 TRUTH_RULES = """Ground rules - these override everything else:
 - Only use facts that appear in the candidate's profile. Never invent employers, dates, titles, degrees, certifications, metrics, technologies or years of experience.
 - You may reword, reorder, regroup, shorten and choose emphasis. You may describe existing work using the employer's vocabulary when it is an honest description of that work (e.g. "high-throughput simulation" for a simulation engine the profile describes).
 - A skill the job wants but the profile does not show goes into missing_requirements, never into the CV.
-- Keep numbers exactly as given in the profile."""
+- Keep numbers exactly as given in the profile.
+- Keep qualifiers exactly: "not completed", "ongoing", "expected", "basic", "personal project" and the like must never be dropped or softened."""
 
 
 def load_profile() -> Profile | None:
@@ -124,7 +137,7 @@ How to tailor:
 - headline and summary: aim them at this role, using the job's own terms where they truthfully apply.
 - experience bullets: put the most relevant first, lead with impact and numbers, mirror the job's keywords honestly, drop or merge bullets that do not help for this job (keep at least 3 per role).
 - projects: order by relevance, drop clearly irrelevant ones if space is tight.
-- skills: group and order so the job's required technologies that the candidate has appear first; omit irrelevant tools if the list is long.
+- skills: group and order so the job's required technologies that the candidate has appear first; omit irrelevant tools if the list is long. Never omit a technology, practice or skill the posting mentions when the profile shows it (e.g. Docker, CI/CD, a database, concurrency, testing) - those are the keywords screeners look for.
 - keep soft_skills, interests, languages and education accurate; trim soft_skills to the ones that matter for the job.
 - in bullets, wrap the 1-3 most important phrases in **double asterisks** so they render bold.
 Then report: match_score (0-100, honest), matched_requirements, missing_requirements (job requirements the profile does not show), changes_made (what you changed and why, short), questions_to_strengthen (questions to ask the candidate whose answers could close the gaps truthfully).
@@ -137,6 +150,88 @@ Then report: match_score (0-100, honest), matched_requirements, missing_requirem
     if extra_instructions.strip():
         content += f"\n\nExtra instructions from the candidate:\n{extra_instructions.strip()}"
     return llm.ask(system, content, TailoredCV)
+
+
+LETTER_LENGTHS = {"short": "about 150-200 words, 3 paragraphs", "standard": "about 250-350 words, 4 paragraphs"}
+
+
+def cover_letter(
+    profile: Profile,
+    job: Job,
+    cv: CVContent | None = None,
+    language: str = "English",
+    tone: str = "professional",
+    length: str = "standard",
+    extra_instructions: str = "",
+) -> CoverLetter:
+    system = f"""You write a cover letter for one job application, in {language}, with a {tone} tone, {LETTER_LENGTHS.get(length, LETTER_LENGTHS["standard"])}.
+- greeting: address the hiring manager by name only if the posting names them, otherwise a neutral greeting such as "Dear Hiring Team,".
+- paragraphs: the body only (no address block, no greeting, no sign-off). Open with the specific role and one concrete reason this candidate fits it - no clichés like "I am writing to apply". Then 1-2 paragraphs that connect the candidate's strongest, most relevant evidence (projects, results, numbers) to the posting's most important requirements, using the posting's own terms where they truthfully apply. Say briefly why this company or role appeals, using only what the posting says about the company. End with a short, confident closing paragraph.
+- closing: the sign-off line only, e.g. "Kind regards,". The candidate's name is added separately.
+- emphasised: the requirements of the job the letter addresses, short.
+- left_out: requirements the candidate's profile does not support, which the letter therefore does not claim.
+Plain text, no markdown. Do not repeat the CV line by line; pick the 2-3 strongest points.
+When a tailored CV is given, stay consistent with it.
+{TRUTH_RULES}"""
+    content = f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}"
+    if cv:
+        content += f"\n\nTailored CV sent with this letter:\n{cv.model_dump_json(indent=2)}"
+    if extra_instructions.strip():
+        content += f"\n\nExtra instructions from the candidate:\n{extra_instructions.strip()}"
+    return llm.ask(system, content, CoverLetter)
+
+
+def interview_prep(profile: Profile, job: Job, fit: FitAssessment | None = None) -> InterviewPrep:
+    system = f"""You are a senior engineer and interviewer preparing a candidate for interviews for this specific job.
+Ground every answer suggestion in the candidate's real profile; never suggest claiming experience they do not have.
+- overview: 2-3 sentences on what this interview process will most likely test and where the candidate is strongest and weakest.
+- about_the_role: the key facts from the posting to remember (team, product, stack, responsibilities, must-haves). Only what the posting says - no outside knowledge about the company presented as fact.
+- likely_questions: 12-16 questions mixing categories "technical", "behavioural", "role & motivation", "system design" (only if the seniority makes it likely) and "about your CV". For each: why_they_ask, how_to_answer (concrete outline, 2-4 sentences), your_evidence (the specific project, role or fact from the profile to use, or "none - see gap answers").
+- star_stories: 3-5 stories built from the candidate's real experience in STAR form, each with the question types it answers (good_for).
+- technical_topics: the topics to revise before the interview, priority 1-10 (10 = certain to come up and the candidate is weak on it), why, and what_to_revise as a short list of concrete subtopics.
+- gap_answers: for each important requirement the candidate lacks, the question they are likely to get and an honest, positive answer (transferable experience, what they are doing about it).
+- questions_to_ask: 5-7 smart questions the candidate can ask the interviewers about this role.
+- checklist: short practical to-dos for the days before the interview.
+{TRUTH_RULES}"""
+    content = f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}"
+    if fit:
+        content += f"\n\nEarlier fit assessment of this candidate for this job:\n{fit.model_dump_json(include={'rating', 'verdict', 'pros', 'cons'}, indent=2)}"
+    return llm.ask(system, content, InterviewPrep)
+
+
+CV_CATEGORIES = [
+    "Keyword match",
+    "Relevant experience first",
+    "Impact & numbers",
+    "Headline & summary",
+    "Skills section",
+    "Clarity & length",
+]
+
+
+def compare_cvs(
+    baseline: CVContent, tailored: CVContent, job: Job | None, role: RoleProfile | None, keyword_report: str
+) -> CVComparison:
+    target = f"Job:\n{_job_text(job)}" if job else f"Target role:\n{role.model_dump_json(include={'name', 'headline', 'focus', 'key_skills'}, indent=2)}"
+    categories = ", ".join(f'"{c}"' for c in CV_CATEGORIES)
+    system = f"""You are a strict recruiter who screens CVs for this {"job" if job else "kind of role"}. Score two versions of the same candidate's CV against it, on the same scale, so they can be compared.
+For each CV (baseline = before, tailored = after):
+- overall: 0-100, how likely this CV is to get the candidate an interview for this {"job" if job else "role"}.
+- categories: exactly these, in this order, each scored 0-10 with a one-sentence comment: {categories}.
+- strengths and weaknesses: short, specific to this {"job" if job else "role"}.
+Then compare:
+- verdict: one or two sentences - is the tailored CV better, by how much, and why.
+- improved: what got better from baseline to tailored.
+- got_worse: anything useful that was lost or weakened in the tailored version (be honest; empty if nothing).
+- still_missing: important requirements neither CV shows.
+- next_steps: concrete edits that would raise the tailored CV's score further without inventing facts.
+Judge only what is written in each CV. A keyword report measured by the app is included - use it, it is exact.
+Do not reward a CV for claims; both CVs come from the same profile, and neither may contain invented facts."""
+    content = (
+        f"{target}\n\nBaseline CV:\n{baseline.model_dump_json(indent=2)}\n\n"
+        f"Tailored CV:\n{tailored.model_dump_json(indent=2)}\n\nKeyword report:\n{keyword_report}"
+    )
+    return llm.ask(system, content, CVComparison)
 
 
 def _job_text(job: Job) -> str:

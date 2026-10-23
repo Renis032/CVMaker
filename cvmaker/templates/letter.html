@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ name }} - Cover letter</title>
+<style>
+  @page { size: A4; margin: 0; }
+  :root { --navy: #1f3a5a; --accent: #1a8cff; --text: #222; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Arial, "Liberation Sans", sans-serif;
+    color: var(--text);
+    font-size: 10.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  header { background: var(--navy); color: #fff; padding: 11mm 18mm 8mm; }
+  h1 { margin: 0; font-size: 22pt; line-height: 1.1; }
+  .headline { color: #9fc2e6; font-size: 11.5pt; margin-top: 2px; }
+  .contact { font-size: 9pt; margin-top: 6px; opacity: .9; }
+  .contact span + span::before { content: " · "; }
+  main { padding: 12mm 18mm; }
+  .meta { color: #555; font-size: 9.5pt; margin-bottom: 9mm; }
+  .meta strong { color: var(--navy); }
+  p { margin: 0 0 4mm; text-align: justify; white-space: pre-line; }
+  .sign { margin-top: 8mm; }
+  .sign strong { color: var(--navy); }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ name }}</h1>
+  {% if headline %}<div class="headline">{{ headline }}</div>{% endif %}
+  <div class="contact">{% for v in contact if v %}<span>{{ v }}</span>{% endfor %}</div>
+</header>
+<main>
+  <div class="meta">{{ date }}{% if company %}<br><strong>{{ company }}</strong>{% endif %}{% if role %}<br>Re: {{ role }}{% endif %}</div>
+  {% for p in paragraphs %}<p>{{ p }}</p>{% endfor %}
+</main>
+</body>
+</html>
