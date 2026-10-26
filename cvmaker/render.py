@@ -23,14 +23,15 @@ def _photo_data_uri() -> str:
     return "data:image/png;base64," + base64.b64encode(settings.PHOTO_PATH.read_bytes()).decode()
 
 
-FONT_SIZES_PT = (9.6, 9.3, 9.0, 8.7)
+FONT_SIZES_PT = (9.6, 9.3, 9.0, 8.7, 8.4)
+FONT_CHOICES_PT = (8.4, 8.7, 9.0, 9.3, 9.6, 10.0, 10.4, 10.8)
 
 
 def cv_html(cv: CVContent, font_pt: float = FONT_SIZES_PT[0]) -> str:
     return env.get_template("cv.html").render(cv=cv, photo=_photo_data_uri(), font_pt=font_pt)
 
 
-def _page_count(pdf_path: Path) -> int:
+def page_count(pdf_path: Path) -> int:
     try:
         info = subprocess.run(["pdfinfo", str(pdf_path)], capture_output=True, text=True, timeout=30).stdout
     except FileNotFoundError:
@@ -39,13 +40,35 @@ def _page_count(pdf_path: Path) -> int:
     return int(match.group(1)) if match else 1
 
 
-def cv_pdf(cv: CVContent, out_path: Path) -> Path:
-    """Render to PDF, shrinking the text a little if that keeps the CV on one page."""
-    for font_pt in FONT_SIZES_PT:
+def overflow(pdf_path: Path) -> float:
+    """How much of the CV is past page one, as a share of page one's text (0.25 = a quarter page too much)."""
+    def chars(first: int, last: int) -> int:
+        try:
+            out = subprocess.run(
+                ["pdftotext", "-f", str(first), "-l", str(last), str(pdf_path), "-"],
+                capture_output=True, text=True, timeout=30,
+            ).stdout
+        except FileNotFoundError:
+            return 0
+        return len(out.split())
+
+    first_page = chars(1, 1)
+    return chars(2, 99) / first_page if first_page else 0.3
+
+
+def cv_pdf(cv: CVContent, out_path: Path, font_pt: float | None = None) -> tuple[Path, int, float]:
+    """Render to PDF; returns (path, pages, font size used).
+
+    With no font size given, the text shrinks a little if that keeps the CV on one page."""
+    if font_pt:
         _print_pdf(cv_html(cv, font_pt), out_path)
-        if _page_count(out_path) == 1:
-            return out_path
-    return _print_pdf(cv_html(cv), out_path)
+        return out_path, page_count(out_path), font_pt
+    for size in FONT_SIZES_PT:
+        _print_pdf(cv_html(cv, size), out_path)
+        if page_count(out_path) == 1:
+            return out_path, 1, size
+    _print_pdf(cv_html(cv), out_path)
+    return out_path, page_count(out_path), FONT_SIZES_PT[0]
 
 
 def letter_body(letter: CoverLetter, name: str) -> str:

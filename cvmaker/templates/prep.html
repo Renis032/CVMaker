@@ -1,16 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Interview prep · {{ job.title }} - CVMaker{% endblock %}
+{% import "_macros.html" as m %}
 {% block content %}
 <div class="card">
   <h1>Interview prep · {{ job.title }} · {{ job.company }}</h1>
   <div class="row">
     <a class="btn secondary" href="/job/{{ job.id }}">Back to job</a>
+    {% if not active.prep %}
     <form method="post" action="/prep/{{ job.id }}" data-slow class="row">
       <button type="submit" class="{{ 'secondary' if prep }}">{{ 'Regenerate' if prep else 'Prepare me for this interview' }}</button>
-      <span class="busy muted">Claude is preparing it… (~1-2 min)</span>
-    </form>
+    </form>{% endif %}
     {% if not has_fit %}<span class="muted">Tip: run "Check my fit" on the job page first for sharper gap answers.</span>{% endif %}
   </div>
+  {% if active.prep %}{{ m.running(active.prep, "Claude is preparing your interview") }}{% endif %}
 </div>
 
 {% if prep %}

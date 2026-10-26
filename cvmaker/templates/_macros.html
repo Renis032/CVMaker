@@ -1,0 +1,20 @@
+{# A task that is queued or running: live step text and elapsed time, updated by base.html's poller. #}
+{% macro running(task, text="") -%}
+<div class="running" data-task-id="{{ task.id }}">
+  <span class="spin"></span>
+  <div>
+    <strong>{{ text or task.label }}</strong>
+    <div class="muted"><span class="task-step">{{ task.progress.step or ("waiting for a free slot" if task.status == "queued" else "working") }}</span>
+      · <span class="elapsed" data-since="{{ task.started or task.created }}"></span>
+      · you can leave this page, it keeps running</div>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro stage_pill(status) -%}
+<span class="pill stage stage-{{ status }}">{{ STAGE_LABELS.get(status, status) }}</span>
+{%- endmacro %}
+
+{% macro fit_badge(fit, data) -%}
+{% if fit is not none %}<span class="fitb {{ 'f-hi' if fit >= 7 else 'f-mid' if fit >= 5 else 'f-lo' }}" title="{{ data.verdict if data else '' }}{{ ' (quick first-pass rating)' if data and data.quick else ' (full fit check)' }}">{{ fit }}<small>/10</small></span>{% endif %}
+{%- endmacro %}

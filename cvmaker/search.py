@@ -1,6 +1,7 @@
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -119,12 +120,15 @@ def _run_company(company: dict, criteria: Criteria) -> list[Job]:
     return COMPANY_SOURCES[company["type"]](company, criteria)
 
 
-def run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
+def run_search(
+    criteria: Criteria, profile: Profile | None, on_progress: Callable[[dict], None] | None = None
+) -> SearchResult:
+    """Search every applicable source. on_progress gets {source: None (running) | count | "error"} as they finish."""
     with search_lock:
-        return _run_search(criteria, profile)
+        return _run_search(criteria, profile, on_progress or (lambda _: None))
 
 
-def _run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
+def _run_search(criteria: Criteria, profile: Profile | None, on_progress: Callable[[dict], None]) -> SearchResult:
     companies = load_companies()
     tasks = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -145,17 +149,24 @@ def _run_search(criteria: Criteria, profile: Profile | None) -> SearchResult:
 
         result = SearchResult()
         found: dict[str, Job] = {}
-        for future, label in tasks.items():
+        progress: dict = {label: None for label in tasks.values()}
+        on_progress(dict(progress))
+        for future in as_completed(tasks):
+            label = tasks[future]
             try:
                 jobs = future.result()
             except Exception as e:
                 result.errors.append(f"{label}: {e}")
+                progress[label] = "error"
+                on_progress(dict(progress))
                 continue
             for j in jobs:
                 if not j.salary:
                     j.salary = find_salary(f"{j.title}\n{j.description}")
             kept = [j for j in jobs if _keep(j, criteria)]
             result.counts[label] = len(kept)
+            progress[label] = len(kept)
+            on_progress(dict(progress))
             for j in kept:
                 found[j.id] = j
 

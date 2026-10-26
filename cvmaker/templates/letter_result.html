@@ -8,6 +8,8 @@
     <a class="btn secondary" href="/job/{{ job.id }}#letter">Back to job</a>
     {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
     <button class="secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('body').value); this.textContent='Copied ✓'">Copy text</button>
+    {% if is_sent %}<span class="pill stage stage-applied">✓ recorded as the letter you sent</span>{% else %}
+    <form method="post" action="/letter/{{ l.id }}/sent" style="display:inline"><button class="secondary" type="submit">I sent this letter</button></form>{% endif %}
     <span class="muted">{{ pdf_name }}</span>
   </div>
   {% if others %}<div class="muted" style="margin-top:8px">Other letters for this job: {% for o in others %}<a href="/letter/{{ o.id }}">#{{ o.id }}</a> {% endfor %}</div>{% endif %}

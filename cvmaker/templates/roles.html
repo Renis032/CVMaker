@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Role profiles - CVMaker{% endblock %}
+{% import "_macros.html" as m %}
 {% block content %}
 <div class="card">
   <h1>Role profiles</h1>
@@ -21,11 +22,13 @@
   {% if r.headline %}<p style="margin:8px 0 4px"><strong>{{ r.headline }}</strong></p>{% endif %}
   {% if r.focus %}<p class="muted" style="margin:0 0 6px">{{ r.focus }}</p>{% endif %}
   <div>{% for s in r.key_skills %}<span class="pill">{{ s }}</span>{% endfor %}</div>
+  {% if active.get(r.id) %}{{ m.running(active[r.id], "Claude is writing a CV for this role") }}{% else %}
   <form method="post" action="/roles/{{ r.id }}/cv" data-slow class="row" style="margin-top:12px">
-    <input type="text" name="instructions" placeholder="Extra instructions (optional)" style="flex:1;min-width:220px">
+    <input type="text" name="instructions" placeholder="Extra instructions (optional)" style="flex:1;min-width:220px" aria-label="Extra instructions">
+    <label class="check"><input type="checkbox" name="one_page" value="true" checked> one page</label>
+    <select name="font" style="width:auto" aria-label="Font size"><option value="auto">font: auto</option>{% for f in font_choices %}<option value="{{ f }}">{{ f }} pt</option>{% endfor %}</select>
     <button type="submit">Generate CV for this role</button>
-    <span class="busy muted">Claude is writing it… (~1 min)</span>
-  </form>
+  </form>{% endif %}
   {% if cvs[r.id] %}
   <div class="muted" style="margin-top:8px">Generated: {% for c in cvs[r.id] %}<a href="/cv/{{ c.id }}">#{{ c.id }}</a> {% endfor %}</div>
   {% endif %}

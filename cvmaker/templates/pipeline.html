@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Pipeline - CVMaker{% endblock %}
+{% block content %}
+<div class="stats">
+  <div class="stat"><div class="k">Applications</div><div class="v">{{ stats.applications }}</div><div class="sub">{{ stats.applied_week }} this week</div></div>
+  <div class="stat"><div class="k">Response rate</div><div class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</div><div class="sub">{{ stats.response.responded }} of {{ stats.response.n }} answered</div></div>
+  <div class="stat"><div class="k">With a tailored CV sent</div><div class="v">{{ stats.response_tailored.pct ~ '%' if stats.response_tailored.pct is not none else '–' }}</div><div class="sub">response rate · {{ stats.response_tailored.n }} applications</div></div>
+  <div class="stat"><div class="k">Without one recorded</div><div class="v">{{ stats.response_untailored.pct ~ '%' if stats.response_untailored.pct is not none else '–' }}</div><div class="sub">response rate · {{ stats.response_untailored.n }} applications</div></div>
+  <div class="stat"><div class="k">Interviews · offers</div><div class="v">{{ stats.by_stage.get('interview', 0) }} · {{ stats.by_stage.get('offer', 0) }}</div><div class="sub">right now</div></div>
+</div>
+
+<div class="card" id="follow-ups">
+  <div class="section-title">
+    <h2>Follow-ups due{% if due %} ({{ due | length }}){% endif %}</h2>
+    <div class="row">
+      <a class="btn secondary" href="/export.csv?pipeline=1">Export CSV</a>
+      <a class="btn secondary" href="/export.xlsx?pipeline=1">Export XLSX</a>
+    </div>
+  </div>
+  {% if due %}
+  <table class="fit">
+    {% for d in due %}
+    <tr>
+      <td><a href="/job/{{ d.job.id }}"><strong>{{ d.job.title }}</strong></a><div class="muted">{{ d.job.company }}</div></td>
+      <td class="muted">applied {{ d.status_at | ago }}, no reply</td>
+      <td style="white-space:nowrap">
+        <form method="post" action="/job/{{ d.job.id }}/followed-up" style="display:inline">
+          <button class="secondary" type="submit" title="Logs it and reminds you again in 7 days">✓ I followed up</button>
+        </form>
+        <form method="post" action="/job/{{ d.job.id }}/status" style="display:inline">
+          <input type="hidden" name="back" value="/pipeline">
+          <button class="secondary" name="status" value="ghosted" type="submit">Ghosted</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Nothing due. You get a reminder {{ '%g' % FOLLOW_UP_DAYS }} days after applying if the job is still at "Applied" (and a desktop notification while the app is running).</p>
+  {% endif %}
+</div>
+
+<p class="muted" style="margin:0 0 10px">Drag a card to another column, or use its menu. Click a card to open the job (notes, contact, timeline).</p>
+<div class="board">
+  {% for stage in STAGES %}
+  <section class="col" data-stage="{{ stage }}" aria-label="{{ STAGE_LABELS[stage] }}">
+    <h3>{{ m.stage_pill(stage) }} <span class="muted">{{ columns[stage] | length }}</span></h3>
+    <div class="cards">
+      {% for r in columns[stage] %}{% set j = r.job %}
+      <article class="jcard" draggable="true" data-job="{{ j.id }}">
+        <a href="/job/{{ j.id }}#application"><strong>{{ j.title }}</strong></a>
+        <div class="muted">{{ j.company }}</div>
+        <div class="row" style="gap:4px;margin-top:6px">
+          {% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% endif %}
+          <span class="muted">{{ r.status_at | ago if r.status_at else '' }}</span>
+          {% if r.next_date %}<span class="pill new" title="Next date">{{ r.next_date }}</span>{% endif %}
+          {% if r.sent_cv_id %}<span class="pill" title="Tailored CV recorded as sent">CV #{{ r.sent_cv_id }}</span>{% endif %}
+          {% if r.status == 'applied' and r.follow_up_at and r.follow_up_at <= now %}<span class="pill company-note">follow up</span>{% endif %}
+        </div>
+        {% if r.notes %}<div class="muted note">{{ r.notes | truncate(90) }}</div>{% endif %}
+        <form method="post" action="/job/{{ j.id }}/status" class="move">
+          <input type="hidden" name="back" value="/pipeline">
+          <select name="status" onchange="this.form.submit()" aria-label="Move to stage">
+            {% for s in STAGES %}<option value="{{ s }}" {% if s == stage %}selected{% endif %}>{{ STAGE_LABELS[s] }}</option>{% endfor %}
+            <option value="hidden">Remove (hide)</option>
+          </select>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<style>
+  .board { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(150px, 1fr); gap:12px; overflow-x:auto; padding-bottom:10px; }
+  .col { background:var(--sunken); border:1px solid var(--line); border-radius:var(--radius); padding:10px; min-height:220px; }
+  .col.over { border-color:var(--accent); background:var(--accent-soft); }
+  .col h3 { display:flex; align-items:center; gap:6px; margin:0 0 10px; }
+  .cards { display:flex; flex-direction:column; gap:8px; min-height:60px; }
+  .jcard { background:var(--card); border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px; box-shadow:var(--shadow); cursor:grab; }
+  .jcard.dragging { opacity:.5; }
+  .jcard a strong { color:var(--ink); } .jcard .note { margin-top:6px; font-size:12px; }
+  .jcard .move { margin-top:8px; } .jcard .move select { padding:4px 8px; font-size:12.5px; }
+</style>
+<script>
+  let dragged = null;
+  document.querySelectorAll(".jcard").forEach(card => {
+    card.addEventListener("dragstart", () => { dragged = card; card.classList.add("dragging"); });
+    card.addEventListener("dragend", () => { card.classList.remove("dragging"); dragged = null; });
+  });
+  document.querySelectorAll(".col").forEach(col => {
+    col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("over"); });
+    col.addEventListener("dragleave", () => col.classList.remove("over"));
+    col.addEventListener("drop", async e => {
+      e.preventDefault();
+      col.classList.remove("over");
+      if (!dragged || dragged.closest(".col") === col) return;
+      const body = new URLSearchParams({ status: col.dataset.stage });
+      const res = await fetch(`/job/${dragged.dataset.job}/status`, { method: "POST", body, headers: { Accept: "application/json" } });
+      if (res.ok) location.reload();
+    });
+  });
+</script>
+{% endblock %}

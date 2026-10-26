@@ -13,6 +13,7 @@ from .models import (
     InterviewQuestions,
     Job,
     Profile,
+    QuickFits,
     RoleProfile,
     TailoredCV,
 )
@@ -100,6 +101,52 @@ Be realistic about seniority and must-have requirements; do not flatter."""
     if repos_text:
         content += f"\n\nCandidate's public GitHub repositories:\n{repos_text}"
     return llm.ask(system, content, FitAssessment)
+
+
+QUICK_FIT_DESCRIPTION_CHARS = 5000
+
+
+def quick_fit(profile: Profile, jobs: list[Job]) -> QuickFits:
+    """A fast first-pass fit rating for several jobs at once, for ranking the job list."""
+    system = """You are an honest technical recruiter doing a fast first screen: how well does this candidate fit each job?
+For every job, return one entry with its exact job_id:
+- rating: 1 (no realistic chance) to 10 (ideal candidate). Weigh must-have requirements and seniority most; be realistic, do not flatter.
+- strong: 1-3 of the candidate's strongest matches for this job, each 1-4 words (e.g. "Java/Spring", "5 yrs C++").
+- missing: 0-3 of the most important requirements the profile does not show, each 1-4 words.
+- verdict: one short sentence, addressed to the candidate as "you".
+Judge only from the profile and the posting text. If a posting has almost no description, rate from the title and say so in the verdict."""
+    postings = [
+        {
+            "job_id": j.id,
+            "title": j.title,
+            "company": j.company,
+            "location": j.location,
+            "description": j.description[:QUICK_FIT_DESCRIPTION_CHARS],
+        }
+        for j in jobs
+    ]
+    profile_text = profile.model_dump_json(exclude={"contact", "interests", "preferences"})
+    return llm.ask(
+        system,
+        f"Candidate profile:\n{profile_text}\n\nJobs:\n{json.dumps(postings, ensure_ascii=False, indent=1)}",
+        QuickFits,
+        effort="low",
+    )
+
+
+def shorten_cv(cv: CVContent, job: Job | None, overflow: float, instructions: str = "") -> CVContent:
+    """Cut a CV that runs over one page, removing the least relevant material first."""
+    percent = max(8, min(60, round(overflow * 100) + 5))
+    target = f"Job it is tailored for:\n{_job_text(job)}" if job else "It is a general CV (no specific job)."
+    system = f"""You shorten a CV so it fits on one A4 page. It currently overflows: about {percent}% of the content has to go.
+- Remove the least relevant material for the target first: weakest bullets, least relevant projects, extra soft skills and interests, redundant skills.
+- Tighten long bullets and the summary. Keep at least 2 bullets per role, keep every role and every education entry.
+- Never add anything. Never change facts, numbers, dates, names or qualifiers. Keep **bold** markers on the phrases that stay.
+{TRUTH_RULES}"""
+    content = f"{target}\n\nCV to shorten:\n{cv.model_dump_json(indent=2)}"
+    if instructions.strip():
+        content += f"\n\nThe candidate's instructions for this CV (keep following them):\n{instructions.strip()}"
+    return llm.ask(system, content, CVContent, effort="medium")
 
 
 def github_review(profile: Profile, job: Job, repos_text: str) -> GithubReview:

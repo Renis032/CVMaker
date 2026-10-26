@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block title %}My profile - CVMaker{% endblock %}
+{% import "_macros.html" as m %}
 {% block content %}
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 <div class="two">
   <div class="card">
     <h2>Import my CV</h2>
     <p class="muted">Upload your CV as a PDF. Claude reads it into your profile; this replaces the current profile.</p>
+    {% if importing %}{{ m.running(importing[0], "Claude is reading your CV") }}{% else %}
     <form method="post" action="/profile/import" enctype="multipart/form-data" data-slow class="row">
-      <input type="file" name="cv" accept="application/pdf" required>
+      <input type="file" name="cv" accept="application/pdf" required aria-label="CV PDF">
       <button type="submit">Import</button>
-      <span class="busy muted">Reading your CV…</span>
-    </form>
+    </form>{% endif %}
   </div>
   <div class="card">
     <h2>Photo</h2>
@@ -20,6 +21,54 @@
       <button class="secondary" type="submit">Upload</button>
     </form>
   </div>
+</div>
+
+<div class="card" id="activity">
+  <div class="section-title"><h2>Activity</h2><span class="muted">Background tasks: searches, ratings and everything Claude writes for you</span></div>
+  {% if activity %}
+  <div class="table-wrap">
+  <table class="fit">
+    <tr><th>Task</th><th>Job</th><th>Status</th><th>When</th><th></th></tr>
+    {% for t in activity %}
+    <tr>
+      <td><strong>{{ t.label.split(' · ')[0] }}</strong></td>
+      <td>{% if t.job %}<a href="/job/{{ t.job.id }}">{{ t.job.title }}</a><div class="muted">{{ t.job.company }}{% if t.job.location %} · {{ t.job.location | truncate(40) }}{% endif %}{% if t.job.salary %} · {{ t.job.salary }}{% endif %}</div>
+          {% elif ' · ' in t.label %}{{ t.label.split(' · ', 1)[1] }}{% else %}<span class="muted">-</span>{% endif %}</td>
+      <td>
+        {% if t.status in ('queued', 'running') %}
+          <span class="row" data-task-id="{{ t.id }}" style="gap:6px"><span class="spin"></span><span class="task-step">{{ t.progress.step or t.status }}</span> · <span class="elapsed" data-since="{{ t.started or t.created }}"></span></span>
+        {% elif t.status == 'done' %}<span class="ok">✓ done</span> <span class="muted">in {{ ((t.finished - t.started) | round | int) if t.started else 0 }}s</span>
+        {% else %}<span class="no">✗ failed</span><div class="muted" style="max-width:380px">{{ t.error | truncate(220) }}</div>{% endif %}
+      </td>
+      <td class="muted" style="white-space:nowrap">{{ t.created | ago }}</td>
+      <td>{% if t.status == 'done' and t.url %}<a href="{{ t.url }}">Open →</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}<p class="muted">Nothing yet. Searches, fit checks, CVs, letters and interview prep show up here while they run and after they finish.</p>{% endif %}
+</div>
+
+<div class="card" id="documents">
+  <div class="section-title"><h2>My documents</h2><span class="muted">Every CV and cover letter, with the job it was made for</span></div>
+  {% if documents %}
+  <div class="table-wrap">
+  <table class="fit">
+    <tr><th>Document</th><th>For</th><th>Stage</th><th>Created</th></tr>
+    {% for d in documents %}
+    <tr>
+      <td><a href="/{{ 'cv' if d.kind == 'cv' else 'letter' }}/{{ d.id }}"><strong>{{ 'CV' if d.kind == 'cv' else 'Cover letter' }} #{{ d.id }}</strong></a>
+        {% if d.sent %}<span class="pill stage stage-applied">sent</span>{% endif %}
+        {% if d.match_score is not none %}<div class="muted">match estimate {{ d.match_score }}/100</div>{% endif %}</td>
+      <td>{% if d.job %}<a href="/job/{{ d.job.id }}">{{ d.job.title }}</a><div class="muted">{{ d.job.company }}{% if d.job.location %} · {{ d.job.location | truncate(40) }}{% endif %}</div>
+          {% elif d.job_id.startswith('role:') %}General CV · role <a href="/roles">{{ d.job_id[5:] }}</a>{% else %}<span class="muted">job removed</span>{% endif %}</td>
+      <td>{% if d.status %}{{ m.stage_pill(d.status) }}{% endif %}</td>
+      <td class="muted" style="white-space:nowrap">{{ d.created_at | day }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}<p class="muted">No CVs or letters yet. Open a job and generate one.</p>{% endif %}
 </div>
 
 {% if profile %}

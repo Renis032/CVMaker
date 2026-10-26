@@ -183,6 +183,18 @@ class FitAssessment(BaseModel):
     gap_plan: GapPlan
 
 
+class QuickFit(BaseModel):
+    job_id: str
+    rating: int
+    strong: list[str]
+    missing: list[str]
+    verdict: str
+
+
+class QuickFits(BaseModel):
+    fits: list[QuickFit]
+
+
 class RepoMatch(BaseModel):
     repo: str
     url: str

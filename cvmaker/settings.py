@@ -23,6 +23,10 @@ GITHUB_USER = os.environ.get("GITHUB_USER", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 CHROME_BIN = os.environ.get("CHROME_BIN", "google-chrome")
 CAREER_PAGE_CACHE_HOURS = int(os.environ.get("CAREER_PAGE_CACHE_HOURS", "24"))
+# How many background tasks (searches, Claude calls) run at the same time.
+TASK_WORKERS = int(os.environ.get("CVMAKER_TASK_WORKERS", "4"))
+# Days after applying until the app reminds you to follow up.
+FOLLOW_UP_DAYS = float(os.environ.get("CVMAKER_FOLLOW_UP_DAYS", "10"))
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) CVMaker/0.1 (personal job search)"
 

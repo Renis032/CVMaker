@@ -72,3 +72,60 @@ def find_salary(text: str) -> str:
         if (_CONTEXT.search(window) or is_range) and _plausible(found):
             return found[:60]
     return ""
+
+
+# Rough conversion rates to EUR, only for comparing salaries with each other. BGN is the fixed euro rate
+# (Bulgaria adopted the euro on 1 Jan 2026; older postings still quote лв.).
+EUR_RATES = {
+    "EUR": 1.0, "BGN": 1 / 1.95583, "USD": 0.92, "GBP": 1.17, "PLN": 0.23, "RON": 0.20, "CHF": 1.05,
+}
+_CURRENCY_WORDS = [
+    ("BGN", r"лв|лева|\bbgn\b"), ("EUR", r"€|\beur\b|евро"), ("GBP", r"£|\bgbp\b"), ("USD", r"\$|\busd\b"),
+    ("PLN", r"\bpln\b|zł"), ("RON", r"\bron\b|\blei\b"), ("CHF", r"\bchf\b"),
+]
+_HOURS_PER_MONTH, _DAYS_PER_MONTH, _WEEKS_PER_MONTH = 168, 21, 4.33
+
+
+def _numbers(text: str) -> list[float]:
+    """The amounts in a salary text: '€62,000 to €87,200' -> [62000, 87200]; '$80k' -> [80000]."""
+    text = re.sub(r"(?<=\d)[  ,.](?=\d{3}\b)", "", text)
+    out = []
+    for m in re.finditer(r"(\d+(?:[.,]\d+)?)\s?([kK])?", text):
+        n = float(m.group(1).replace(",", "."))
+        out.append(n * 1000 if m.group(2) else n)
+    return out
+
+
+def monthly_eur(text: str) -> float | None:
+    """Approximate monthly amount in EUR of a salary text, for sorting and medians. None if unreadable.
+
+    The period is taken from the text; without one, amounts of 15k or more are read as yearly and smaller
+    ones as monthly (how Bulgarian and German postings usually quote). Net and gross are not converted."""
+    if not text:
+        return None
+    low = text.lower()
+    currency = next((code for code, pattern in _CURRENCY_WORDS if re.search(pattern, low)), None)
+    amounts = [n for n in _numbers(low) if n > 0]
+    if not currency or not amounts:
+        return None
+    if "task" in low or "project" in low:
+        return None
+    value = sum(amounts[:2]) / len(amounts[:2])
+    if re.search(r"hour|/\s?h\b|\bhr\b|час", low):
+        value *= _HOURS_PER_MONTH
+    elif re.search(r"\bday\b|daily|/\s?day|ден", low):
+        value *= _DAYS_PER_MONTH
+    elif re.search(r"week", low):
+        value *= _WEEKS_PER_MONTH
+    elif re.search(r"month|/\s?mo\b|monat|месец", low):
+        pass
+    elif re.search(r"year|annum|annual|/\s?yr|jahr|годин", low) or value >= 15000:
+        value /= 12
+    value *= EUR_RATES[currency]
+    return round(value) if 200 <= value <= 100000 else None
+
+
+def format_monthly(value: float | None) -> str:
+    if not value:
+        return ""
+    return f"≈ €{value / 1000:.1f}k/mo" if value >= 1000 else f"≈ €{value:.0f}/mo"
