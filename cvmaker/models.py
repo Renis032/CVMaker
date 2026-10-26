@@ -305,3 +305,19 @@ class CVComparison(BaseModel):
     got_worse: list[str]
     still_missing: list[str]
     next_steps: list[str]
+
+
+class GapCluster(BaseModel):
+    gap: str
+    job_refs: list[str]
+    severity: int
+    proof_only: bool
+    why: str
+    how_to_close: str
+    time_to_close: str
+
+
+class GapAnalysis(BaseModel):
+    summary: str
+    learn_next: list[str]
+    clusters: list[GapCluster]

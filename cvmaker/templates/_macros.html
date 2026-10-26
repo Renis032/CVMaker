@@ -18,3 +18,21 @@
 {% macro fit_badge(fit, data) -%}
 {% if fit is not none %}<span class="fitb {{ 'f-hi' if fit >= 7 else 'f-mid' if fit >= 5 else 'f-lo' }}" title="{{ data.verdict if data else '' }}{{ ' (quick first-pass rating)' if data and data.quick else ' (full fit check)' }}">{{ fit }}<small>/10</small></span>{% endif %}
 {%- endmacro %}
+
+{# The ✕ button with one-click reasons; every reason is a submit button of the same form. #}
+{% macro hide_menu(job_id, reasons, back, label="✕") -%}
+<details class="hide-menu">
+  <summary class="btn secondary {{ 'icon' if label == '✕' }}" title="Hide - tell me why" aria-label="Hide">{{ label }}</summary>
+  <form method="post" action="/job/{{ job_id }}/status" class="menu">
+    <input type="hidden" name="status" value="hidden">
+    <input type="hidden" name="back" value="{{ back }}">
+    <div class="muted" style="padding:4px 10px 6px">Hide because…</div>
+    {% for key, text in reasons.items() %}<button type="submit" name="reason" value="{{ key }}">{{ text }}</button>{% endfor %}
+    <button type="submit" name="reason" value="" class="muted">Just hide</button>
+  </form>
+</details>
+{%- endmacro %}
+
+{% macro taste_chips(items) -%}
+{% for t in items %}<span class="taste {{ 'up' if t.startswith('↑') else 'down' }}">{{ t }}</span>{% endfor %}
+{%- endmacro %}

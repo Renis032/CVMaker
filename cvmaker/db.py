@@ -75,6 +75,9 @@ MIGRATIONS = [
     ("jobs", "fit", "ALTER TABLE jobs ADD COLUMN fit INTEGER"),
     ("jobs", "fit_data", "ALTER TABLE jobs ADD COLUMN fit_data TEXT NOT NULL DEFAULT ''"),
     ("jobs", "salary_month", "ALTER TABLE jobs ADD COLUMN salary_month REAL"),
+    ("jobs", "feedback", "ALTER TABLE jobs ADD COLUMN feedback TEXT NOT NULL DEFAULT ''"),
+    ("jobs", "taste", "ALTER TABLE jobs ADD COLUMN taste INTEGER NOT NULL DEFAULT 0"),
+    ("jobs", "taste_data", "ALTER TABLE jobs ADD COLUMN taste_data TEXT NOT NULL DEFAULT ''"),
     ("cvs", "layout", "ALTER TABLE cvs ADD COLUMN layout TEXT NOT NULL DEFAULT '{}'"),
     ("cvs", "pages", "ALTER TABLE cvs ADD COLUMN pages INTEGER NOT NULL DEFAULT 0"),
 ]
@@ -98,6 +101,8 @@ SORTS = {
     "posted": ("NULLIF(json_extract(data, '$.posted_at'), '')", "desc"),
     "salary": ("salary_month", "desc"),
     "company": ("lower(json_extract(data, '$.company'))", "asc"),
+    # Claude's fit (unrated counts as 5/10), keyword score and what your feedback taught, combined.
+    "match": ("(COALESCE(fit, 5) * 10 + score * 0.3 + taste)", "desc"),
 }
 
 
@@ -221,6 +226,77 @@ def set_status(job_id: str, status: str, at: float | None = None, note: str = ""
             c.execute("UPDATE jobs SET follow_up_at = 0 WHERE id = ?", (job_id,))
 
 
+def set_feedback(job_id: str, reason: str) -> None:
+    with connect() as c:
+        c.execute("UPDATE jobs SET feedback = ? WHERE id = ?", (reason, job_id))
+
+
+def hide_company(company: str, except_id: str = "") -> int:
+    """Hide every other open job from this company (marked 'blocked' so they don't count as separate feedback)."""
+    key = _company_key(company)
+    with connect() as c:
+        rows = c.execute(
+            "SELECT id, json_extract(data, '$.company') AS company FROM jobs WHERE status IN ('new', 'liked') AND id != ?",
+            (except_id,),
+        ).fetchall()
+        ids = [r["id"] for r in rows if _company_key(r["company"] or "") == key]
+        c.executemany("UPDATE jobs SET status = 'hidden', feedback = 'blocked' WHERE id = ?", [(i,) for i in ids])
+    return len(ids)
+
+
+def unhide_company(company: str) -> None:
+    """Undo hide_company: show the jobs that were hidden only because the company was blocked."""
+    key = _company_key(company)
+    with connect() as c:
+        rows = c.execute(
+            "SELECT id, json_extract(data, '$.company') AS company FROM jobs WHERE status = 'hidden' AND feedback IN ('blocked', 'company')"
+        ).fetchall()
+        ids = [r["id"] for r in rows if _company_key(r["company"] or "") == key]
+        c.executemany("UPDATE jobs SET status = 'new', feedback = '' WHERE id = ?", [(i,) for i in ids])
+
+
+def feedback_rows() -> list[dict]:
+    """Every job you reacted to: hidden (with its reason) or moved into the pipeline."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT id, data, status, feedback, salary_month FROM jobs WHERE status != 'new'"
+            " AND NOT (status = 'hidden' AND feedback = 'blocked')"
+        ).fetchall()
+    return [
+        {"job": Job.model_validate_json(r["data"]), "status": r["status"], "feedback": r["feedback"], "salary_month": r["salary_month"]}
+        for r in rows
+    ]
+
+
+def open_jobs() -> list[tuple[Job, float | None]]:
+    with connect() as c:
+        rows = c.execute("SELECT data, salary_month FROM jobs WHERE status != 'hidden'").fetchall()
+    return [(Job.model_validate_json(r["data"]), r["salary_month"]) for r in rows]
+
+
+def market_rows() -> list[dict]:
+    """Every collected job with what the insights page needs, hidden ones included."""
+    with connect() as c:
+        rows = c.execute("SELECT data, status, first_seen, salary_month, fit, fit_data FROM jobs").fetchall()
+    return [
+        {
+            "job": Job.model_validate_json(r["data"]),
+            "status": r["status"],
+            "first_seen": r["first_seen"],
+            "salary_month": r["salary_month"],
+            "fit": r["fit"],
+            "fit_data": json.loads(r["fit_data"]) if r["fit_data"] else None,
+        }
+        for r in rows
+    ]
+
+
+def set_tastes(values: list[tuple[int, list, str]]) -> None:
+    """(taste, reasons, job_id) for many jobs."""
+    with connect() as c:
+        c.executemany("UPDATE jobs SET taste = ?, taste_data = ? WHERE id = ?", [(t, json.dumps(d), i) for t, d, i in values])
+
+
 def promote(job_id: str, status: str) -> None:
     """Set a stage only if the job has none yet (e.g. generating a CV likes a job, but never un-applies it)."""
     found = get_job(job_id)
@@ -299,6 +375,9 @@ def _row(r) -> dict:
         "next_date": r["next_date"],
         "follow_up_at": r["follow_up_at"],
         "sent_cv_id": r["sent_cv_id"],
+        "feedback": r["feedback"],
+        "taste": r["taste"],
+        "taste_data": json.loads(r["taste_data"]) if r["taste_data"] else [],
     }
 
 

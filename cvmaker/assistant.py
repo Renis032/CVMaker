@@ -8,6 +8,7 @@ from .models import (
     CVComparison,
     CVContent,
     FitAssessment,
+    GapAnalysis,
     GithubReview,
     InterviewPrep,
     InterviewQuestions,
@@ -24,6 +25,14 @@ TRUTH_RULES = """Ground rules - these override everything else:
 - A skill the job wants but the profile does not show goes into missing_requirements, never into the CV.
 - Keep numbers exactly as given in the profile.
 - Keep qualifiers exactly: "not completed", "ongoing", "expected", "basic", "personal project" and the like must never be dropped or softened."""
+
+
+TASTE_NOTE = """The candidate's own reactions to earlier postings are included. They show preferences (seniority, stack, location, salary, companies), not ability.
+Rate lower when a job clearly matches something they rejected, and say so in the verdict (e.g. "you've hidden similar senior roles"). Never rate higher than their profile justifies."""
+
+
+def _with_taste(content: str, taste: str) -> str:
+    return f"{content}\n\nThe candidate's preferences, learned from what they hid and liked:\n{taste}" if taste else content
 
 
 def load_profile() -> Profile | None:
@@ -80,10 +89,10 @@ Keep everything already in the profile unless an answer explicitly corrects it. 
     )
 
 
-def assess_fit(profile: Profile, job: Job, repos_text: str = "") -> FitAssessment:
+def assess_fit(profile: Profile, job: Job, repos_text: str = "", taste: str = "") -> FitAssessment:
     system = """You are an honest technical recruiter and career mentor judging how well this candidate fits this job.
 rating: overall fit from 1 (no realistic chance) to 10 (ideal candidate).
-verdict: one sentence.
+verdict: one sentence, addressed to the candidate as "you".
 pros: concrete reasons the candidate fits, each rated 1-10 for how much it helps the application (10 = directly covers a must-have).
 cons: concrete gaps or risks, each rated 1-10 for how serious it is (10 = a must-have that is clearly missing, likely rejection), each with advice: one or two sentences on the most effective way to improve it - what to learn or build, what to change on the CV or GitHub, or how to address it in the application - specific to this job and this candidate.
 Count something as evidence if the profile or the candidate's GitHub repos (README, files, build/config files) show it.
@@ -100,13 +109,15 @@ Be realistic about seniority and must-have requirements; do not flatter."""
     content = f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}"
     if repos_text:
         content += f"\n\nCandidate's public GitHub repositories:\n{repos_text}"
-    return llm.ask(system, content, FitAssessment)
+    if taste:
+        system += "\n" + TASTE_NOTE
+    return llm.ask(system, _with_taste(content, taste), FitAssessment)
 
 
 QUICK_FIT_DESCRIPTION_CHARS = 5000
 
 
-def quick_fit(profile: Profile, jobs: list[Job]) -> QuickFits:
+def quick_fit(profile: Profile, jobs: list[Job], taste: str = "") -> QuickFits:
     """A fast first-pass fit rating for several jobs at once, for ranking the job list."""
     system = """You are an honest technical recruiter doing a fast first screen: how well does this candidate fit each job?
 For every job, return one entry with its exact job_id:
@@ -126,12 +137,30 @@ Judge only from the profile and the posting text. If a posting has almost no des
         for j in jobs
     ]
     profile_text = profile.model_dump_json(exclude={"contact", "interests", "preferences"})
-    return llm.ask(
-        system,
-        f"Candidate profile:\n{profile_text}\n\nJobs:\n{json.dumps(postings, ensure_ascii=False, indent=1)}",
-        QuickFits,
-        effort="low",
-    )
+    content = f"Candidate profile:\n{profile_text}\n\nJobs:\n{json.dumps(postings, ensure_ascii=False, indent=1)}"
+    return llm.ask(system + ("\n" + TASTE_NOTE if taste else ""), _with_taste(content, taste), QuickFits, effort="low")
+
+
+def gap_analysis(profile: Profile, jobs: list[dict]) -> GapAnalysis:
+    """Group the gaps found by many fit checks into a few skills, ranked by how many jobs they would open."""
+    system = """You are a career coach looking at many fit checks of one candidate against different jobs.
+Each job has a ref (J1, J2, ...), its fit rating and the gaps found for it.
+Group gaps that mean the same thing ("no professional Java", "Java only from personal projects") into one cluster and return:
+- clusters: the 5-12 most important, most frequent first. For each:
+  - gap: a short name, 2-6 words (e.g. "Professional Java/Spring experience").
+  - job_refs: every job ref where this gap appears.
+  - severity: 1-10, how much it costs the candidate across those jobs.
+  - proof_only: true when the profile shows the skill but the jobs want stronger evidence of it (it is a CV/portfolio problem, not a learning one).
+  - why: one sentence on why employers care.
+  - how_to_close: concrete steps that fit this candidate's background (a project, a course, a certification, a change to the CV), 1-3 sentences.
+  - time_to_close: a realistic estimate, e.g. "2-3 weeks of evenings".
+- learn_next: 3-5 steps in the order to do them, each one sentence, starting with the one that improves the most jobs for the least effort.
+- summary: 2-3 sentences, addressed to the candidate as "you".
+The refs are only for job_refs: in summary, learn_next and the texts, name a job by its title and company, never by ref.
+Use only what the profile and the gaps say. Never claim the candidate has experience the profile does not show."""
+    profile_text = profile.model_dump_json(exclude={"contact", "interests", "preferences"})
+    content = f"Candidate profile:\n{profile_text}\n\nJobs and their gaps:\n{json.dumps(jobs, ensure_ascii=False, indent=1)}"
+    return llm.ask(system, content, GapAnalysis, effort="medium")
 
 
 def shorten_cv(cv: CVContent, job: Job | None, overflow: float, instructions: str = "") -> CVContent:

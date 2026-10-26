@@ -170,8 +170,12 @@ def _run_search(criteria: Criteria, profile: Profile | None, on_progress: Callab
             for j in kept:
                 found[j.id] = j
 
+    from .taste import is_blocked  # taste imports this module
+
     deduped: dict[tuple[str, str], Job] = {}
     for job in found.values():
+        if is_blocked(job.company):
+            continue
         key = (job.company.lower().strip(), re.sub(r"\W+", " ", job.title.lower()).strip())
         if key not in deduped or len(job.description) > len(deduped[key].description):
             deduped[key] = job

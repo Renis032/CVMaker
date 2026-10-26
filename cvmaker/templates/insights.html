@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Insights - CVMaker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Insights</h1>
+    <div class="muted">What holds you back across all your jobs, and what the market you search looks like.</div>
+  </div>
+</div>
+
+<nav class="page-tabs" aria-label="Insights sections">
+  <a href="#gaps" data-tab="gaps">Your gaps
+    {% if running %}<span class="spin"></span>{% elif analysis %}<span class="tb">{{ analysis.clusters | length }}</span>{% endif %}</a>
+  <a href="#market" data-tab="market">Market <span class="tb">{{ market.n }} jobs</span></a>
+</nav>
+
+{# ---------- Your gaps ---------- #}
+<section class="tab-panel" data-tab="gaps">
+  <div class="card">
+    <div class="section-title">
+      <h2>What's holding you back</h2>
+      {% if not running and (sources.full or sources.quick) %}
+      <form method="post" action="/insights/analyse" data-slow>
+        <button class="{{ 'secondary' if analysis and not analysis.changed }}" type="submit">{{ 'Analyse again' if analysis else 'Analyse my gaps with Claude' }}</button>
+      </form>{% endif %}
+    </div>
+    {% if running %}{{ m.running(running, "Claude is grouping the gaps from your fit checks") }}{% endif %}
+
+    {% if analysis %}
+      {% if analysis.changed %}
+      <div class="tile warn-tile">{{ analysis.changed }} fit check{{ 's' if analysis.changed != 1 }} added or changed since this analysis ({{ analysis.at | ago }}). Analyse again to include {{ 'them' if analysis.changed != 1 else 'it' }}.</div>
+      {% endif %}
+      <p class="lead">{{ analysis.summary }}</p>
+
+      <div class="gap-layout">
+        <div>
+          <h3>Gaps, by how many jobs they affect</h3>
+          <ol class="gap-list">
+          {% for c in analysis.clusters %}
+            <li>
+              <details>
+                <summary>
+                  <span class="gap-name">{{ c.gap }}</span>
+                  {% if c.proof_only %}<span class="pill kind-proof" title="Your profile shows it, but the jobs want stronger evidence: a CV or portfolio fix">✎ needs proof</span>
+                  {% else %}<span class="pill kind-learn" title="Not in your profile yet">◆ to learn</span>{% endif %}
+                  <span class="gap-meter" title="Appears in {{ c.jobs | length }} of {{ analysis.total_jobs }} checked jobs">
+                    <span class="meter"><span style="width:{{ (100 * (c.jobs | length) / analysis.total_jobs) | round }}%"></span></span>
+                    <span class="muted">{{ c.jobs | length }} of {{ analysis.total_jobs }} jobs</span>
+                  </span>
+                  <span class="sev {{ 's-lo' if c.severity < 4 else 's-mid' if c.severity < 7 else 's-bad' }}" title="How much it costs you, 1-10">severity {{ c.severity }}</span>
+                </summary>
+                <div class="gap-body">
+                  <p class="muted">{{ c.why }}</p>
+                  <p><strong>How to close it:</strong> {{ c.how_to_close }} <span class="muted">· {{ c.time_to_close }}</span></p>
+                  <div class="muted" style="margin-bottom:4px">Jobs where it came up:</div>
+                  <ul class="tight">{% for j in c.jobs %}<li><a href="/job/{{ j.id }}#fit">{{ j.title }}</a> <span class="muted">· {{ j.company }}{% if j.fit is not none %} · fit {{ j.fit }}/10{% endif %}</span></li>{% endfor %}</ul>
+                </div>
+              </details>
+            </li>
+          {% endfor %}
+          </ol>
+        </div>
+        <aside class="tile learn-next">
+          <h3>Do these next</h3>
+          <ol class="tight">{% for s in analysis.learn_next %}<li>{{ s }}</li>{% endfor %}</ol>
+        </aside>
+      </div>
+      <p class="muted" style="margin-top:12px">From {{ analysis.total_jobs }} fit checks, analysed {{ analysis.at | ago }}. Click a gap for how to close it and the jobs it affects.</p>
+    {% elif not running %}
+      {% if sources.full or sources.quick %}
+      <p class="muted">Claude reads the gaps from your {{ sources.full }} full fit check{{ 's' if sources.full != 1 }} and {{ sources.quick }} quick rating{{ 's' if sources.quick != 1 }}, groups the ones that mean the same thing, and ranks them by how many jobs each would open, with a plan for what to learn or prove first.</p>
+      {% else %}
+      <p class="muted">No fit checks yet. Rate jobs with Claude from the <a href="/">job list</a> or run a full fit check on a job; their gaps show up here.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Skills your jobs ask for that your profile doesn't mention</h2>
+    <p class="muted" style="margin-top:-6px">Counted from the text of your {{ keyword_gaps.n }} jobs that aren't hidden, no Claude needed. If you do have one of these, add it to your profile so tailored CVs can use it.</p>
+    {% if keyword_gaps.missing %}
+    {% set top = keyword_gaps.missing[0].count %}
+    <div class="bars">
+      {% for s in keyword_gaps.missing %}
+      <details class="bar-row">
+        <summary>
+          <span class="bar-label">{{ s.term }}</span>
+          <span class="meter"><span style="width:{{ (100 * s.count / top) | round }}%" title="{{ s.term }}: {{ s.count }} jobs"></span></span>
+          <span class="bar-value">{{ s.count }} <span class="muted">({{ s.pct }}%)</span></span>
+          <span class="trend">{% if s.trend == 'rising' %}↑ rising{% elif s.trend == 'falling' %}↓ falling{% endif %}</span>
+        </summary>
+        <ul class="tight bar-jobs">{% for j in s.jobs[:12] %}<li><a href="/job/{{ j.id }}">{{ j.title }}</a> <span class="muted">· {{ j.company }}</span></li>{% endfor %}
+          {% if s.jobs | length > 12 %}<li class="muted">and {{ s.jobs | length - 12 }} more</li>{% endif %}</ul>
+      </details>
+      {% endfor %}
+    </div>
+    {% else %}<p class="muted">Every tech term in your jobs is in your profile.</p>{% endif %}
+  </div>
+</section>
+
+{# ---------- Market ---------- #}
+<section class="tab-panel" data-tab="market">
+  <div class="row" style="justify-content:space-between;margin-bottom:14px">
+    <div class="tabs">
+      {% for key, (label, _) in periods.items() %}<a href="/insights?period={{ key }}#market" class="{{ 'on' if period == key }}">{{ label }}</a>{% endfor %}
+    </div>
+    <span class="muted">By the date a job was posted (or found, if the board gives no date). Hidden jobs count too: they're still the market.</span>
+  </div>
+
+  {% set sal = market.salaries %}
+  <div class="stats">
+    <div class="stat"><div class="k">Jobs</div><div class="v">{{ market.n }}</div><div class="sub">collected in this period</div></div>
+    <div class="stat"><div class="k">State a salary</div><div class="v">{{ sal.n }}</div><div class="sub">{{ ((100 * sal.n / market.n) | round | int) if market.n else 0 }}% of them</div></div>
+    <div class="stat"><div class="k">Median salary</div><div class="v">{{ ('€' ~ '%.1f' % (sal.median / 1000) ~ 'k') if sal.median else '–' }}</div><div class="sub">per month, gross</div></div>
+    <div class="stat"><div class="k">Seniority</div><div class="v" style="font-size:18px">{{ market.levels.junior }} · {{ market.levels.mid }} · {{ market.levels.senior }}</div><div class="sub">junior · mid · senior</div></div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <h2>Most requested skills</h2>
+      <p class="muted" style="margin-top:-6px">Share of jobs that mention each one. Practices like agile or "cloud" are left out.</p>
+      {% if market.skills %}{% set top = market.skills[0].count %}
+      <div class="bars">
+        {% for s in market.skills %}
+        <div class="bar-row plain">
+          <span class="bar-label">{{ s.term }}</span>
+          <span class="meter"><span style="width:{{ (100 * s.count / top) | round }}%" title="{{ s.term }}: {{ s.count }} of {{ market.n }} jobs"></span></span>
+          <span class="bar-value">{{ s.pct }}%</span>
+          <span class="have {{ 'yes' if s.have else 'no' }}">{{ '✓ you have it' if s.have else '✗ not in profile' }}</span>
+          <span class="trend">{% if s.trend == 'rising' %}↑{% elif s.trend == 'falling' %}↓{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="muted" style="margin-top:10px">↑ / ↓: asked for more / less often in the last 4 weeks than before.</p>
+      {% else %}<p class="muted">No jobs in this period.</p>{% endif %}
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Salaries</h2>
+        <p class="muted" style="margin-top:-6px">EUR per month, gross, from the {{ sal.n }} job{{ 's' if sal.n != 1 }} that state one. Each dot is a job; the line is the median.</p>
+        {% if sal.n %}
+        {% for title, groups in [("By seniority", sal.levels), ("By place", sal.cities)] %}{% if groups %}
+        <h3 style="margin-top:14px">{{ title }}</h3>
+        <div class="strips">
+          {% for g in groups %}
+          <div class="strip-row">
+            <span class="bar-label">{{ g.label }} <span class="muted">({{ g.n }})</span></span>
+            <span class="strip">
+              {% for v in g.points %}<span class="dot" style="left:{{ (100 * v / sal.axis_max) | round(1) }}%" title="{{ g.label }}: €{{ '{:,.0f}'.format(v) }}/month"></span>{% endfor %}
+              <span class="median" style="left:{{ (100 * g.median / sal.axis_max) | round(1) }}%" title="Median €{{ '{:,.0f}'.format(g.median) }}/month"></span>
+            </span>
+            <span class="bar-value">€{{ '%.1f' % (g.median / 1000) }}k</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}{% endfor %}
+        <div class="strip-axis"><span>€0</span><span>€{{ '%.0f' % (sal.axis_max / 2000) }}k</span><span>€{{ '%.0f' % (sal.axis_max / 1000) }}k</span></div>
+        {% if sal.n < 10 %}<p class="muted" style="margin-top:10px">Few jobs state a salary, so treat these as rough.</p>{% endif %}
+        {% else %}<p class="muted">None of the jobs in this period states a salary.</p>{% endif %}
+      </div>
+
+      <div class="card">
+        <h2>Jobs posted per week</h2>
+        {% set wmax = market.weekly | map(attribute='count') | max %}
+        <div class="cols" role="img" aria-label="Jobs posted per week over the last 12 weeks">
+          {% for w in market.weekly %}
+          <div class="col-w" title="Week of {{ w.start }}: {{ w.count }} job{{ 's' if w.count != 1 }}">
+            <span class="col-v">{{ w.count if w.count else '' }}</span>
+            <span class="col-bar" style="height:{{ ((100 * w.count / wmax) if wmax else 0) | round }}%"></span>
+            <span class="col-x">{{ w.start if loop.index0 % 2 == 0 or loop.last else '' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="muted" style="margin-top:8px">Depends on how often your searches run, so it shows your pipeline of postings more than the whole market.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .lead { font-size:15.5px; max-width:80ch; }
+  .warn-tile { margin-bottom:12px; border-color:var(--warn); background:var(--warn-soft); color:var(--warn); }
+  .gap-layout { display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:20px; align-items:start; margin-top:8px; }
+  @media (max-width:900px) { .gap-layout { grid-template-columns:minmax(0, 1fr); } }
+  ol.gap-list { list-style:none; margin:0; padding:0; counter-reset:gap; }
+  ol.gap-list > li { counter-increment:gap; border-bottom:1px solid var(--line); }
+  ol.gap-list > li:last-child { border-bottom:0; }
+  ol.gap-list summary { display:flex; align-items:center; gap:8px 12px; flex-wrap:wrap; padding:11px 0; cursor:pointer; }
+  ol.gap-list summary::after { content:counter(gap); order:-1; flex:none; width:22px; height:22px; border-radius:50%; display:grid; place-items:center;
+    font-size:12px; font-weight:700; background:var(--chip); color:var(--muted); }
+  .gap-name { font-weight:600; flex:1 1 220px; }
+  .pill.kind-proof { background:var(--accent-soft); color:var(--accent-soft-ink); margin:0; }
+  .pill.kind-learn { background:var(--warn-soft); color:var(--warn); margin:0; }
+  .gap-meter { display:inline-flex; align-items:center; gap:8px; }
+  .gap-meter .meter { width:90px; }
+  .sev { font-size:12.5px; font-weight:600; white-space:nowrap; }
+  .gap-body { padding:0 0 12px 34px; }
+  .learn-next { background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 30%, transparent); }
+  .learn-next h3 { color:var(--accent-soft-ink); }
+
+  .meter { display:block; height:10px; background:var(--chip); border-radius:4px; overflow:hidden; }
+  .meter > span { display:block; height:100%; background:var(--accent); border-radius:0 4px 4px 0; min-width:2px; }
+  .bars { display:flex; flex-direction:column; max-width:860px; }
+  .bar-row > summary, .bar-row.plain { display:grid; grid-template-columns:minmax(90px, 140px) minmax(60px, 1fr) 72px 70px; align-items:center; gap:10px; padding:5px 0; }
+  .bar-row > summary { cursor:pointer; }
+  .bar-row > summary::before { display:none; }
+  .bar-row > summary:hover .bar-label { color:var(--accent); }
+  .bar-row.plain { grid-template-columns:minmax(80px, 120px) minmax(60px, 1fr) 40px 104px 14px; }
+  .bar-label { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-value { font-variant-numeric:tabular-nums; font-weight:600; text-align:right; white-space:nowrap; }
+  .trend { font-size:12.5px; color:var(--muted); white-space:nowrap; }
+  .have { font-size:12px; white-space:nowrap; }
+  .have.yes { color:var(--good); } .have.no { color:var(--muted); }
+  .bar-jobs { margin:0 0 8px 6px; }
+
+  .strips { display:flex; flex-direction:column; gap:4px; }
+  .strip-row { display:grid; grid-template-columns:110px minmax(80px, 1fr) 56px; align-items:center; gap:10px; min-height:26px; }
+  .strip { position:relative; height:22px; border-bottom:1px solid var(--line); }
+  .strip .dot { position:absolute; top:50%; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; background:var(--accent);
+    box-shadow:0 0 0 2px var(--card); opacity:.85; }
+  .strip .median { position:absolute; top:1px; bottom:1px; width:2px; margin-left:-1px; background:var(--ink); border-radius:1px; }
+  .strip-axis { display:flex; justify-content:space-between; margin:4px 66px 0 120px; font-size:11.5px; color:var(--muted); }
+
+  .cols { display:grid; grid-template-columns:repeat(12, 1fr); gap:4px; height:170px; align-items:end; padding-top:6px; }
+  .col-w { display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:100%; min-width:0; }
+  .col-bar { width:70%; max-width:28px; background:var(--accent); border-radius:4px 4px 0 0; min-height:1px; }
+  .col-v { font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:2px; }
+  .col-x { font-size:10.5px; color:var(--muted); height:16px; margin-top:4px; white-space:nowrap; }
+</style>
+{% endblock %}

@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel, Field
 
-from . import assistant, db, settings, tasks
+from . import assistant, db, settings, taste, tasks
 from .models import Criteria
 from .search import run_search
 from .sources import ensure_description
@@ -174,6 +174,7 @@ def run_saved(
         last_job_ids=found,
         last_new_ids=new_ids,
     )
+    taste.recompute()
     if scheduled and search.notify and new_ids:
         tasks.notify(f"{search.name}: {len(new_ids)} new job{'s' if len(new_ids) != 1 else ''} - http://127.0.0.1:8000/?unseen=1")
     prefs = load_prefs()
@@ -211,6 +212,7 @@ def rate_jobs(job_ids: list[str], progress: tasks.Progress | None = None) -> int
     if not profile or not job_ids:
         return 0
     batches = [job_ids[i : i + RATE_BATCH] for i in range(0, len(job_ids), RATE_BATCH)]
+    preferences = taste.for_prompt(profile)
     done = 0
     errors: list[str] = []
     if progress:
@@ -228,7 +230,7 @@ def rate_jobs(job_ids: list[str], progress: tasks.Progress | None = None) -> int
                 jobs.append(found[0])
         by_id = {j.id: j for j in jobs}
         rated = 0
-        for fit in assistant.quick_fit(profile, jobs).fits:
+        for fit in assistant.quick_fit(profile, jobs, preferences).fits:
             if fit.job_id in by_id:
                 rating = max(1, min(10, fit.rating))
                 db.set_fit(fit.job_id, rating, {"strong": fit.strong, "missing": fit.missing, "verdict": fit.verdict, "quick": True})

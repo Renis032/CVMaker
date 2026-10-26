@@ -2,53 +2,151 @@
 {% block title %}CV for {{ job.title if job else role.name if role else "role" }} - CVMaker{% endblock %}
 {% import "_macros.html" as m %}
 {% block content %}
+{% set unsupported = ((diff.unsupported_skills | length) + (diff.unsupported_numbers | length)) if diff else 0 %}
+{% if unsupported %}{% set next = ("Check " ~ unsupported ~ " fact" ~ ("s" if unsupported != 1 else "") ~ " not found in your profile", "#changes", "The CV may only contain facts from your profile.") %}
+{% elif pages > 1 %}{% set next = ("Get it onto one page", "#preview", "It runs to " ~ pages ~ " pages. Shrink the font or let Claude shorten it.") %}
+{% elif not ratings %}{% set next = ("Rate it against your original CV", "#rating", "Scores both on the same scale and checks the keywords and PDF text.") %}
+{% elif job and not is_sent %}{% set next = ("Apply with this CV", job.url or "#", "Then click \"I sent this CV\" so the application is tracked.") %}
+{% elif job and not letters %}{% set next = ("Write a cover letter", "/job/" ~ job.id ~ "#docs", "Optional, based on this CV.") %}
+{% elif job %}{% set next = ("Track replies on the job", "/job/" ~ job.id ~ "#application", "") %}
+{% else %}{% set next = ("", "", "") %}{% endif %}
+
 <div class="card">
-  <h1>{% if job %}CV for {{ job.title }} · {{ job.company }}{% elif role %}General CV · {{ role.name }}{% else %}CV #{{ cv_id }}{% endif %}</h1>
-  <div class="row">
-    <a class="btn" href="/cv/{{ cv_id }}/pdf">Download PDF</a>
-    {% if job %}
-    <a class="btn secondary" href="/job/{{ job.id }}">Back to job</a>
-    {% if job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
-    {% else %}<a class="btn secondary" href="/roles">Back to role profiles</a>{% endif %}
-    {% if job %}<a class="btn secondary" href="/job/{{ job.id }}#letter">Write a cover letter</a>{% endif %}
-    {% if job %}{% if is_sent %}<span class="pill stage stage-applied">✓ recorded as the CV you sent</span>{% else %}
-    <form method="post" action="/cv/{{ cv_id }}/sent" style="display:inline"><button class="secondary" type="submit" title="Records this CV on the application and moves the job to Applied if it isn't yet">I sent this CV</button></form>{% endif %}{% endif %}
+  <a class="muted" href="{{ '/job/' ~ job.id ~ '#docs' if job else '/roles' }}">← {{ 'Back to the job' if job else 'Role profiles' }}</a>
+  <h1 style="margin:6px 0 4px">{% if job %}CV #{{ cv_id }} for {{ job.title }}{% elif role %}General CV · {{ role.name }}{% else %}CV #{{ cv_id }}{% endif %}</h1>
+  <div class="facts">
+    {% if job %}<span><strong>{{ job.company }}</strong></span>{% endif %}
+    <span><strong class="{{ 'ok' if pages == 1 else 'no' }}">{{ pages }} page{{ 's' if pages != 1 }}</strong>{% if layout.font_used %} <span class="muted">at {{ layout.font_used }} pt</span>{% endif %}</span>
+    <span class="muted">Claude's match estimate {{ t.match_score }}/100</span>
+    <span class="muted">{{ pdf_name }}</span>
+    {% if is_sent %}<span class="pill stage stage-applied">✓ recorded as the CV you sent</span>{% endif %}
   </div>
-  <div class="muted" style="margin-top:8px">{{ pdf_name }} · Claude's match estimate while tailoring: <strong>{{ t.match_score }}/100</strong>
-    · <strong class="{{ 'ok' if pages == 1 else 'no' }}">{{ pages }} page{{ 's' if pages != 1 }}</strong>{% if layout.font_used %} at {{ layout.font_used }} pt{% endif %}</div>
   {% if saved %}<div class="pill new" style="margin-top:8px">Saved - PDF updated</div>{% endif %}
+  <div class="row" style="margin-top:14px">
+    <a class="btn" href="/cv/{{ cv_id }}/pdf">Download PDF</a>
+    {% if job and job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
+    {% if job and not is_sent %}
+    <form method="post" action="/cv/{{ cv_id }}/sent" style="display:inline"><button class="secondary" type="submit" title="Records this CV on the application and moves the job to Applied if it isn't yet">I sent this CV</button></form>{% endif %}
+    {% if next[0] %}
+    <a class="next-step" href="{{ next[1] or '#' }}"{% if next[1].startswith('http') %} target="_blank" rel="noopener"{% endif %}>
+      <span class="k">Next step</span> <strong>{{ next[0] }}</strong>{% if next[2] %} <span class="muted">{{ next[2] }}</span>{% endif %} <span aria-hidden="true">→</span>
+    </a>{% endif %}
+  </div>
 </div>
 
-{% if diff and (diff.unsupported_skills or diff.unsupported_numbers) %}
-<div class="card" style="border-color:var(--bad);box-shadow:inset 4px 0 0 var(--bad), var(--shadow)">
-  <h2>Check these: not found in your profile</h2>
-  <p class="muted">The CV may only contain facts from your profile. These could not be found there; fix them in the editor below, or add them to your profile if they are true.</p>
-  {% if diff.unsupported_skills %}<div><strong>Skills:</strong> {% for x in diff.unsupported_skills %}<span class="pill" style="background:var(--bad-soft);color:var(--bad)">{{ x }}</span>{% endfor %}</div>{% endif %}
-  {% if diff.unsupported_numbers %}<ul class="tight">{% for n, text in diff.unsupported_numbers %}<li><strong>{{ n }}</strong> in “{{ text | truncate(140) }}”</li>{% endfor %}</ul>{% endif %}
-</div>
-{% endif %}
-
-<div class="card" id="layout">
+{% set vs = request.query_params.get('vs') or ('profile' if 'profile' in ratings else (ratings | list | first)) %}
+{% set r = ratings.get(vs) %}
+<nav class="page-tabs" aria-label="CV sections" data-alias='{"layout": "preview", "requirements": "preview"}'>
+  <a href="#preview" data-tab="preview">Preview</a>
+  <a href="#changes" data-tab="changes">What changed
+    {% if unsupported %}<span class="tb warn-tb">{{ unsupported }} to check</span>{% elif diff %}<span class="tb">{{ diff.counts.reworded + diff.counts.new }} edits</span>{% endif %}</a>
+  <a href="#edit" data-tab="edit">Edit</a>
+  <a href="#rating" data-tab="rating">Rating
+    {% if active.cvrate %}<span class="spin"></span>{% elif r %}{% set d = r.comparison.tailored.overall - r.comparison.baseline.overall %}<span class="tb {{ 'f-hi' if d > 0 }}">{{ r.comparison.tailored.overall }} ({{ '%+d' % d }})</span>{% endif %}</a>
+</nav>
+<section class="tab-panel" data-tab="preview">
+  <div class="cv-split">
+    <div class="card">
+      <iframe class="cv" src="/cv/{{ cv_id }}/preview" title="CV preview"></iframe>
+    </div>
+    <aside>
+<div class="card">
   <div class="section-title"><h2>Layout</h2>
     <span class="muted">{% if pages == 1 %}Fits on one page.{% else %}Runs over one page.{% endif %}</span></div>
   {% if active.onepage %}{{ m.running(active.onepage, "Claude is shortening it to one page") }}{% endif %}
-  <form method="post" action="/cv/{{ cv_id }}/layout" class="row">
+  <form method="post" action="/cv/{{ cv_id }}/layout" class="stack">
     <label class="muted" style="margin:0" for="l-font">Font size</label>
     <select id="l-font" name="font" style="width:auto">
       <option value="auto" {% if not layout.font_pt %}selected{% endif %}>auto (shrinks a little to fit one page)</option>
       {% for f in font_choices %}<option value="{{ f }}" {% if layout.font_pt == f %}selected{% endif %}>{{ f }} pt{{ ' (default)' if f == 9.6 }}</option>{% endfor %}
     </select>
     <label class="check"><input type="checkbox" name="one_page" value="true" {% if layout.one_page %}checked{% endif %}> Keep it to one page (Claude shortens it if needed)</label>
-    <button class="secondary" type="submit">Apply</button>
+    <button class="secondary" type="submit">Save layout</button>
     {% if pages > 1 and not active.onepage %}
     <button class="secondary" type="submit" formaction="/cv/{{ cv_id }}/one-page">Shorten to one page with Claude</button>
     {% endif %}
   </form>
 </div>
 
-{% set vs = request.query_params.get('vs') or ('profile' if 'profile' in ratings else (ratings | list | first)) %}
-{% set r = ratings.get(vs) %}
-<div class="card" id="rating">
+
+<div>
+  <div class="card">
+    <h2>Requirements you match</h2>
+    <ul class="tight">{% for s in t.matched_requirements %}<li>{{ s }}</li>{% endfor %}</ul>
+    <h2 style="margin-top:14px">Requirements your profile doesn't show</h2>
+    {% if t.missing_requirements %}
+      <ul class="tight">{% for s in t.missing_requirements %}<li>{{ s }}</li>{% endfor %}</ul>
+      <p class="muted">These were left out because they aren't in your profile. If you do have them, add them through the interview and regenerate.</p>
+    {% else %}<p class="muted">None.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>What was changed</h2>
+    <ul class="tight">{% for s in t.changes_made %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% if t.questions_to_strengthen %}
+    <h2 style="margin-top:14px">Questions that could strengthen it</h2>
+    <ul class="tight">{% for s in t.questions_to_strengthen %}<li>{{ s }}</li>{% endfor %}</ul>
+    <a class="btn secondary" href="/interview{% if job %}?job_id={{ job.id }}{% endif %}">Answer questions, then regenerate</a>
+    {% endif %}
+  </div>
+</div>
+
+
+    </aside>
+  </div>
+</section>
+<section class="tab-panel" data-tab="changes">
+{% if diff and (diff.unsupported_skills or diff.unsupported_numbers) %}
+<div class="card" style="border-color:var(--bad);box-shadow:inset 4px 0 0 var(--bad), var(--shadow)">
+  <h2>Check these: not found in your profile</h2>
+  <p class="muted">The CV may only contain facts from your profile. These could not be found there; fix them in the <a href="#edit">editor</a>, or add them to your profile if they are true.</p>
+  {% if diff.unsupported_skills %}<div><strong>Skills:</strong> {% for x in diff.unsupported_skills %}<span class="pill" style="background:var(--bad-soft);color:var(--bad)">{{ x }}</span>{% endfor %}</div>{% endif %}
+  {% if diff.unsupported_numbers %}<ul class="tight">{% for n, text in diff.unsupported_numbers %}<li><strong>{{ n }}</strong> in “{{ text | truncate(140) }}”</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endif %}
+
+
+{% if diff %}{% set c = diff.counts %}
+<div class="card">
+  <div class="section-title"><h2>What changed from your base CV</h2>
+    <span class="muted">{{ c.same }} bullets kept · {{ c.reworded }} reworded · {{ c.new }} new · {{ c.dropped }} dropped</span></div>
+  <p class="muted" style="margin-top:-4px"><del>struck through</del> = removed from your wording, <ins>highlighted</ins> = added. Measured by comparing texts; "new" bullets are worth a check against your profile.</p>
+  {% if diff.headline %}<h3>Headline</h3><p><del>{{ diff.headline[0] }}</del> → <ins>{{ diff.headline[1] }}</ins></p>{% endif %}
+  {% if diff.summary %}<h3>Summary</h3><p class="diff">{{ diff.summary }}</p>{% endif %}
+  {% for title, section, name in [("Experience", diff.experience, "exp"), ("Projects", diff.projects, "proj")] %}
+    <h3 style="margin-top:12px">{{ title }}{% if section.reordered %} <span class="pill">reordered</span>{% endif %}</h3>
+    {% for e in section.entries %}
+    <details class="tile" {% if e.added or e.dropped or (e.bullets | rejectattr('kind', 'equalto', 'same') | list) %}open{% endif %}>
+      <summary><strong>{{ e.item.title ~ ' · ' ~ e.item.company if name == 'exp' else e.item.name }}</strong>
+        {% if e.added %}<span class="pill" style="background:var(--warn-soft);color:var(--warn)">not in base CV</span>{% endif %}</summary>
+      <ul class="tight diff">
+        {% for b in e.bullets %}
+        <li>{% if b.kind == 'same' %}<span class="muted">{{ b.text | md_bold }}</span>{% if b.moved %} <span class="pill">moved</span>{% endif %}
+            {% elif b.kind == 'reworded' %}{{ b.diff }}{% if b.moved %} <span class="pill">moved</span>{% endif %}
+            {% else %}<ins>{{ b.text | md_bold }}</ins> <span class="pill" style="background:var(--warn-soft);color:var(--warn)">new</span>{% endif %}</li>
+        {% endfor %}
+        {% for d in e.dropped %}<li><del>{{ d | md_bold }}</del> <span class="pill">dropped</span></li>{% endfor %}
+      </ul>
+    </details>
+    {% endfor %}
+    {% for r in section.removed %}<div class="tile"><del>{{ r.title ~ ' · ' ~ r.company if name == 'exp' else r.name }}</del> <span class="pill">left out</span></div>{% endfor %}
+  {% endfor %}
+  {% if diff.skills_added or diff.skills_removed or diff.soft_removed %}
+  <h3 style="margin-top:12px">Skills</h3>
+  {% if diff.skills_added %}<div>Added: {% for x in diff.skills_added %}<ins>{{ x }}</ins> {% endfor %}</div>{% endif %}
+  {% if diff.skills_removed %}<div>Left out: {% for x in diff.skills_removed %}<del>{{ x }}</del> {% endfor %}</div>{% endif %}
+  {% if diff.soft_removed %}<div>Soft skills left out: {% for x in diff.soft_removed %}<del>{{ x }}</del> {% endfor %}</div>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+
+{% if not diff %}<div class="card"><p class="muted">Import your CV into your profile to see what changed.</p></div>{% endif %}
+</section>
+<section class="tab-panel" data-tab="edit">
+
+</section>
+<section class="tab-panel" data-tab="rating">
+<div class="card">
   <div class="row" style="justify-content:space-between">
     <h2 style="margin:0">Rate this CV against {% if r %}{{ r.label }}{% else %}another version{% endif %}</h2>
     {% if active.cvrate %}{{ m.running(active.cvrate, "Scoring both versions and checking the PDFs") }}{% else %}
@@ -128,98 +226,16 @@
   {% endif %}
 </div>
 
-<div class="two">
-  <div class="card">
-    <h2>Requirements you match</h2>
-    <ul class="tight">{% for s in t.matched_requirements %}<li>{{ s }}</li>{% endfor %}</ul>
-    <h2 style="margin-top:14px">Requirements your profile doesn't show</h2>
-    {% if t.missing_requirements %}
-      <ul class="tight">{% for s in t.missing_requirements %}<li>{{ s }}</li>{% endfor %}</ul>
-      <p class="muted">These were left out because they aren't in your profile. If you do have them, add them through the interview and regenerate.</p>
-    {% else %}<p class="muted">None.</p>{% endif %}
-  </div>
-  <div class="card">
-    <h2>What was changed</h2>
-    <ul class="tight">{% for s in t.changes_made %}<li>{{ s }}</li>{% endfor %}</ul>
-    {% if t.questions_to_strengthen %}
-    <h2 style="margin-top:14px">Questions that could strengthen it</h2>
-    <ul class="tight">{% for s in t.questions_to_strengthen %}<li>{{ s }}</li>{% endfor %}</ul>
-    <a class="btn secondary" href="/interview{% if job %}?job_id={{ job.id }}{% endif %}">Answer questions, then regenerate</a>
-    {% endif %}
-  </div>
-</div>
 
-{% if diff %}{% set c = diff.counts %}
-<div class="card" id="changes">
-  <div class="section-title"><h2>What changed from your base CV</h2>
-    <span class="muted">{{ c.same }} bullets kept · {{ c.reworded }} reworded · {{ c.new }} new · {{ c.dropped }} dropped</span></div>
-  <p class="muted" style="margin-top:-4px"><del>struck through</del> = removed from your wording, <ins>highlighted</ins> = added. Measured by comparing texts; "new" bullets are worth a check against your profile.</p>
-  {% if diff.headline %}<h3>Headline</h3><p><del>{{ diff.headline[0] }}</del> → <ins>{{ diff.headline[1] }}</ins></p>{% endif %}
-  {% if diff.summary %}<h3>Summary</h3><p class="diff">{{ diff.summary }}</p>{% endif %}
-  {% for title, section, name in [("Experience", diff.experience, "exp"), ("Projects", diff.projects, "proj")] %}
-    <h3 style="margin-top:12px">{{ title }}{% if section.reordered %} <span class="pill">reordered</span>{% endif %}</h3>
-    {% for e in section.entries %}
-    <details class="tile" {% if e.added or e.dropped or (e.bullets | rejectattr('kind', 'equalto', 'same') | list) %}open{% endif %}>
-      <summary><strong>{{ e.item.title ~ ' · ' ~ e.item.company if name == 'exp' else e.item.name }}</strong>
-        {% if e.added %}<span class="pill" style="background:var(--warn-soft);color:var(--warn)">not in base CV</span>{% endif %}</summary>
-      <ul class="tight diff">
-        {% for b in e.bullets %}
-        <li>{% if b.kind == 'same' %}<span class="muted">{{ b.text | md_bold }}</span>{% if b.moved %} <span class="pill">moved</span>{% endif %}
-            {% elif b.kind == 'reworded' %}{{ b.diff }}{% if b.moved %} <span class="pill">moved</span>{% endif %}
-            {% else %}<ins>{{ b.text | md_bold }}</ins> <span class="pill" style="background:var(--warn-soft);color:var(--warn)">new</span>{% endif %}</li>
-        {% endfor %}
-        {% for d in e.dropped %}<li><del>{{ d | md_bold }}</del> <span class="pill">dropped</span></li>{% endfor %}
-      </ul>
-    </details>
-    {% endfor %}
-    {% for r in section.removed %}<div class="tile"><del>{{ r.title ~ ' · ' ~ r.company if name == 'exp' else r.name }}</del> <span class="pill">left out</span></div>{% endfor %}
-  {% endfor %}
-  {% if diff.skills_added or diff.skills_removed or diff.soft_removed %}
-  <h3 style="margin-top:12px">Skills</h3>
-  {% if diff.skills_added %}<div>Added: {% for x in diff.skills_added %}<ins>{{ x }}</ins> {% endfor %}</div>{% endif %}
-  {% if diff.skills_removed %}<div>Left out: {% for x in diff.skills_removed %}<del>{{ x }}</del> {% endfor %}</div>{% endif %}
-  {% if diff.soft_removed %}<div>Soft skills left out: {% for x in diff.soft_removed %}<del>{{ x }}</del> {% endfor %}</div>{% endif %}
-  {% endif %}
-</div>
-{% endif %}
-
-<div class="two">
-  <div class="card" id="edit">
-    <h2>Edit this CV</h2>
-    <p class="muted">One bullet per line; **double asterisks** make text bold. Saving re-renders the PDF (and clears its rating, since the CV changed).</p>
-    <form method="post" action="/cv/{{ cv_id }}/edit">
-      <input type="hidden" name="mode" value="fields">
-      <label for="e-head">Headline</label><input id="e-head" type="text" name="headline" value="{{ t.cv.headline }}">
-      <label for="e-sum">Summary</label><textarea id="e-sum" name="summary" style="min-height:110px">{{ t.cv.summary }}</textarea>
-      {% for r in t.cv.experience %}
-      <label for="e-exp{{ loop.index0 }}">{{ r.title }} · {{ r.company }}</label>
-      <textarea id="e-exp{{ loop.index0 }}" name="exp_{{ loop.index0 }}" style="min-height:{{ 40 + 44 * (r.bullets | length) }}px">{{ r.bullets | join('\n') }}</textarea>
-      {% endfor %}
-      {% for p in t.cv.projects %}
-      <label for="e-proj{{ loop.index0 }}">Project: {{ p.name }}</label>
-      <textarea id="e-proj{{ loop.index0 }}" name="proj_{{ loop.index0 }}" style="min-height:{{ 40 + 44 * (p.bullets | length) }}px">{{ p.bullets | join('\n') }}</textarea>
-      {% endfor %}
-      <label for="e-skills">Skills (one group per line: Category: a, b, c)</label>
-      <textarea id="e-skills" name="skills" style="min-height:120px">{{ skills_text }}</textarea>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-        <div><label for="e-soft">Soft skills</label><textarea id="e-soft" name="soft_skills">{{ t.cv.soft_skills | join('\n') }}</textarea></div>
-        <div><label for="e-lang">Languages</label><textarea id="e-lang" name="languages">{{ t.cv.languages | join('\n') }}</textarea></div>
-        <div><label for="e-int">Interests</label><textarea id="e-int" name="interests">{{ t.cv.interests | join('\n') }}</textarea></div>
-      </div>
-      <div style="margin-top:10px"><button type="submit">Save & update PDF</button></div>
-    </form>
-    <details style="margin-top:14px">
-      <summary class="muted" style="cursor:pointer;font-weight:600">Edit everything as JSON (order of roles and projects, education, contact)</summary>
-      <form method="post" action="/cv/{{ cv_id }}/edit">
-        <input type="hidden" name="mode" value="json">
-        <textarea name="cv_json" aria-label="CV JSON" style="min-height:520px;font-family:ui-monospace,monospace;font-size:12px">{{ cv_json }}</textarea>
-        <div style="margin-top:8px"><button class="secondary" type="submit">Save JSON & update PDF</button></div>
-      </form>
-    </details>
-  </div>
-  <div class="card">
-    <h2>Preview</h2>
-    <iframe class="cv" src="/cv/{{ cv_id }}/preview"></iframe>
-  </div>
-</div>
+</section>
+<style>
+  .facts { display:flex; flex-wrap:wrap; gap:4px 16px; align-items:center; font-size:14.5px; }
+  .facts .pill { margin:0; }
+  .cv-split { display:grid; grid-template-columns:minmax(0, 1fr) 360px; gap:18px; align-items:start; }
+  @media (max-width:980px) { .cv-split { grid-template-columns:minmax(0, 1fr); } }
+  .cv-split > .card { padding:14px; }
+  .stack { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+  .stack label.check { align-self:flex-start; }
+  .page-tabs .tb.warn-tb { background:var(--bad-soft); color:var(--bad); }
+</style>
 {% endblock %}

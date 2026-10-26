@@ -219,6 +219,15 @@
   ol.timeline { list-style:none; margin:12px 0 4px; padding:0 0 0 14px; border-left:2px solid var(--line); }
   ol.timeline li { margin:0 0 6px; position:relative; } ol.timeline li::before { content:""; position:absolute; left:-20px; top:7px; width:10px; height:10px; border-radius:50%; background:var(--line-strong); }
 
+  details.hide-menu { position:relative; display:inline-block; }
+  details.hide-menu > summary { list-style:none; } details.hide-menu > summary::before { display:none; }
+  details.hide-menu > summary.icon { width:32px; height:32px; padding:0; }
+  details.hide-menu .menu { position:absolute; right:0; top:calc(100% + 4px); z-index:30; background:var(--card); border:1px solid var(--line-strong); border-radius:var(--radius-sm); box-shadow:var(--shadow-lg); padding:6px 0; min-width:250px; display:flex; flex-direction:column; text-align:left; }
+  details.hide-menu .menu button { background:none; color:var(--ink); border:0; border-radius:0; justify-content:flex-start; font-weight:500; padding:7px 12px; font-size:13.5px; }
+  details.hide-menu .menu button:hover { background:var(--chip); filter:none; }
+  .taste { display:inline-block; font-size:11.5px; font-weight:600; padding:1px 7px; border-radius:6px; margin:3px 4px 0 0; }
+  .taste.up { background:var(--good-soft); color:var(--good); } .taste.down { background:var(--bad-soft); color:var(--bad); }
+
   del { background:var(--bad-soft); color:var(--bad); text-decoration:line-through; border-radius:3px; padding:0 2px; }
   ins { background:var(--good-soft); color:var(--good); text-decoration:none; border-radius:3px; padding:0 2px; }
 
@@ -226,6 +235,34 @@
     .card { padding:16px; border-radius:12px; } .table-wrap { margin:0 -16px; padding:0 16px; }
     h1 { font-size:20px; }
   }
+
+  /* page tabs (one section of a long page at a time), next-step box and shared detail-page pieces */
+  .next-step { margin-left:auto; display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; padding:8px 14px; border-radius:var(--radius-sm);
+    background:var(--accent-soft); color:var(--accent-soft-ink); border:1px solid color-mix(in srgb, var(--accent) 30%, transparent); max-width:100%; }
+  .next-step:hover { text-decoration:none; border-color:var(--accent); }
+  .next-step .k { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; opacity:.8; }
+  .next-step .muted { color:inherit; opacity:.8; }
+
+  .page-tabs { position:sticky; top:var(--head-h, 53px); z-index:10; display:flex; gap:2px; overflow-x:auto; scrollbar-width:none;
+    background:var(--bg); border-bottom:1px solid var(--line); margin:0 0 18px; padding-top:4px; }
+  .page-tabs::-webkit-scrollbar { display:none; }
+  .page-tabs a { display:inline-flex; align-items:center; gap:7px; padding:10px 14px; color:var(--muted); font-weight:500; white-space:nowrap;
+    border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .page-tabs a:hover { color:var(--ink); text-decoration:none; }
+  .page-tabs a.on { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+  .page-tabs .tb { font-size:11.5px; font-weight:600; padding:1px 7px; border-radius:999px; background:var(--chip); color:var(--muted); }
+  .page-tabs .tb.f-hi { background:var(--good-soft); color:var(--good); } .page-tabs .tb.f-mid { background:var(--warn-soft); color:var(--warn); }
+  .tabs-on .tab-panel:not(.on) { display:none; }
+
+  .score.big { font-size:30px; line-height:1; }
+  .verdict { display:flex; gap:16px; align-items:center; margin-bottom:18px; padding:14px 16px; border-radius:var(--radius-sm); background:var(--sunken); border:1px solid var(--line); }
+  .verdict p { margin:0; font-size:15px; }
+  .warn-card { border-color:var(--warn); box-shadow:inset 4px 0 0 var(--warn), var(--shadow); }
+  ul.doc-list { list-style:none; margin:0; padding:0; }
+  ul.doc-list li { padding:9px 0; border-bottom:1px solid var(--line); }
+  ul.doc-list li:last-child { border-bottom:0; }
+  ol.tight { margin:4px 0; padding-left:20px; } ol.tight li { margin:4px 0; }
+  @media (max-width:900px) { .next-step { margin-left:0; } }
 </style>
 </head>
 <body>
@@ -237,6 +274,7 @@
       <a href="/" class="{{ 'on' if path == '/' and not qp.get('unseen') and not qp.get('status') }}">Jobs</a>
       <a href="/?unseen=1" class="{{ 'on' if path == '/' and qp.get('unseen') }}">New{% if unseen_total %} <span class="badge">{{ unseen_total }}</span>{% endif %}</a>
       <a href="/pipeline" class="{{ 'on' if path.startswith('/pipeline') }}">Pipeline</a>
+      <a href="/insights" class="{{ 'on' if path.startswith('/insights') }}">Insights</a>
       <a href="/companies" class="{{ 'on' if path.startswith('/companies') }}">Companies</a>
       <a href="/roles" class="{{ 'on' if path.startswith('/roles') }}">Role profiles</a>
       <a href="/profile" class="{{ 'on' if path.startswith('/profile') }} {{ 'setup' if not profile_exists }}">My profile{% if not profile_exists %} · set up!{% endif %}</a>
@@ -396,6 +434,48 @@
     setTimeout(poll, data.active.length ? 2000 : 15000);
   }
   poll();
+
+  // Hide menus open as a fixed overlay, so a scrolling table can't clip them.
+  document.querySelectorAll("details.hide-menu").forEach(d => d.addEventListener("toggle", () => {
+    if (!d.open) return;
+    const menu = d.querySelector(".menu"), r = d.querySelector("summary").getBoundingClientRect();
+    menu.style.position = "fixed";
+    menu.style.right = "auto";
+    menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, innerWidth - menu.offsetWidth - 8)) + "px";
+    const below = r.bottom + 4, fits = below + menu.offsetHeight < innerHeight;
+    menu.style.top = (fits ? below : Math.max(8, r.top - menu.offsetHeight - 4)) + "px";
+  }));
+  addEventListener("scroll", () => document.querySelectorAll("details.hide-menu[open]").forEach(d => d.open = false), { passive: true });
+  // Close an open hide menu when clicking elsewhere.
+  document.addEventListener("click", e => {
+    document.querySelectorAll("details.hide-menu[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; });
+  });
+</script>
+<script>
+  // Page tabs: <nav class="page-tabs" data-alias='{"old-anchor": "tab"}'> with <a data-tab> links and
+  // <section class="tab-panel" data-tab> panels. The URL hash picks the tab, so links and redirects can target one.
+  (() => {
+    const bar = document.querySelector(".page-tabs");
+    if (!bar) return;
+    const tabs = [...bar.querySelectorAll("a[data-tab]")];
+    const panels = [...document.querySelectorAll(".tab-panel")];
+    const alias = JSON.parse(bar.dataset.alias || "{}");
+    const names = new Set(tabs.map(t => t.dataset.tab));
+    const header = document.querySelector("header");
+    const headH = () => header ? header.offsetHeight : 0;
+    document.documentElement.style.setProperty("--head-h", headH() + "px");
+
+    function show(name, scroll) {
+      name = alias[name] || name;
+      if (!names.has(name)) name = tabs[0].dataset.tab;
+      tabs.forEach(t => t.classList.toggle("on", t.dataset.tab === name));
+      panels.forEach(p => p.classList.toggle("on", p.dataset.tab === name));
+      if (scroll && bar.getBoundingClientRect().top < headH() + 1) window.scrollTo({ top: bar.offsetTop - headH() });
+    }
+    document.body.classList.add("tabs-on");
+    show(location.hash.slice(1), false);
+    window.addEventListener("hashchange", () => show(location.hash.slice(1), true));
+  })();
 </script>
 </body>
 </html>

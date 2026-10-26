@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
-from . import assistant, auto, companies, cvcheck, cvdiff, db, github, render, roles, settings, tasks
+from . import assistant, auto, companies, cvcheck, cvdiff, db, github, insights, render, roles, settings, taste, tasks
 from .auto import SavedSearch, load_criteria
 from .countries import COUNTRY_TERMS, country_name
 from .llm import LLMError
@@ -30,6 +30,7 @@ from .models import (
     SkillGroup,
     TailoredCV,
 )
+from .posting import posting_html
 from .salary import format_monthly
 from .search import SENIORITY_LEVELS, load_companies
 from .sources import BOARD_INFO, COMPANY_SOURCES, board_has_key, ensure_description
@@ -38,6 +39,7 @@ from .sources import BOARD_INFO, COMPANY_SOURCES, board_has_key, ensure_descript
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.backfill()
+    taste.recompute()
     tasks.start()
     auto.start()
     yield
@@ -48,6 +50,7 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["md_bold"] = render.env.filters["md_bold"]
 templates.env.filters["ago"] = lambda ts: _ago(ts)
 templates.env.filters["monthly"] = format_monthly
+templates.env.filters["posting"] = posting_html
 templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
 templates.env.globals["STAGES"] = db.STAGES
 templates.env.globals["STAGE_LABELS"] = db.STAGE_LABELS
@@ -201,9 +204,14 @@ def index(
         criteria.role_keywords = chosen.role_keywords or criteria.role_keywords
         criteria.skill_keywords = chosen.skill_keywords or criteria.skill_keywords
     searches = auto.load_searches()
+    learned = taste.summary(assistant.load_profile())
     return page(
         request,
         "index.html",
+        learned=learned,
+        hide_reasons=taste.REASONS,
+        blocked=taste.blocked_companies(),
+        feedback_tips=taste.suggestions(current.criteria, learned["model"]) if current.id else [],
         current=current,
         criteria=criteria,
         searches=searches,
@@ -334,6 +342,30 @@ def mark_all_seen(back: str = Form("/")):
     return _back(back)
 
 
+@app.post("/feedback/apply")
+def feedback_apply(kind: str = Form(...), value: str = Form(""), suggestion_id: str = Form("")):
+    """Apply a filter suggestion learned from your feedback to the search you're using."""
+    search = auto.active_search()
+    search.criteria = taste.apply_suggestion(search.criteria, kind, value)
+    auto.save_search(search)
+    taste.dismiss(suggestion_id)
+    return _back(f"/?search={search.id}#feedback")
+
+
+@app.post("/feedback/dismiss")
+def feedback_dismiss(suggestion_id: str = Form(...)):
+    taste.dismiss(suggestion_id)
+    return _back("/#feedback")
+
+
+@app.post("/feedback/unblock")
+def feedback_unblock(company: str = Form(...)):
+    taste.unblock_company(company)
+    db.unhide_company(company)
+    taste.recompute()
+    return _back("/#feedback")
+
+
 # --- export ---------------------------------------------------------------------------------------------
 
 EXPORT_COLUMNS = [
@@ -414,9 +446,41 @@ def pipeline_page(request: Request):
     return page(request, "pipeline.html", columns=columns, due=db.due_follow_ups(), stats=db.stats())
 
 
+@app.get("/insights", response_class=HTMLResponse)
+def insights_page(request: Request, period: str = "90"):
+    profile = assistant.load_profile()
+    period = period if period in insights.PERIODS else "90"
+    sources = insights.gap_sources()
+    return page(
+        request,
+        "insights.html",
+        period=period,
+        periods=insights.PERIODS,
+        market=insights.market(profile, period),
+        keyword_gaps=insights.keyword_gaps(profile),
+        analysis=insights.cached_analysis(),
+        sources={"full": sum(s["kind"] == "full" for s in sources), "quick": sum(s["kind"] == "quick" for s in sources)},
+        running=(db.task_active("gaps", "gaps") or [None])[0],
+    )
+
+
+@app.post("/insights/analyse")
+def insights_analyse():
+    profile = _need_profile()
+    tasks.submit("gaps", "Gap analysis across your jobs", lambda progress: insights.run_analysis(profile, progress),
+                 subject="gaps", url="/insights#gaps")
+    return _back("/insights#gaps")
+
+
 @app.post("/job/{job_id:path}/status")
 def job_status(
-    request: Request, job_id: str, status: str = Form(...), back: str = Form(""), date: str = Form(""), note: str = Form("")
+    request: Request,
+    job_id: str,
+    status: str = Form(...),
+    back: str = Form(""),
+    date: str = Form(""),
+    note: str = Form(""),
+    reason: str = Form(""),
 ):
     at = None
     if date:
@@ -424,8 +488,17 @@ def job_status(
             at = datetime.strptime(date, "%Y-%m-%d").timestamp() + 12 * 3600
         except ValueError:
             pass
+    if status == "hidden":
+        reason = reason if reason in taste.REASONS else ""
+        note = note.strip() or (f"Hidden: {taste.REASONS[reason].split(' (')[0].lower()}" if reason else "")
+        db.set_feedback(job_id, reason)
+        found = db.get_job(job_id)
+        if reason == "company" and found:
+            taste.block_company(found[0].company)
+            db.hide_company(found[0].company, except_id=job_id)
     if status in db.STAGES or status in ("new", "hidden"):
         db.set_status(job_id, status, at, note.strip())
+        taste.recompute()
     if "application/json" in request.headers.get("accept", ""):
         return JSONResponse({"ok": True})
     return _back(back or f"/job/{job_id}#application")
@@ -484,13 +557,21 @@ def job_page(request: Request, job_id: str):
         fetch_error=fetch_error,
         roles=roles.load_roles(),
         font_choices=render.FONT_CHOICES_PT,
+        hide_reasons=taste.REASONS,
     )
 
 
 def _cached_fit(job_id: str) -> FitAssessment | None:
     cached = db.cache_get(f"fit2:{job_id}", 24 * 365)
+    if not cached:
+        return None
+    # Checks made before cons had advice and before the gap plan existed: show what they have.
+    for con in cached.get("cons", []):
+        con.setdefault("advice", "")
+    cached.setdefault("gap_plan", {"recommendation": "", "advice": "", "lacking_areas": [], "project_types": [],
+                                   "action_plan": [], "interview_framing": [], "closer_roles": []})
     try:
-        return FitAssessment.model_validate(cached) if cached else None
+        return FitAssessment.model_validate(cached)
     except ValidationError:
         return None
 
@@ -518,13 +599,13 @@ def job_fit(job_id: str):
         except Exception:
             repos_text = ""
         progress.set(step="Claude is judging your fit")
-        fit = assistant.assess_fit(profile, ensure_description(job), repos_text)
+        fit = assistant.assess_fit(profile, ensure_description(job), repos_text, taste.for_prompt(profile))
         db.cache_put(f"fit2:{job_id}", fit.model_dump())
         db.set_fit(job_id, fit.rating, {"strong": [], "missing": [], "verdict": fit.verdict, "quick": False})
-        return f"/job/{job_id}"
+        return f"/job/{job_id}#fit"
 
-    tasks.submit("fit", _job_label("Fit check", job), run, subject=f"fit:{job_id}", job_id=job_id, url=f"/job/{job_id}")
-    return _back(f"/job/{job_id}")
+    tasks.submit("fit", _job_label("Fit check", job), run, subject=f"fit:{job_id}", job_id=job_id, url=f"/job/{job_id}#fit")
+    return _back(f"/job/{job_id}#fit")
 
 
 def _cached_review(job_id: str) -> GithubReview | None:
@@ -654,8 +735,8 @@ def job_tailor(
         db.promote(job_id, "liked")
         return f"/cv/{cv_id}"
 
-    tasks.submit("tailor", _job_label("Tailored CV", job), run, subject=f"tailor:{job_id}", job_id=job_id, url=f"/job/{job_id}")
-    return _back(f"/job/{job_id}")
+    tasks.submit("tailor", _job_label("Tailored CV", job), run, subject=f"tailor:{job_id}", job_id=job_id, url=f"/job/{job_id}#docs")
+    return _back(f"/job/{job_id}#docs")
 
 
 def _owner(owner_id: str) -> tuple[Job | None, RoleProfile | None]:
@@ -745,7 +826,7 @@ async def cv_edit(request: Request, cv_id: int):
     _, pages, used = render.cv_pdf(tailored.cv, Path(pdf_path), layout.get("font_pt"))
     db.update_cv(cv_id, tailored, {**layout, "font_used": used}, pages)
     db.cache_delete(f"cvrate:{cv_id}:profile")
-    return _back(f"/cv/{cv_id}?saved=1")
+    return _back(f"/cv/{cv_id}?saved=1#edit")
 
 
 @app.post("/cv/{cv_id}/layout")

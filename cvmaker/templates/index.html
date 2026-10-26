@@ -113,6 +113,35 @@
   {% endif %}
 </div>
 
+{% if learned.hidden or learned.liked or blocked %}
+<div class="card" id="feedback">
+  <div class="section-title"><h2>What your feedback taught</h2>
+    <span class="muted">From {{ learned.hidden }} hidden and {{ learned.liked }} liked/applied jobs · used by the “for you” sort and Claude's ratings</span></div>
+  {% if learned.reasons %}<div class="row muted">Hidden because: {% for label, n in learned.reasons %}<span class="pill">{{ label.split(' (')[0] }} · {{ n }}</span>{% endfor %}</div>{% endif %}
+  <div class="two" style="margin-top:8px">
+    <div><h3>You tend to avoid</h3>{% if learned.dislikes %}{% for x in learned.dislikes %}<span class="taste down">↓ {{ x }}</span>{% endfor %}{% else %}<p class="muted">Nothing clear yet - pick a reason when you hide a job.</p>{% endif %}</div>
+    <div><h3>You tend to like</h3>{% if learned.likes %}{% for x in learned.likes %}<span class="taste up">↑ {{ x }}</span>{% endfor %}{% else %}<p class="muted">Nothing clear yet - like jobs or move them into the pipeline.</p>{% endif %}</div>
+  </div>
+  {% for tip in feedback_tips %}
+  <div class="tile idea row" style="margin-top:10px;justify-content:space-between">
+    <span>💡 {{ tip.text }}</span>
+    <span class="row">
+      <form method="post" action="/feedback/apply" style="display:inline">
+        <input type="hidden" name="kind" value="{{ tip.kind }}"><input type="hidden" name="value" value="{{ tip.value }}"><input type="hidden" name="suggestion_id" value="{{ tip.id }}">
+        <button type="submit">Apply to “{{ current.name }}”</button>
+      </form>
+      <form method="post" action="/feedback/dismiss" style="display:inline"><input type="hidden" name="suggestion_id" value="{{ tip.id }}"><button class="secondary" type="submit">No thanks</button></form>
+    </span>
+  </div>
+  {% endfor %}
+  {% if blocked %}
+  <div class="row muted" style="margin-top:10px">Blocked companies (never shown):
+    {% for c in blocked %}<form method="post" action="/feedback/unblock" style="display:inline"><input type="hidden" name="company" value="{{ c }}"><button class="secondary" type="submit" title="Unblock {{ c }} and show its jobs again" style="padding:3px 10px">{{ c }} ✕</button></form>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card" id="auto">
   <div class="section-title"><h2>Schedules & Claude rating</h2></div>
   <table class="fit">
@@ -151,7 +180,7 @@
     <div class="row muted">
       Sort
       <div class="tabs small">
-      {% for key, label in [("fit", "Claude fit"), ("score", "keywords"), ("title", "job title"), ("newest", "newly found"), ("posted", "posted"), ("salary", "salary"), ("company", "company")] %}
+      {% for key, label in [("match", "for you"), ("fit", "Claude fit"), ("score", "keywords"), ("title", "job title"), ("newest", "newly found"), ("posted", "posted"), ("salary", "salary"), ("company", "company")] %}
         <a href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key) }}" class="{{ 'on' if sort == key }}">{{ label }}</a>
       {% endfor %}
       </div>
@@ -168,6 +197,10 @@
     </form>
     {% endif %}
     <span style="flex:1"></span>
+    <div class="tabs small" role="group" aria-label="Row density">
+      <a href="#" data-density="comfortable" title="Show fit notes and what your feedback taught on every row">Comfortable</a>
+      <a href="#" data-density="compact" title="One line per job">Compact</a>
+    </div>
     {% if unseen_total %}
     <form method="post" action="/seen" style="display:inline">
       <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
@@ -181,7 +214,7 @@
     <p class="muted">{% if unseen %}Nothing new since you last looked.{% else %}No jobs yet - run a search.{% endif %}</p>
   {% else %}
   <div class="table-wrap">
-  <table class="jobs">
+  <table class="jobs" id="jobs-table">
     <thead><tr>
       {% for key, label in [("fit", "Fit"), ("score", "Keywords"), ("title", "Job"), ("salary", "Salary")] %}
       {% set on = sort == key %}
@@ -197,25 +230,27 @@
     <tr class="{{ 'unseen' if not r.seen }}">
       <td>{% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% else %}<span class="muted" title="Not rated by Claude yet">–</span>{% endif %}</td>
       <td class="score {{ 's-hi' if r.score >= 60 else 's-mid' if r.score >= 30 else 's-lo' }}"><span class="ring" style="--v:{{ r.score }}"><b>{{ r.score }}</b></span></td>
-      <td>
+      <td class="job-cell" title="{{ j.title }} · {{ j.company }}">
         {% if not r.seen %}<span class="pill new">NEW</span>{% endif %}
-        <a href="/job/{{ j.id }}"><strong>{{ j.title }}</strong></a><br>
-        <span class="muted">{{ j.company }}{% if j.posted_at %} · posted {{ j.posted_at[:10] }}{% endif %} · found {{ r.first_seen | ago }}</span>
+        <a href="/job/{{ j.id }}"><strong>{{ j.title }}</strong></a><br class="detail">
+        <span class="muted"><span class="compact-only"> · </span>{{ j.company }}<span class="detail">{% if j.posted_at %} · posted {{ j.posted_at[:10] }}{% endif %} · found {{ r.first_seen | ago }}</span></span>
         {% if r.status != 'new' %}{{ m.stage_pill(r.status) }}{% endif %}
-        {% if seen_co %}<span class="pill company-note" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
+        {% if seen_co %}<span class="pill company-note detail" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
         {% if r.fit_data and (r.fit_data.strong or r.fit_data.missing) %}
-        <div class="fitline">{% if r.fit_data.strong %}<span class="yes">✓ {{ r.fit_data.strong | join(', ') }}</span>{% endif %}{% if r.fit_data.strong and r.fit_data.missing %} · {% endif %}{% if r.fit_data.missing %}<span class="gap">✗ {{ r.fit_data.missing | join(', ') }}</span>{% endif %}</div>
-        {% elif r.fit_data and r.fit_data.verdict %}<div class="fitline muted">{{ r.fit_data.verdict }}</div>{% endif %}
+        <div class="fitline detail">{% if r.fit_data.strong %}<span class="yes">✓ {{ r.fit_data.strong | join(', ') }}</span>{% endif %}{% if r.fit_data.strong and r.fit_data.missing %} · {% endif %}{% if r.fit_data.missing %}<span class="gap">✗ {{ r.fit_data.missing | join(', ') }}</span>{% endif %}</div>
+        {% elif r.fit_data and r.fit_data.verdict %}<div class="fitline muted detail">{{ r.fit_data.verdict }}</div>{% endif %}
+        {% if r.taste_data %}<div class="detail" title="Learned from what you hid and liked">{{ m.taste_chips(r.taste_data) }}</div>{% endif %}
+        {% if r.status == 'hidden' and r.feedback and r.feedback in hide_reasons %}<span class="pill">hidden: {{ hide_reasons[r.feedback].split(' (')[0] | lower }}</span>{% endif %}
       </td>
-      <td class="salary">{% if j.salary %}{{ j.salary }}{% if r.salary_month %}<div class="muted" style="font-weight:500">{{ r.salary_month | monthly }}</div>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
-      <td>{{ j.location | truncate(60) }}{% if j.remote %} <span class="pill">remote</span>{% endif %}{% if 'hybrid' in j.tags %} <span class="pill">hybrid</span>{% endif %}</td>
+      <td class="salary">{% if j.salary %}{{ j.salary }}{% if r.salary_month %}<div class="muted detail" style="font-weight:500">{{ r.salary_month | monthly }}</div>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
+      <td class="loc-cell">{{ j.location | truncate(60) }}{% if j.remote %} <span class="pill detail">remote</span>{% endif %}{% if 'hybrid' in j.tags %} <span class="pill detail">hybrid</span>{% endif %}</td>
       <td><span class="pill">{{ j.source }}</span></td>
       <td style="white-space:nowrap">
         <form method="post" action="/job/{{ j.id }}/status" style="display:inline">
           <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
           <button class="secondary icon like" name="status" value="liked" title="Like" aria-label="Like">♥</button>
-          <button class="secondary icon hide" name="status" value="hidden" title="Hide" aria-label="Hide">✕</button>
         </form>
+        {{ m.hide_menu(j.id, hide_reasons, request.url.path ~ '?' ~ request.url.query) }}
       </td>
     </tr>
     {% endfor %}
@@ -224,4 +259,34 @@
   </div>
   {% endif %}
 </div>
+<style>
+  .compact-only { display:none; }
+  table.jobs.compact td { padding:6px 10px; vertical-align:middle; }
+  table.jobs.compact .detail { display:none; }
+  table.jobs.compact .compact-only { display:inline; }
+  table.jobs.compact td.score span.ring { width:30px; height:30px; font-size:11px; }
+  table.jobs.compact td.score span.ring::before { inset:3px; }
+  table.jobs.compact .pill { margin-bottom:0; }
+  table.jobs.compact button.icon { width:28px; height:28px; }
+  table.jobs.compact td.job-cell { width:50%; max-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  table.jobs.compact td.loc-cell { max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style>
+<script>
+  (() => {
+    const table = document.getElementById("jobs-table");
+    const links = document.querySelectorAll("[data-density]");
+    let density = "comfortable";
+    try { density = localStorage.getItem("jobs-density") || density; } catch (e) {}
+    function apply(d) {
+      if (table) table.classList.toggle("compact", d === "compact");
+      links.forEach(a => a.classList.toggle("on", a.dataset.density === d));
+    }
+    links.forEach(a => a.addEventListener("click", e => {
+      e.preventDefault();
+      apply(a.dataset.density);
+      try { localStorage.setItem("jobs-density", a.dataset.density); } catch (e) {}
+    }));
+    apply(density);
+  })();
+</script>
 {% endblock %}

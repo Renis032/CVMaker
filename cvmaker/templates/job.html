@@ -2,179 +2,168 @@
 {% block title %}{{ job.title }} - CVMaker{% endblock %}
 {% import "_macros.html" as m %}
 {% block content %}
-<div class="card">
+{% set legacy_fit = fit and not fit.gap_plan.recommendation %}
+{% set applied = status in ["applied", "screening", "interview", "offer", "rejected", "ghosted"] %}
+
+{# What to do next, worked out from what's already done. #}
+{% if status == 'hidden' %}{% set next = ("You hid this job.", "", "") %}
+{% elif not fit %}{% set next = ("Check how well you fit this job", "#fit", "Claude compares it with your profile and GitHub and lists your gaps.") %}
+{% elif not cvs %}{% set next = ("Tailor your CV for this job", "#docs", "Your fit is " ~ fit.rating ~ "/10. A tailored CV is the next step.") %}
+{% elif not applied %}{% set next = ("Apply", "#application", "Open the posting, send CV #" ~ cvs[0].id ~ ", then mark the job as Applied.") %}
+{% elif status == 'applied' %}{% set next = ("Wait for a reply", "#application", ("Follow-up due now." if app.follow_up_at and app.follow_up_at <= now else "Follow-up reminder " ~ (app.follow_up_at | ago) ~ ".") if app.follow_up_at else "") %}
+{% elif status in ['screening', 'interview'] and not has_prep %}{% set next = ("Prepare for the interview", "#interview", "Likely questions with answers from your own experience.") %}
+{% elif status in ['screening', 'interview'] %}{% set next = ("Review your interview prep", "#interview", ("Next date: " ~ app.next_date) if app.next_date else "") %}
+{% else %}{% set next = ("", "", "") %}{% endif %}
+
+<div class="card job-head">
   <a class="muted" href="/">← All jobs</a>
-  <h1 style="margin-top:6px">{{ job.title }}</h1>
-  <div class="muted">
-    {{ job.company }} · {{ job.location }}{% if job.remote %} · remote{% endif %}
-    {% if job.posted_at %} · posted {{ job.posted_at[:10] }}{% endif %}{% if job.salary %} · <strong style="color:var(--good)">{{ job.salary }}</strong>{% if app.salary_month %} ({{ app.salary_month | monthly }}){% endif %}{% endif %}
-    · <span class="pill">{{ job.source }}</span> {{ m.stage_pill(status) }}
-    {% if app.fit is not none %}· Claude fit {{ m.fit_badge(app.fit, app.fit_data) }}{% endif %}
+  <div class="head-main">
+    <div>
+      <h1>{{ job.title }}</h1>
+      <div class="facts">
+        <span><strong>{{ job.company }}</strong></span>
+        <span>{{ job.location }}{% if job.remote %} · remote{% endif %}</span>
+        {% if job.salary %}<span class="sal">{{ job.salary }}{% if app.salary_month %} <span class="muted">≈ {{ app.salary_month | monthly }}</span>{% endif %}</span>{% endif %}
+        {% if job.posted_at %}<span class="muted">posted {{ job.posted_at[:10] }}</span>{% endif %}
+        <span class="muted">via {{ job.source }}</span>
+      </div>
+    </div>
+    <div class="head-badges">
+      {{ m.stage_pill(status) if status != 'new' }}
+      {% if app.fit is not none %}<span class="muted">fit</span> {{ m.fit_badge(app.fit, app.fit_data) }}{% endif %}
+    </div>
   </div>
+
   {% if history %}
-  <div class="tile" style="margin-top:12px;border-color:var(--warn);background:var(--warn-soft);color:var(--warn)">
+  <div class="tile warn-tile">
     <strong>You've applied to {{ job.company }} {{ history | length }} time{{ 's' if history | length != 1 }} before.</strong>
     {% for h in history[:5] %}<div><a href="/job/{{ h.id }}">{{ h.title }}</a> · {{ STAGE_LABELS[h.status] | lower }} · {{ h.status_at | day }}</div>{% endfor %}
   </div>
   {% endif %}
-  <div class="row" style="margin-top:14px">
-    {% if job.url %}<a class="btn" href="{{ job.url }}" target="_blank" rel="noopener">Open posting / apply ↗</a>{% endif %}
-    <a class="btn secondary" href="#application">Track application</a>
+
+  <div class="row head-actions">
+    {% if job.url %}<a class="btn" href="{{ job.url }}" target="_blank" rel="noopener">Open posting ↗</a>{% endif %}
     <form method="post" action="/job/{{ job.id }}/status" class="row">
       <input type="hidden" name="back" value="/job/{{ job.id }}">
-      {% if status != 'liked' %}<button class="secondary" name="status" value="liked">♥ Like</button>{% endif %}
-      {% if status != 'hidden' %}<button class="secondary" name="status" value="hidden">✕ Hide</button>{% else %}<button class="secondary" name="status" value="new">Unhide</button>{% endif %}
+      {% if status == 'new' %}<button class="secondary" name="status" value="liked">♥ Like</button>{% endif %}
+      {% if status == 'hidden' %}<button class="secondary" name="status" value="new">Unhide</button>{% endif %}
     </form>
-  </div>
-</div>
-
-<div class="card" id="application">
-  <div class="section-title">
-    <h2>Application</h2>
-    {% if app.follow_up_at and status == 'applied' %}
-      <span class="muted">{% if app.follow_up_at <= now %}<strong class="s-mid">Follow-up due</strong>{% else %}Follow-up reminder {{ app.follow_up_at | ago }}{% endif %}</span>
+    {% if status != 'hidden' %}{{ m.hide_menu(job.id, hide_reasons, '/', '✕ Hide') }}{% endif %}
+    {% if next[0] %}
+    <a class="next-step" href="{{ next[1] or '#' }}">
+      <span class="k">Next step</span> <strong>{{ next[0] }}</strong>{% if next[2] %} <span class="muted">{{ next[2] }}</span>{% endif %}{% if next[1] %} <span aria-hidden="true">→</span>{% endif %}
+    </a>
     {% endif %}
   </div>
-  <form method="post" action="/job/{{ job.id }}/status" class="row">
-    <input type="hidden" name="back" value="/job/{{ job.id }}#application">
-    <span class="muted">Move to</span>
-    <div class="tabs">
-      {% for s in STAGES %}<button type="submit" name="status" value="{{ s }}" class="stage-btn {{ 'on' if s == status }}">{{ STAGE_LABELS[s] }}</button>{% endfor %}
-    </div>
-    <label class="muted" style="margin:0 0 0 6px" for="stage-date">on</label>
-    <input id="stage-date" type="date" name="date" value="{{ today }}" style="width:auto;padding:5px 8px">
-    <input type="text" name="note" placeholder="note for the timeline (optional)" style="flex:1;min-width:180px;padding:6px 10px">
-  </form>
-  {% if app.events %}
-  <ol class="timeline">
-    {% for e in app.events %}<li><span class="muted">{{ e.at | day }}</span> {{ m.stage_pill(e.status) }}{% if e.note %} {{ e.note }}{% endif %}</li>{% endfor %}
-  </ol>
-  {% endif %}
-  <form method="post" action="/job/{{ job.id }}/application" style="margin-top:6px">
-    <div class="grid">
-      <div><label for="a-contact">Recruiter / contact</label><input id="a-contact" type="text" name="contact" value="{{ app.contact }}" placeholder="name, email, LinkedIn"></div>
-      <div><label for="a-next">Next date (interview, call, deadline)</label><input id="a-next" type="date" name="next_date" value="{{ app.next_date }}"></div>
-      <div><label for="a-cv">CV I sent</label>
-        <select id="a-cv" name="sent_cv_id"><option value="0">{{ '- not recorded -' }}</option>{% for c in cvs %}<option value="{{ c.id }}" {% if app.sent_cv_id == c.id %}selected{% endif %}>CV #{{ c.id }} · {{ c.created_at | day }}</option>{% endfor %}</select></div>
-      <div><label for="a-letter">Cover letter I sent</label>
-        <select id="a-letter" name="sent_letter_id"><option value="0">- none / not recorded -</option>{% for l in letters %}<option value="{{ l.id }}" {% if app.sent_letter_id == l.id %}selected{% endif %}>Letter #{{ l.id }} · {{ l.created_at | day }}</option>{% endfor %}</select></div>
-    </div>
-    <label for="a-notes">Notes (salary discussed, interviewers, impressions…)</label>
-    <textarea id="a-notes" name="notes">{{ app.notes }}</textarea>
-    <div style="margin-top:8px"><button class="secondary" type="submit">Save notes</button></div>
-  </form>
 </div>
 
-<div class="two">
-  <div class="card">
-    <h2>Tailor my CV for this job</h2>
-    {% if active.tailor %}{{ m.running(active.tailor, "Claude is tailoring your CV") }}{% else %}
-    <form method="post" action="/job/{{ job.id }}/tailor" data-slow>
-      <label for="t-role">Role profile</label>
-      <select id="t-role" name="role_id">
-        <option value="">None - tailor to the posting only</option>
-        {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
-      </select>
-      <label for="t-ins">Extra instructions (optional)</label>
-      <textarea id="t-ins" name="instructions" placeholder="e.g. emphasise the Spring Boot project"></textarea>
-      <div class="row" style="margin-top:10px">
-        <label class="check"><input type="checkbox" name="one_page" value="true" checked> Must fit on one page</label>
-        <label class="muted" style="margin:0" for="t-font">Font</label>
-        <select id="t-font" name="font" style="width:auto"><option value="auto">auto</option>{% for f in font_choices %}<option value="{{ f }}">{{ f }} pt</option>{% endfor %}</select>
-        <button type="submit">Generate tailored CV</button>
+<nav class="page-tabs" aria-label="Job sections" data-alias='{"plan": "fit", "letter": "docs", "cv": "docs", "prep": "interview"}'>
+  <a href="#overview" data-tab="overview">Overview</a>
+  <a href="#fit" data-tab="fit">Fit &amp; gaps
+    {% if active.fit %}<span class="spin"></span>{% elif fit %}<span class="tb {{ 'f-hi' if fit.rating >= 7 else 'f-mid' if fit.rating >= 5 else 'f-lo' }}">{{ fit.rating }}/10</span>{% endif %}</a>
+  <a href="#docs" data-tab="docs">CV &amp; letter
+    {% if active.tailor or active.letter %}<span class="spin"></span>{% elif cvs or letters %}<span class="tb">{{ cvs | length + letters | length }}</span>{% endif %}</a>
+  <a href="#application" data-tab="application">Application
+    {% if status not in ['new', 'hidden'] %}<span class="tb">{{ STAGE_LABELS[status] }}</span>{% endif %}</a>
+  <a href="#interview" data-tab="interview">Interview prep
+    {% if active.prep %}<span class="spin"></span>{% elif has_prep %}<span class="tb">✓</span>{% endif %}</a>
+  <a href="#github" data-tab="github">GitHub
+    {% if active.github %}<span class="spin"></span>{% elif gh %}<span class="tb">{{ gh.matches | length }} repo{{ 's' if gh.matches | length != 1 }}</span>{% endif %}</a>
+</nav>
+
+{# ---------- Overview ---------- #}
+<section class="tab-panel" id="tab-overview" data-tab="overview">
+  <div class="overview">
+    <article class="card">
+      <h2>The job</h2>
+      {% if fetch_error %}<div class="err">{{ fetch_error }}</div>{% endif %}
+      {% if job.description %}<div class="posting">{{ job.description | posting }}</div>
+      {% else %}<p class="muted">No description available. <a href="{{ job.url }}" target="_blank" rel="noopener">Open the posting ↗</a></p>{% endif %}
+    </article>
+
+    <aside class="glance">
+      <div class="card">
+        <h2>Your progress</h2>
+        <ol class="steps">
+          <li class="{{ 'done' if fit }}"><a href="#fit">Fit checked</a>{% if fit %} <span class="muted">{{ fit.rating }}/10</span>{% endif %}</li>
+          <li class="{{ 'done' if cvs }}"><a href="#docs">Tailored CV</a>{% if cvs %} <span class="muted">{{ cvs | length }} made{% if app.sent_cv_id %}, #{{ app.sent_cv_id }} sent{% endif %}</span>{% endif %}</li>
+          <li class="{{ 'done' if letters }} optional"><a href="#docs">Cover letter</a> <span class="muted">{{ (letters | length ~ ' made') if letters else 'optional' }}</span></li>
+          <li class="{{ 'done' if applied }}"><a href="#application">Applied</a>{% if applied %} {{ m.stage_pill(status) }}{% endif %}</li>
+          <li class="{{ 'done' if has_prep }} optional"><a href="#interview">Interview prep</a></li>
+        </ol>
+        {% if app.next_date %}<p style="margin-top:10px"><strong>Next date:</strong> {{ app.next_date }}</p>{% endif %}
+        {% if app.contact %}<p class="muted" style="margin:0">Contact: {{ app.contact }}</p>{% endif %}
       </div>
-    </form>{% endif %}
-    <p class="muted" style="margin-top:12px">
-      Want a stronger result? <a href="/interview?job_id={{ job.id }}">Answer a few questions about this job's requirements first</a>.
-    </p>
-    {% if cvs %}
-    <h3 style="margin-top:14px">Generated CVs</h3>
-    <ul class="tight">{% for c in cvs %}<li>
-      <a href="/cv/{{ c.id }}">CV #{{ c.id }}</a>{% if app.sent_cv_id == c.id %} <span class="pill stage stage-applied">sent</span>{% endif %} <span class="muted">· {{ c.created_at | ago }} · Claude's match estimate {{ c.match_score }}/100</span>
-      {% if c.rated is not none %} · rated <strong>{{ c.rated }}</strong> vs original {{ c.baseline_rated }}
-        <span class="{{ 'delta-up' if c.rated > c.baseline_rated else 'delta-down' if c.rated < c.baseline_rated }}">({{ '%+d' % (c.rated - c.baseline_rated) }})</span>
-      {% else %} · <a href="/cv/{{ c.id }}#rating">rate it vs. my original</a>{% endif %}
-    </li>{% endfor %}</ul>
-    {% endif %}
-  </div>
+      <div class="card">
+        <h2>Your fit</h2>
+        {% if fit %}
+          <p><span class="score big {{ 's-hi' if fit.rating >= 7 else 's-mid' if fit.rating >= 4 else 's-lo' }}">{{ fit.rating }}/10</span></p>
+          <p>{{ fit.verdict | truncate(260) }}</p>
+          {% set top_pros = (fit.pros | sort(attribute="rating", reverse=True))[:2] %}
+          {% set top_cons = (fit.cons | sort(attribute="rating", reverse=True))[:2] %}
+          {% if top_pros %}<div class="glance-h">Strongest points</div>
+          <ul class="tight plus">{% for p in top_pros %}<li>{{ p.point | truncate(110) }}</li>{% endfor %}</ul>{% endif %}
+          {% if top_cons %}<div class="glance-h">Biggest gaps</div>
+          <ul class="tight minus">{% for p in top_cons %}<li>{{ p.point | truncate(110) }}</li>{% endfor %}</ul>{% endif %}
+          <a href="#fit">Full breakdown →</a>
+        {% elif app.fit_data and app.fit_data.quick %}
+          <p>{{ m.fit_badge(app.fit, app.fit_data) }} <span class="muted">quick rating</span><br>{{ app.fit_data.verdict }}</p>
+          <a href="#fit">Run a full fit check →</a>
+        {% else %}
+          <p class="muted">Not rated yet. <a href="#fit">Check your fit →</a></p>
+        {% endif %}
+      </div>
 
+    </aside>
+  </div>
+</section>
+
+{# ---------- Fit & gaps ---------- #}
+<section class="tab-panel" id="tab-fit" data-tab="fit">
   <div class="card">
-    <h2>How well do I fit?</h2>
+    <div class="section-title">
+      <h2>How well do I fit?</h2>
+      {% if not active.fit %}
+      <form method="post" action="/job/{{ job.id }}/fit" data-slow>
+        <button class="{{ 'secondary' if fit }}" type="submit">{{ 'Re-check' if fit else 'Full fit check with Claude' }}</button>
+      </form>{% endif %}
+    </div>
+    {% if active.fit %}{{ m.running(active.fit, "Checking your fit (reads your GitHub too)") }}{% endif %}
     {% if fit %}
-      <div class="score {{ 's-hi' if fit.rating >= 7 else 's-mid' if fit.rating >= 4 else 's-lo' }}" style="font-size:28px">{{ fit.rating }}/10</div>
-      <p>{{ fit.verdict }}</p>
-      <h3>Pros <span class="muted">(how much it helps)</span></h3>
-      <table class="fit">{% for p in fit.pros | sort(attribute="rating", reverse=True) %}
-        <tr><td class="rating s-hi">{{ p.rating }}/10</td><td>{{ p.point }}</td></tr>{% endfor %}</table>
-      <h3 style="margin-top:10px">Cons <span class="muted">(how serious)</span></h3>
-      <table class="fit">{% for p in fit.cons | sort(attribute="rating", reverse=True) %}
-        <tr><td class="rating {{ 's-lo' if p.rating < 4 else 's-mid' if p.rating < 7 else 's-bad' }}">{{ p.rating }}/10</td><td>{{ p.point }}{% if p.advice %}<div class="advice">→ {{ p.advice }}</div>{% endif %}</td></tr>{% endfor %}</table>
-    {% endif %}
-    {% if not fit and app.fit_data and app.fit_data.quick %}
+      <div class="verdict">
+        <span class="score big {{ 's-hi' if fit.rating >= 7 else 's-mid' if fit.rating >= 4 else 's-lo' }}">{{ fit.rating }}/10</span>
+        <p>{{ fit.verdict }}</p>
+      </div>
+      <div class="two">
+        <div>
+          <h3>What helps you <span class="muted">(how much)</span></h3>
+          <table class="fit">{% for p in fit.pros | sort(attribute="rating", reverse=True) %}
+            <tr><td class="rating s-hi">{{ p.rating }}/10</td><td>{{ p.point }}</td></tr>{% endfor %}</table>
+        </div>
+        <div>
+          <h3>What counts against you <span class="muted">(how serious)</span></h3>
+          <table class="fit">{% for p in fit.cons | sort(attribute="rating", reverse=True) %}
+            <tr><td class="rating {{ 's-lo' if p.rating < 4 else 's-mid' if p.rating < 7 else 's-bad' }}">{{ p.rating }}/10</td><td>{{ p.point }}{% if p.advice %}<div class="advice">→ {{ p.advice }}</div>{% endif %}</td></tr>{% endfor %}</table>
+        </div>
+      </div>
+      {% if legacy_fit %}<p class="muted" style="margin-top:12px">This check was made by an older version, so it has no advice or gap plan. Re-check to get them.</p>{% endif %}
+    {% elif app.fit_data and app.fit_data.quick %}
       <p>Quick first-pass rating: {{ m.fit_badge(app.fit, app.fit_data) }} {{ app.fit_data.verdict }}</p>
-    {% endif %}
-    {% if active.fit %}{{ m.running(active.fit, "Checking your fit (reads your GitHub too)") }}{% else %}
-    <form method="post" action="/job/{{ job.id }}/fit" data-slow style="margin-top:10px">
-      <button class="secondary" type="submit">{{ 'Re-check' if fit else 'Full fit check with Claude' }}</button>
-    </form>{% endif %}
-  </div>
-</div>
-
-<div class="two">
-  <div class="card" id="letter">
-    <h2>Cover letter</h2>
-    {% if active.letter %}{{ m.running(active.letter, "Claude is writing your cover letter") }}{% else %}
-    <form method="post" action="/job/{{ job.id }}/letter" data-slow>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-        <div><label>Based on</label>
-          <select name="cv_id">
-            <option value="">My profile</option>
-            {% for c in cvs %}<option value="{{ c.id }}" {% if loop.first %}selected{% endif %}>CV #{{ c.id }}</option>{% endfor %}
-          </select></div>
-        <div><label>Language</label>
-          <select name="language">{% for l in ["English", "Bulgarian", "German"] %}<option>{{ l }}</option>{% endfor %}</select></div>
-        <div><label>Tone</label>
-          <select name="tone">{% for t in ["professional", "warm and personal", "concise and direct"] %}<option>{{ t }}</option>{% endfor %}</select></div>
-        <div><label>Length</label>
-          <select name="length"><option value="standard">standard (~300 words)</option><option value="short">short (~180 words)</option></select></div>
-      </div>
-      <label>Extra instructions (optional)</label>
-      <input type="text" name="instructions" placeholder="e.g. mention I can relocate to Berlin">
-      <div class="row" style="margin-top:10px">
-        <button type="submit">Write cover letter</button>
-      </div>
-    </form>{% endif %}
-    {% if letters %}
-    <h3 style="margin-top:14px">Letters</h3>
-    <ul class="tight">{% for l in letters %}<li><a href="/letter/{{ l.id }}">Cover letter #{{ l.id }}</a> <span class="muted">· {{ l.created_at | ago }}</span></li>{% endfor %}</ul>
+      <p class="muted">The full check reads your GitHub too, rates every pro and con, and plans how to close the gaps.</p>
+    {% elif not active.fit %}
+      <p class="muted">Claude compares the job with your profile and GitHub, rates every pro and con, and plans how to close the gaps.</p>
     {% endif %}
   </div>
 
-  <div class="card" id="prep">
-    <h2>Interview prep</h2>
-    <p class="muted">Likely questions with answer outlines from your own experience, STAR stories, topics to revise, honest answers for your gaps, and questions to ask them.{% if not fit %} Run the fit check first for sharper gap answers.{% endif %}</p>
-    {% if active.prep %}{{ m.running(active.prep, "Claude is preparing your interview") }}
-    {% elif has_prep %}
-      <a class="btn" href="/prep/{{ job.id }}">Open interview prep</a>
-    {% else %}
-    <form method="post" action="/prep/{{ job.id }}" data-slow class="row">
-      <button type="submit">Prepare me for this interview</button>
-    </form>
-    {% endif %}
-  </div>
-</div>
-
-{% if fit %}{% set plan = fit.gap_plan %}
-<div class="card" id="plan" {% if fit.rating < 8 %}style="border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn), var(--shadow)"{% endif %}>
-  <details {% if fit.rating < 8 %}open{% endif %}>
-    <summary style="cursor:pointer"><h2 style="display:inline">
-      {% if fit.rating < 8 %}You're not a strong match yet - here's how to get there{% else %}How to become an even stronger candidate{% endif %}
-    </h2></summary>
-    <p style="margin-top:10px"><strong>{{ plan.recommendation }}</strong></p>
+  {% if fit and not legacy_fit %}{% set plan = fit.gap_plan %}
+  <div class="card {{ 'warn-card' if fit.rating < 8 }}">
+    <h2>{% if fit.rating < 8 %}You're not a strong match yet: how to get there{% else %}How to become an even stronger candidate{% endif %}</h2>
+    <p><strong>{{ plan.recommendation }}</strong></p>
     <p>{{ plan.advice }}</p>
 
-    <h3>Where you're lacking</h3>
-    <table class="fit">
+    {% if plan.lacking_areas %}
+    <h3 style="margin-top:18px">Where you're lacking</h3>
+    <div class="table-wrap"><table class="fit">
       <tr><th>Severity</th><th>Area</th><th>How to close it</th><th>Time</th></tr>
       {% for g in plan.lacking_areas | sort(attribute="severity", reverse=True) %}
       <tr>
@@ -184,10 +173,26 @@
         <td style="white-space:nowrap">{{ g.time_to_close }}</td>
       </tr>
       {% endfor %}
-    </table>
+    </table></div>
+    {% endif %}
+
+    <div class="two" style="margin-top:18px">
+      <div>
+        <h3>Action plan</h3>
+        <ol class="tight">{% for s in plan.action_plan %}<li>{{ s }}</li>{% endfor %}</ol>
+      </div>
+      <div>
+        <h3>How to talk about the gaps</h3>
+        <ul class="tight">{% for s in plan.interview_framing %}<li>{{ s }}</li>{% endfor %}</ul>
+        {% if plan.closer_roles %}
+        <h3 style="margin-top:14px">Roles that fit you better right now</h3>
+        <div>{% for r in plan.closer_roles %}<span class="pill">{{ r }}</span>{% endfor %}</div>
+        {% endif %}
+      </div>
+    </div>
 
     {% if plan.project_types %}
-    <h3 style="margin-top:14px">Projects that look strong on a CV for this job</h3>
+    <h3 style="margin-top:18px">Projects that look strong on a CV for this job</h3>
     <div class="two">
       {% for p in plan.project_types %}
       <div class="tile">
@@ -198,34 +203,155 @@
       </div>
       {% endfor %}
     </div>
-    <p class="muted" style="margin-top:6px">For concrete build plans based on your repos, use "Check my GitHub" below.</p>
+    <p class="muted" style="margin-top:8px">For concrete build plans based on your repos, see the <a href="#github">GitHub</a> tab.</p>
     {% endif %}
+  </div>
+  {% endif %}
+</section>
 
-    <div class="two" style="margin-top:10px">
-      <div>
-        <h3>Action plan</h3>
-        <ol style="margin:4px 0;padding-left:20px">{% for s in plan.action_plan %}<li>{{ s }}</li>{% endfor %}</ol>
-      </div>
-      <div>
-        <h3>How to talk about the gaps</h3>
-        <ul class="tight">{% for s in plan.interview_framing %}<li>{{ s }}</li>{% endfor %}</ul>
-        {% if plan.closer_roles %}
-        <h3 style="margin-top:10px">Roles that fit you better right now</h3>
-        <div>{% for r in plan.closer_roles %}<span class="pill">{{ r }}</span>{% endfor %}</div>
+{# ---------- CV & letter ---------- #}
+<section class="tab-panel" id="tab-docs" data-tab="docs">
+  <div class="two">
+    <div class="card">
+      <h2>Tailored CV</h2>
+      {% if cvs %}
+      <ul class="doc-list">{% for c in cvs %}<li>
+        <a href="/cv/{{ c.id }}"><strong>CV #{{ c.id }}</strong></a>{% if app.sent_cv_id == c.id %} <span class="pill stage stage-applied">sent</span>{% endif %}
+        <span class="muted">· {{ c.created_at | ago }}</span>
+        <div class="muted">Claude's match estimate {{ c.match_score }}/100
+        {% if c.rated is not none %} · rated <strong>{{ c.rated }}</strong> vs original {{ c.baseline_rated }}
+          <span class="{{ 'delta-up' if c.rated > c.baseline_rated else 'delta-down' if c.rated < c.baseline_rated }}">({{ '%+d' % (c.rated - c.baseline_rated) }})</span>
+        {% else %} · <a href="/cv/{{ c.id }}#rating">rate it vs. my original</a>{% endif %}</div>
+      </li>{% endfor %}</ul>
+      <h3 style="margin-top:16px">Make another</h3>
+      {% endif %}
+      {% if active.tailor %}{{ m.running(active.tailor, "Claude is tailoring your CV") }}{% else %}
+      <form method="post" action="/job/{{ job.id }}/tailor" data-slow>
+        <label for="t-role">Role profile</label>
+        <select id="t-role" name="role_id">
+          <option value="">None - tailor to the posting only</option>
+          {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+        </select>
+        <label for="t-ins">Extra instructions (optional)</label>
+        <textarea id="t-ins" name="instructions" placeholder="e.g. emphasise the Spring Boot project"></textarea>
+        <div class="row" style="margin-top:10px">
+          <label class="check"><input type="checkbox" name="one_page" value="true" checked> Must fit on one page</label>
+          <label class="muted" style="margin:0" for="t-font">Font</label>
+          <select id="t-font" name="font" style="width:auto"><option value="auto">auto</option>{% for f in font_choices %}<option value="{{ f }}">{{ f }} pt</option>{% endfor %}</select>
+        </div>
+        <div style="margin-top:12px"><button type="submit">Generate tailored CV</button></div>
+      </form>{% endif %}
+      <p class="muted" style="margin-top:14px">
+        Want a stronger result? <a href="/interview?job_id={{ job.id }}">Answer a few questions about this job's requirements first</a>.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Cover letter</h2>
+      {% if letters %}
+      <ul class="doc-list">{% for l in letters %}<li>
+        <a href="/letter/{{ l.id }}"><strong>Cover letter #{{ l.id }}</strong></a>{% if app.sent_letter_id == l.id %} <span class="pill stage stage-applied">sent</span>{% endif %}
+        <span class="muted">· {{ l.created_at | ago }}</span>
+      </li>{% endfor %}</ul>
+      <h3 style="margin-top:16px">Write another</h3>
+      {% endif %}
+      {% if active.letter %}{{ m.running(active.letter, "Claude is writing your cover letter") }}{% else %}
+      <form method="post" action="/job/{{ job.id }}/letter" data-slow>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+          <div><label for="l-cv">Based on</label>
+            <select id="l-cv" name="cv_id">
+              <option value="">My profile</option>
+              {% for c in cvs %}<option value="{{ c.id }}" {% if loop.first %}selected{% endif %}>CV #{{ c.id }}</option>{% endfor %}
+            </select></div>
+          <div><label for="l-lang">Language</label>
+            <select id="l-lang" name="language">{% for l in ["English", "Bulgarian", "German"] %}<option>{{ l }}</option>{% endfor %}</select></div>
+          <div><label for="l-tone">Tone</label>
+            <select id="l-tone" name="tone">{% for t in ["professional", "warm and personal", "concise and direct"] %}<option>{{ t }}</option>{% endfor %}</select></div>
+          <div><label for="l-len">Length</label>
+            <select id="l-len" name="length"><option value="standard">standard (~300 words)</option><option value="short">short (~180 words)</option></select></div>
+        </div>
+        <label for="l-ins">Extra instructions (optional)</label>
+        <input id="l-ins" type="text" name="instructions" placeholder="e.g. mention I can relocate to Berlin">
+        <div style="margin-top:12px"><button type="submit">Write cover letter</button></div>
+      </form>{% endif %}
+    </div>
+  </div>
+</section>
+
+{# ---------- Application ---------- #}
+<section class="tab-panel" id="tab-application" data-tab="application">
+  <div class="two">
+    <div class="card">
+      <div class="section-title">
+        <h2>Stage</h2>
+        {% if app.follow_up_at and status == 'applied' %}
+          <span class="muted">{% if app.follow_up_at <= now %}<strong class="s-mid">Follow-up due</strong>{% else %}Follow-up reminder {{ app.follow_up_at | ago }}{% endif %}</span>
         {% endif %}
       </div>
+      <form method="post" action="/job/{{ job.id }}/status">
+        <input type="hidden" name="back" value="/job/{{ job.id }}#application">
+        <div class="tabs">
+          {% for s in STAGES %}<button type="submit" name="status" value="{{ s }}" class="stage-btn {{ 'on' if s == status }}">{{ STAGE_LABELS[s] }}</button>{% endfor %}
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label class="muted" style="margin:0" for="stage-date">Date</label>
+          <input id="stage-date" type="date" name="date" value="{{ today }}" style="width:auto;padding:5px 8px">
+          <input type="text" name="note" placeholder="note for the timeline (optional)" aria-label="Note for the timeline" style="flex:1;min-width:160px;padding:6px 10px">
+        </div>
+        <p class="muted" style="margin:6px 0 0">Pick the date and note first, then click the stage.</p>
+      </form>
+      <h3 style="margin-top:18px">Timeline</h3>
+      {% if app.events %}
+      <ol class="timeline">
+        {% for e in app.events %}<li><span class="muted">{{ e.at | day }}</span> {{ m.stage_pill(e.status) }}{% if e.note %} {{ e.note }}{% endif %}</li>{% endfor %}
+      </ol>
+      {% else %}<p class="muted">Nothing yet. Stage changes show up here.</p>{% endif %}
     </div>
-  </details>
-</div>
-{% endif %}
 
-<div class="card" id="github">
+    <div class="card">
+      <h2>Details</h2>
+      <form method="post" action="/job/{{ job.id }}/application">
+        <label for="a-contact">Recruiter / contact</label><input id="a-contact" type="text" name="contact" value="{{ app.contact }}" placeholder="name, email, LinkedIn">
+        <label for="a-next">Next date (interview, call, deadline)</label><input id="a-next" type="date" name="next_date" value="{{ app.next_date }}">
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label for="a-cv">CV I sent</label>
+            <select id="a-cv" name="sent_cv_id"><option value="0">- not recorded -</option>{% for c in cvs %}<option value="{{ c.id }}" {% if app.sent_cv_id == c.id %}selected{% endif %}>CV #{{ c.id }} · {{ c.created_at | day }}</option>{% endfor %}</select></div>
+          <div><label for="a-letter">Cover letter I sent</label>
+            <select id="a-letter" name="sent_letter_id"><option value="0">- none / not recorded -</option>{% for l in letters %}<option value="{{ l.id }}" {% if app.sent_letter_id == l.id %}selected{% endif %}>Letter #{{ l.id }} · {{ l.created_at | day }}</option>{% endfor %}</select></div>
+        </div>
+        <label for="a-notes">Notes (salary discussed, interviewers, impressions…)</label>
+        <textarea id="a-notes" name="notes" style="min-height:140px">{{ app.notes }}</textarea>
+        <div style="margin-top:10px"><button class="secondary" type="submit">Save details</button></div>
+      </form>
+    </div>
+  </div>
+</section>
+
+{# ---------- Interview prep ---------- #}
+<section class="tab-panel" id="tab-interview" data-tab="interview">
+  <div class="card">
+    <h2>Interview prep</h2>
+    <p class="muted">Likely questions with answer outlines from your own experience, STAR stories, topics to revise, honest answers for your gaps, and questions to ask them.{% if not fit %} Run the <a href="#fit">fit check</a> first for sharper gap answers.{% endif %}</p>
+    {% if active.prep %}{{ m.running(active.prep, "Claude is preparing your interview") }}
+    {% elif has_prep %}
+      <a class="btn" href="/prep/{{ job.id }}">Open interview prep</a>
+    {% else %}
+    <form method="post" action="/prep/{{ job.id }}" data-slow class="row">
+      <button type="submit">Prepare me for this interview</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{# ---------- GitHub ---------- #}
+<section class="tab-panel" id="tab-github" data-tab="github">
+<div class="card">
   <div class="section-title">
     <h2>My GitHub projects for this job</h2>
     {% if not active.github %}
     <form method="post" action="/job/{{ job.id }}/github" data-slow class="row">
       {% if gh %}<label style="font-weight:400;color:inherit;margin:0"><input type="checkbox" name="refresh" value="1"> re-read repos</label>{% endif %}
-      <button class="secondary" type="submit">{{ 'Re-check' if gh else 'Check my GitHub' }}</button>
+      <button class="{{ 'secondary' if gh }}" type="submit">{{ 'Re-check' if gh else 'Check my GitHub' }}</button>
     </form>{% endif %}
   </div>
   {% if active.github %}{{ m.running(active.github, "Reading your repos and comparing them with the job") }}{% endif %}
@@ -269,7 +395,7 @@
           <div class="muted">Features</div><ul class="tight">{% for f in idea.features %}<li>{{ f }}</li>{% endfor %}</ul>
         </div>
         <div>
-          <div class="muted">MVP plan</div><ol style="margin:4px 0;padding-left:20px">{% for s in idea.mvp_plan %}<li>{{ s }}</li>{% endfor %}</ol>
+          <div class="muted">MVP plan</div><ol class="tight">{% for s in idea.mvp_plan %}<li>{{ s }}</li>{% endfor %}</ol>
           {% if idea.stretch_goals %}<div class="muted">Stretch goals</div><ul class="tight">{% for s in idea.stretch_goals %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
         </div>
       </div>
@@ -281,10 +407,43 @@
     <p class="muted">Compares your public repos (README, files, build files) with this job. Shows which repos to highlight, or suggests a project to build if none fits.</p>
   {% endif %}
 </div>
+</section>
 
-<div class="card">
-  <h2>Job description</h2>
-  {% if fetch_error %}<div class="err">{{ fetch_error }}</div>{% endif %}
-  <div class="desc">{{ job.description or "No description available - open the posting." }}</div>
-</div>
+<style>
+  .job-head { padding-bottom:16px; }
+  .head-main { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-top:6px; flex-wrap:wrap; }
+  .head-main h1 { margin:0 0 6px; font-size:26px; line-height:1.25; }
+  .facts { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:14.5px; }
+  .facts .sal { color:var(--good); font-weight:600; }
+  .head-badges { display:flex; align-items:center; gap:6px; }
+  .head-badges .pill { margin:0; }
+  .warn-tile { margin-top:14px; border-color:var(--warn); background:var(--warn-soft); color:var(--warn); }
+  .head-actions { margin-top:16px; }
+  .overview { display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:18px; align-items:start; }
+  @media (max-width:900px) { .overview { grid-template-columns:minmax(0, 1fr); } .glance { order:-1; } }
+  .job-head, .tab-panel, .overview > * { min-width:0; }
+  .head-main > div:first-child { min-width:0; overflow-wrap:anywhere; }
+  .glance .card { padding:18px; }
+  .glance-h { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:12px 0 4px; }
+  ul.plus li::marker { content:"+  "; color:var(--good); font-weight:700; }
+  ul.minus li::marker { content:"–  "; color:var(--bad); font-weight:700; }
+
+  .posting { max-width:72ch; font-size:15px; line-height:1.7; }
+  .posting h4 { font-size:15.5px; font-weight:650; margin:22px 0 6px; color:var(--ink); }
+  .posting h4:first-child { margin-top:0; }
+  .posting p { margin:0 0 10px; }
+  .posting ul { margin:0 0 12px; padding-left:22px; }
+  .posting li { margin:3px 0; }
+  .posting li::marker { color:var(--muted); }
+
+  ol.steps { list-style:none; margin:0; padding:0; counter-reset:step; }
+  ol.steps li { counter-increment:step; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 0; border-bottom:1px dashed var(--line); }
+  ol.steps li:last-child { border-bottom:0; }
+  ol.steps li::before { content:counter(step); flex:none; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700;
+    border:1.5px solid var(--line-strong); color:var(--muted); }
+  ol.steps li.done::before { content:"✓"; background:var(--good); border-color:var(--good); color:#fff; }
+  ol.steps li.done > a { color:var(--ink); }
+  ol.steps li .pill { margin:0; }
+
+</style>
 {% endblock %}
