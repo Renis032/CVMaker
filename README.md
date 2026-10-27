@@ -2,6 +2,34 @@
 
 Finds software developer jobs in the countries you choose, plus fully remote jobs, from job boards and directly from company career pages. Then it uses Claude to tailor your CV to the job you pick.
 
+## Screenshots
+
+The screenshots use a made-up demo profile ("Alex Morgan") and fictional companies.
+
+**Jobs**: dashboard strip, saved-search tabs, Claude fit and keyword scores, salary converted to € per month, and what your feedback taught ("↑ Sofia", "↓ junior roles").
+
+![Jobs list](docs/screenshots/jobs.png)
+
+**Job page, Fit & gaps**: Claude's full fit check, with what helps you, what counts against you, and a plan to close the gaps.
+
+![Fit check on a job page](docs/screenshots/job-fit.png)
+
+**Tailored CV**: one-page preview, layout controls, the requirements you match and those your profile doesn't show.
+
+![Tailored CV](docs/screenshots/cv.png)
+
+**Pipeline**: applications from To apply to Offer, Rejected or Ghosted, with response rates and follow-ups due.
+
+![Application pipeline](docs/screenshots/pipeline.png)
+
+**Insights, Your gaps**: the gaps from all your fit checks grouped and ranked by how many jobs they affect.
+
+![Insights: your gaps](docs/screenshots/insights-gaps.png)
+
+**Insights, Market**: most requested skills (and whether you have them), salaries by seniority and place, and postings per week.
+
+![Insights: market](docs/screenshots/insights-market.png)
+
 ## Setup
 
 ```bash
