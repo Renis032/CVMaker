@@ -12,7 +12,8 @@
 {% elif not applied %}{% set next = ("Apply", "#application", "Open the posting, send CV #" ~ cvs[0].id ~ ", then mark the job as Applied.") %}
 {% elif status == 'applied' %}{% set next = ("Wait for a reply", "#application", ("Follow-up due now." if app.follow_up_at and app.follow_up_at <= now else "Follow-up reminder " ~ (app.follow_up_at | ago) ~ ".") if app.follow_up_at else "") %}
 {% elif status in ['screening', 'interview'] and not has_prep %}{% set next = ("Prepare for the interview", "#interview", "Likely questions with answers from your own experience.") %}
-{% elif status in ['screening', 'interview'] %}{% set next = ("Review your interview prep", "#interview", ("Next date: " ~ app.next_date) if app.next_date else "") %}
+{% elif status in ['screening', 'interview'] %}{% set next = ("Practise, then write a debrief", "#interview", ("Next date: " ~ app.next_date) if app.next_date else "After each interview, note what they asked.") %}
+{% elif status == 'offer' and not (offer and offer.review) %}{% set next = ("Review the offer before you sign", "#offer", "Clauses, pay against the market, what to negotiate.") %}
 {% else %}{% set next = ("", "", "") %}{% endif %}
 
 <div class="card job-head">
@@ -34,6 +35,13 @@
     </div>
   </div>
 
+  {% if app.closed_at %}
+  <div class="tile closed-tile row" style="justify-content:space-between">
+    <span><strong>This posting looks closed</strong> · {{ app.closed_reason }} · noticed {{ app.closed_at | ago }}</span>
+    <form method="post" action="/check/{{ job.id }}/still-open"><button class="secondary" type="submit">It's still open</button></form>
+  </div>
+  {% endif %}
+
   {% if history %}
   <div class="tile warn-tile">
     <strong>You've applied to {{ job.company }} {{ history | length }} time{{ 's' if history | length != 1 }} before.</strong>
@@ -49,6 +57,9 @@
       {% if status == 'hidden' %}<button class="secondary" name="status" value="new">Unhide</button>{% endif %}
     </form>
     {% if status != 'hidden' %}{{ m.hide_menu(job.id, hide_reasons, '/', '✕ Hide') }}{% endif %}
+    {% if active.get('pack') %}{{ m.running(active['pack']) }}
+    {% elif pack_info %}<span class="muted">Application pack ready · {{ pack_info.dir }}</span>
+    {% else %}<form method="post" action="/job/{{ job.id }}/pack" data-slow><button class="secondary" type="submit" title="Fit check, project ideas, tailored CV, cover letter and interview prep in one go">Make application pack</button></form>{% endif %}
     {% if next[0] %}
     <a class="next-step" href="{{ next[1] or '#' }}">
       <span class="k">Next step</span> <strong>{{ next[0] }}</strong>{% if next[2] %} <span class="muted">{{ next[2] }}</span>{% endif %}{% if next[1] %} <span aria-hidden="true">→</span>{% endif %}
@@ -57,7 +68,7 @@
   </div>
 </div>
 
-<nav class="page-tabs" aria-label="Job sections" data-alias='{"plan": "fit", "letter": "docs", "cv": "docs", "prep": "interview"}'>
+<nav class="page-tabs" aria-label="Job sections" data-alias='{"plan": "fit", "letter": "docs", "cv": "docs", "prep": "interview", "debrief": "interview", "contact": "outreach"}'>
   <a href="#overview" data-tab="overview">Overview</a>
   <a href="#fit" data-tab="fit">Fit &amp; gaps
     {% if active.fit %}<span class="spin"></span>{% elif fit %}<span class="tb {{ 'f-hi' if fit.rating >= 7 else 'f-mid' if fit.rating >= 5 else 'f-lo' }}">{{ fit.rating }}/10</span>{% endif %}</a>
@@ -65,8 +76,12 @@
     {% if active.tailor or active.letter %}<span class="spin"></span>{% elif cvs or letters %}<span class="tb">{{ cvs | length + letters | length }}</span>{% endif %}</a>
   <a href="#application" data-tab="application">Application
     {% if status not in ['new', 'hidden'] %}<span class="tb">{{ STAGE_LABELS[status] }}</span>{% endif %}</a>
-  <a href="#interview" data-tab="interview">Interview prep
-    {% if active.prep %}<span class="spin"></span>{% elif has_prep %}<span class="tb">✓</span>{% endif %}</a>
+  <a href="#outreach" data-tab="outreach">Outreach
+    {% if active.outreach %}<span class="spin"></span>{% elif outreach %}<span class="tb">✓</span>{% endif %}</a>
+  <a href="#interview" data-tab="interview">Interview
+    {% if active.prep or active.debrief %}<span class="spin"></span>{% elif debriefs %}<span class="tb">{{ debriefs | length }} debrief{{ 's' if debriefs | length != 1 }}</span>{% elif has_prep %}<span class="tb">✓</span>{% endif %}</a>
+  <a href="#offer" data-tab="offer">Offer
+    {% if active.offer %}<span class="spin"></span>{% elif offer and offer.review %}<span class="tb">✓</span>{% endif %}</a>
   <a href="#github" data-tab="github">GitHub
     {% if active.github %}<span class="spin"></span>{% elif gh %}<span class="tb">{{ gh.matches | length }} repo{{ 's' if gh.matches | length != 1 }}</span>{% endif %}</a>
 </nav>
@@ -112,6 +127,39 @@
         {% else %}
           <p class="muted">Not rated yet. <a href="#fit">Check your fit →</a></p>
         {% endif %}
+      </div>
+
+      <div class="card posting-check">
+        <div class="section-title"><h2 style="margin:0">Posting check</h2>
+          {% if post_review %}<span class="score {{ 's-hi' if post_review.trust >= 7 else 's-mid' if post_review.trust >= 4 else 's-lo' }}" title="How real and open it looks, 1-10">{{ post_review.trust }}/10</span>{% endif %}</div>
+        <div class="live">
+          {% if app.closed_at %}<span class="dot red"></span> <strong>Closed</strong> <span class="muted">· {{ app.closed_reason }}</span>
+          {% elif live and live.state == 'open' %}<span class="dot green"></span> <strong>Still open</strong> <span class="muted">· {{ live.why }}</span>
+          {% elif live %}<span class="dot amber"></span> <strong>Not sure</strong> <span class="muted">· {{ live.why }}</span>
+          {% elif app.checked_at %}<span class="dot green"></span> <strong>Listed</strong> <span class="muted">· seen in a search {{ app.checked_at | ago }}</span>
+          {% else %}<span class="muted">Not checked yet.</span>{% endif %}
+        </div>
+        <div class="row" style="margin:8px 0 4px">
+          <form method="post" action="/check/{{ job.id }}/live"><button class="secondary" type="submit" title="Asks the job board, or loads the posting">Is it still open?</button></form>
+          {% if not app.closed_at %}<form method="post" action="/check/{{ job.id }}/closed"><button class="secondary" type="submit" title="Hide it from the jobs list">Mark closed</button></form>{% endif %}
+        </div>
+        {% for f in local_flags %}
+        <div class="flag"><span class="dot {{ f.severity }}"></span><div><strong>{{ f.finding }}</strong> <span class="muted">· {{ f.kind }}</span>
+          <div class="ev">{{ f.evidence }}</div>
+          {% if f.links %}<div class="ev">{% for i in f.links %}<a href="/job/{{ i }}">listing {{ loop.index }}</a>{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+          <div class="muted ev">{{ f.what_to_do }}</div></div></div>
+        {% endfor %}
+        {% if post_review %}
+          <p style="margin:10px 0 6px">{{ post_review.verdict }}</p>
+          <div class="ev"><strong>Work permit:</strong> {{ post_review.work_permit }}</div>
+          {% for f in post_review.flags %}
+          <div class="flag"><span class="dot {{ f.severity }}"></span><div><strong>{{ f.finding }}</strong>
+            {% if f.evidence %}<div class="ev">“{{ f.evidence }}”</div>{% endif %}<div class="muted ev">{{ f.what_to_do }}</div></div></div>
+          {% endfor %}
+          {% if post_review.questions_to_ask %}<div class="glance-h">Ask the recruiter</div><ul class="tight">{% for q in post_review.questions_to_ask %}<li>{{ q }}</li>{% endfor %}</ul>{% endif %}
+        {% endif %}
+        {% if active.postcheck %}{{ m.running(active.postcheck, "Claude is checking the posting") }}
+        {% else %}<form method="post" action="/check/{{ job.id }}/review" data-slow style="margin-top:8px"><button class="secondary" type="submit" title="Legitimacy, work permit and repost signs, judged by Claude (1 call)">{{ 'Check again with Claude' if post_review else 'Deeper check with Claude' }}</button></form>{% endif %}
       </div>
 
     </aside>
@@ -327,20 +375,231 @@
   </div>
 </section>
 
-{# ---------- Interview prep ---------- #}
+{# ---------- Outreach ---------- #}
+<section class="tab-panel" id="tab-outreach" data-tab="outreach">
+  <div class="two">
+    <div class="card">
+      <h2>Who to contact</h2>
+      <p class="muted">A short note to the right person often gets a CV read. The app never loads LinkedIn or sends anything: the links open LinkedIn's own search for you, and you copy the drafts.</p>
+      {% if app.contact %}<p><strong>Saved contact:</strong> {{ app.contact }}</p>{% endif %}
+      {% if posting_contacts %}
+      <h3>Named in the posting</h3>
+      {% for c in posting_contacts %}
+      <div class="contact-row">
+        <span>{% if '@' in c %}<a href="mailto:{{ c }}">{{ c }}</a>{% else %}{{ c }}{% endif %}</span>
+        <span class="row">
+          {% if '@' not in c %}<a class="btn secondary" href="{{ linkedin_search(c ~ ' ' ~ job.company) }}" target="_blank" rel="noopener">Find on LinkedIn ↗</a>{% endif %}
+          <form method="post" action="/outreach/{{ job.id }}/contact"><input type="hidden" name="contact" value="{{ c }}"><button class="secondary" type="submit">Save as contact</button></form>
+        </span>
+      </div>
+      {% endfor %}
+      {% endif %}
+      {% if outreach %}
+      <h3>People worth finding</h3>
+      {% for c in outreach.kit.contacts %}
+      <div class="contact-row">
+        <div><strong>{{ c.who }}</strong>{% if c.from_posting %} <span class="pill">from the posting</span>{% endif %}<div class="muted" style="font-size:13px">{{ c.why }}</div></div>
+        <a class="btn secondary" href="{{ linkedin_search(c.search_terms) }}" target="_blank" rel="noopener" title="Searches LinkedIn for: {{ c.search_terms }}">Search LinkedIn ↗</a>
+      </div>
+      {% endfor %}
+      {% endif %}
+      <form method="post" action="/outreach/{{ job.id }}/contact" class="row" style="margin-top:12px">
+        <input type="text" name="contact" placeholder="Name, e-mail or LinkedIn link of someone you found" style="flex:1;min-width:200px" aria-label="Contact">
+        <button class="secondary" type="submit">Save contact</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Draft messages</h2>
+      {% if active.outreach %}{{ m.running(active.outreach, "Claude is drafting your messages") }}
+      {% else %}
+      <form method="post" action="/outreach/{{ job.id }}" data-slow>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label for="o-to">Writing to (optional)</label><input id="o-to" type="text" name="recipient" value="{{ outreach.recipient if outreach else '' }}" placeholder="e.g. Maria Ivanova, tech recruiter"></div>
+          <div><label for="o-lang">Language</label><select id="o-lang" name="language">{% for l in ["English", "Bulgarian", "German"] %}<option {% if outreach and outreach.language == l %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        </div>
+        <label for="o-notes">Anything to mention (optional)</label>
+        <input id="o-notes" type="text" name="notes" value="{{ outreach.notes if outreach else '' }}" placeholder="e.g. we met at a meetup, I already applied on their site">
+        <div style="margin-top:10px"><button class="{{ 'secondary' if outreach }}" type="submit">{{ 'Draft again' if outreach else 'Draft LinkedIn messages and e-mails' }}</button></div>
+      </form>
+      {% endif %}
+      {% if outreach %}{% set k = outreach.kit %}
+      {% set email_to = posting_emails[0] if posting_emails else '' %}
+      <div class="draft">
+        <div class="draft-head"><h3>LinkedIn connection note</h3><span class="muted"><span class="chars" data-for="d-note" data-max="300"></span></span><button type="button" class="secondary" data-copy="d-note">Copy</button></div>
+        <textarea id="d-note" rows="4">{{ k.linkedin_note }}</textarea>
+      </div>
+      <div class="draft">
+        <div class="draft-head"><h3>Message after they accept</h3><button type="button" class="secondary" data-copy="d-msg">Copy</button></div>
+        <textarea id="d-msg" rows="6">{{ k.linkedin_message }}</textarea>
+      </div>
+      {% for key, title, mail in [('app', 'Application e-mail', k.application_email), ('fu', 'Follow-up e-mail (7-10 days after applying)', k.follow_up_email)] %}
+      <div class="draft">
+        <div class="draft-head"><h3>{{ title }}</h3>
+          <a class="btn secondary" href="mailto:{{ email_to }}?subject={{ mail.subject | urlencode }}&body={{ mail.body | urlencode }}" title="Opens your e-mail app with this draft; nothing is sent until you press send there">Open in e-mail app</a>
+          <button type="button" class="secondary" data-copy="d-{{ key }}">Copy</button></div>
+        <input type="text" value="{{ mail.subject }}" aria-label="Subject" style="margin-bottom:6px">
+        <textarea id="d-{{ key }}" rows="8">{{ mail.body }}</textarea>
+      </div>
+      {% endfor %}
+      {% if k.tips %}<h3>Tips</h3><ul class="tight">{% for t in k.tips %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{# ---------- Interview ---------- #}
 <section class="tab-panel" id="tab-interview" data-tab="interview">
+  <div class="interview-grid">
+    <div class="card">
+      <h3>1. Prepare</h3>
+      <p class="muted">Likely questions with answers from your own experience, topics to revise, honest answers for your gaps.{% if not fit %} Run the <a href="#fit">fit check</a> first for sharper gap answers.{% endif %}</p>
+      {% if active.prep %}{{ m.running(active.prep, "Claude is preparing your interview") }}
+      {% elif has_prep %}<a class="btn" href="/prep/{{ job.id }}">Open interview prep</a>
+      {% else %}<form method="post" action="/prep/{{ job.id }}" data-slow><button type="submit">Prepare me for this interview</button></form>{% endif %}
+    </div>
+    <div class="card">
+      <h3>2. Practise</h3>
+      <p class="muted">Answer questions in writing and get graded like a real interviewer would, with a stronger version of your answer.</p>
+      <a class="btn {{ 'secondary' if not has_prep }}" href="/practice/{{ job.id }}">{{ 'Continue practising' if practice_count else 'Start practising' }}</a>
+      {% if practice_count %}<span class="muted">{{ practice_count }} question{{ 's' if practice_count != 1 }}{% if practice_avg is not none %} · average {{ practice_avg }}/10{% endif %}</span>{% endif %}
+    </div>
+    <div class="card">
+      <h3>Your story bank</h3>
+      <p class="muted">{{ story_count }} STAR+R stor{{ 'ies' if story_count != 1 else 'y' }} for “tell me about a time…” questions. Prep and practice use them.</p>
+      <a class="btn secondary" href="/stories">{{ 'Open story bank' if story_count else 'Build your story bank' }}</a>
+    </div>
+  </div>
+
   <div class="card">
-    <h2>Interview prep</h2>
-    <p class="muted">Likely questions with answer outlines from your own experience, STAR stories, topics to revise, honest answers for your gaps, and questions to ask them.{% if not fit %} Run the <a href="#fit">fit check</a> first for sharper gap answers.{% endif %}</p>
-    {% if active.prep %}{{ m.running(active.prep, "Claude is preparing your interview") }}
-    {% elif has_prep %}
-      <a class="btn" href="/prep/{{ job.id }}">Open interview prep</a>
+    <div class="section-title"><h2>3. Debrief after each interview</h2><span class="muted">Write it down the same day, while you remember the questions.</span></div>
+    <details {% if not debriefs %}open{% endif %}>
+      <summary>{{ 'Add a debrief' if debriefs else 'How did it go?' }}</summary>
+      <form method="post" action="/debrief/{{ job.id }}" data-slow>
+        <div class="grid">
+          <div><label for="d-date">Date</label><input id="d-date" type="date" name="date" value="{{ today }}"></div>
+          <div><label for="d-round">Round</label><select id="d-round" name="round">{% for r in debrief_rounds %}<option>{{ r }}</option>{% endfor %}</select></div>
+          <div><label for="d-who">Interviewers (names, roles)</label><input id="d-who" type="text" name="interviewers" placeholder="e.g. Ivan (team lead), Ana (HR)"></div>
+        </div>
+        <label for="d-q">Questions they asked (one per line, roughly)</label><textarea id="d-q" name="questions" style="min-height:110px"></textarea>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label for="d-good">What went well</label><textarea id="d-good" name="went_well"></textarea></div>
+          <div><label for="d-bad">What was hard, or what you'd answer differently</label><textarea id="d-bad" name="went_badly"></textarea></div>
+        </div>
+        <div class="grid" style="grid-template-columns:1fr 2fr">
+          <div><label for="d-feel">How it felt (1 bad - 5 great)</label><input id="d-feel" type="number" name="feeling" min="1" max="5" value="3"></div>
+          <div><label for="d-next">Next steps they mentioned</label><input id="d-next" type="text" name="next_steps" placeholder="e.g. answer within a week, technical round next"></div>
+        </div>
+        <div class="row" style="margin-top:12px"><button type="submit">Save and get Claude's review</button>
+          <span class="muted">Adds the interview to the timeline. Claude says what to improve, what the next round will dig into, suggests stories and drafts a thank-you note.</span></div>
+      </form>
+    </details>
+  </div>
+
+  {% for d in debriefs %}{% set n = d.notes %}{% set r = d.review %}
+  <div class="card debrief">
+    <div class="section-title">
+      <h3 style="margin:0">{{ n.round }}{% if n.interviewers %} · {{ n.interviewers }}{% endif %} <span class="muted" style="font-weight:400">{{ n.date }}</span></h3>
+      <form method="post" action="/debrief-delete/{{ d.id }}" onsubmit="return confirm('Delete this debrief?')"><button class="secondary icon" type="submit" title="Delete" aria-label="Delete">✕</button></form>
+    </div>
+    {% set t = active.get('debrief') %}
+    {% if not r %}
+      {% if t and t.subject == 'debrief:' ~ d.id %}{{ m.running(t, "Claude is reading your debrief") }}{% else %}<p class="muted">No review (it failed or is still queued).</p>{% endif %}
     {% else %}
-    <form method="post" action="/prep/{{ job.id }}" data-slow class="row">
-      <button type="submit">Prepare me for this interview</button>
-    </form>
+      <p>{{ r.summary }}</p>
+      <div class="two">
+        <div><h4>Keep doing</h4><ul class="tight plus">{% for x in r.went_well %}<li>{{ x }}</li>{% endfor %}</ul></div>
+        <div><h4>Do better</h4>{% for x in r.improve | sort(attribute='rating', reverse=True) %}<div class="con"><strong>{{ x.point }}</strong> <span class="muted">{{ x.rating }}/10</span><div>→ {{ x.advice }}</div></div>{% endfor %}</div>
+      </div>
+      <div class="two">
+        <div><h4>Prepare for the next round</h4><ul class="tight">{% for x in r.prepare_next %}<li>{{ x }}</li>{% endfor %}</ul></div>
+        <div><h4>Signals</h4><ul class="tight">{% for x in r.signals %}<li>{{ x }}</li>{% endfor %}</ul></div>
+      </div>
+      {% if r.story_candidates %}
+      <h4>Stories for your bank</h4>
+      {% for s in r.story_candidates %}
+      <div class="contact-row">
+        <div><strong>{{ s.title }}</strong><div class="muted" style="font-size:13px">{{ s.result | ph }}</div></div>
+        {% if s.added_as %}<a href="/stories#s-{{ s.added_as }}">✓ in your bank</a>
+        {% else %}<form method="post" action="/debrief-story/{{ d.id }}"><input type="hidden" name="index" value="{{ loop.index0 }}"><button class="secondary" type="submit">Add to story bank</button></form>{% endif %}
+      </div>
+      {% endfor %}
+      {% endif %}
+      <div class="draft">
+        <div class="draft-head"><h4>Thank-you note</h4><a class="btn secondary" href="mailto:?subject={{ r.thank_you_email.subject | urlencode }}&body={{ r.thank_you_email.body | urlencode }}">Open in e-mail app</a><button type="button" class="secondary" data-copy="ty-{{ d.id }}">Copy</button></div>
+        <textarea id="ty-{{ d.id }}" rows="6">{{ r.thank_you_email.body }}</textarea>
+      </div>
+    {% endif %}
+    <details><summary class="muted">Your notes</summary>
+      <dl class="notes">{% for k, v in [('Questions', n.questions_asked), ('Went well', n.went_well), ('Was hard', n.was_hard), ('Feeling', n.feeling_1_to_5 ~ '/5'), ('Next steps', n.next_steps_they_mentioned)] if v %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+    </details>
+  </div>
+  {% endfor %}
+</section>
+
+{# ---------- Offer ---------- #}
+<section class="tab-panel" id="tab-offer" data-tab="offer">
+  <div class="card">
+    <h2>Offer &amp; contract review</h2>
+    <p class="muted">Paste the offer letter or contract, or upload it as a PDF. Claude goes through every clause, flags what is unusual or worth negotiating, compares the pay with the salaries the app has seen for similar jobs, and drafts a reply. It's a careful second read, not legal advice.</p>
+    {% if active.offer %}{{ m.running(active.offer, "Claude is reading the offer") }}
+    {% else %}
+    <details {% if not offer %}open{% endif %}>
+      <summary>{{ 'Review a new version' if offer else 'Review an offer' }}</summary>
+      <form method="post" action="/offer/{{ job.id }}" enctype="multipart/form-data" data-slow>
+        <label for="of-text">Offer or contract text</label>
+        <textarea id="of-text" name="text" style="min-height:180px" placeholder="Paste the offer e-mail or contract here">{{ offer.text if offer else '' }}</textarea>
+        <div class="grid">
+          <div><label for="of-file">…or upload a PDF</label><input id="of-file" type="file" name="file" accept="application/pdf"></div>
+          <div><label for="of-wish">What you want (optional)</label><input id="of-wish" type="text" name="wishes" value="{{ offer.wishes if offer else '' }}" placeholder="e.g. at least €3,500 net, 2 days remote, start in March"></div>
+        </div>
+        <div style="margin-top:12px"><button type="submit">Review the offer</button></div>
+      </form>
+    </details>
     {% endif %}
   </div>
+
+  {% if offer and offer.review %}{% set o = offer.review %}
+  <div class="card">
+    <h2>In short</h2>
+    <p>{{ o.summary }}</p>
+    <h3>Pay</h3>
+    <p>{{ o.salary_view }}</p>
+    <details><summary class="muted">Market numbers used</summary><pre class="market">{{ offer.market }}</pre></details>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h2>Terms</h2>
+      <table class="fit">{% for t in o.terms %}<tr><th style="width:34%">{{ t.term }}</th><td><strong>{{ t.value }}</strong>{% if t.comment %}<div class="muted" style="font-size:13px">{{ t.comment }}</div>{% endif %}</td></tr>{% endfor %}</table>
+      {% if o.missing %}<h3>Not mentioned</h3><ul class="tight minus">{% for x in o.missing %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    <div class="card">
+      <h2>Clauses</h2>
+      {% for risk in ['red', 'amber', 'green'] %}{% for c in o.clauses if c.risk == risk %}
+      <div class="clause {{ risk }}">
+        <div><span class="dot {{ risk }}"></span><strong>{{ c.clause }}</strong></div>
+        {% if c.quote %}<blockquote>“{{ c.quote }}”</blockquote>{% endif %}
+        <div>{{ c.explanation }}</div>
+        {% if c.what_to_ask and risk != 'green' %}<div class="muted" style="margin-top:4px">→ {{ c.what_to_ask }}</div>{% endif %}
+      </div>
+      {% endfor %}{% endfor %}
+    </div>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h2>Worth negotiating</h2>
+      {% for n in o.negotiation %}<div class="con"><strong>{{ n.point }}</strong><div class="muted">{{ n.why }}</div><div class="say">“{{ n.wording }}”</div></div>{% endfor %}
+      {% if o.questions_before_signing %}<h3>Ask before signing</h3><ul class="tight">{% for q in o.questions_before_signing %}<li>{{ q }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    <div class="card">
+      <div class="draft">
+        <div class="draft-head"><h2 style="margin:0">Reply</h2><a class="btn secondary" href="mailto:?subject={{ o.reply_email.subject | urlencode }}&body={{ o.reply_email.body | urlencode }}">Open in e-mail app</a><button type="button" class="secondary" data-copy="of-reply">Copy</button></div>
+        <input type="text" value="{{ o.reply_email.subject }}" aria-label="Subject" style="margin:8px 0 6px">
+        <textarea id="of-reply" rows="12">{{ o.reply_email.body }}</textarea>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </section>
 
 {# ---------- GitHub ---------- #}
@@ -445,5 +704,40 @@
   ol.steps li.done > a { color:var(--ink); }
   ol.steps li .pill { margin:0; }
 
+  .closed-tile { margin-top:14px; border-color:var(--bad); background:var(--bad-soft); color:var(--bad); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; flex:none; margin-top:6px; background:var(--muted); }
+  .dot.red { background:var(--bad); } .dot.amber { background:var(--warn); } .dot.green { background:var(--good); } .dot.info { background:var(--accent); }
+  .live .dot { margin:0 4px 0 0; }
+  .posting-check .flag { display:flex; gap:8px; padding:8px 0; border-top:1px dashed var(--line); font-size:13.5px; }
+  .posting-check .ev, .ev { font-size:12.5px; line-height:1.45; margin-top:2px; overflow-wrap:anywhere; }
+  .contact-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); flex-wrap:wrap; }
+  .draft { margin-top:16px; }
+  .draft-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; }
+  .draft-head h3, .draft-head h4 { margin:0; margin-right:auto; }
+  .draft textarea { width:100%; }
+  .chars.over { color:var(--bad); font-weight:700; }
+  .interview-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:0 18px; }
+  .interview-grid .card h3 { margin-top:0; }
+  .debrief h4 { margin:14px 0 6px; }
+  .con { padding:6px 0; border-top:1px dashed var(--line); }
+  .con .say { margin-top:4px; font-style:italic; }
+  dl.notes { display:grid; grid-template-columns:110px 1fr; gap:6px 10px; } dl.notes dd { margin:0; white-space:pre-wrap; } dl.notes dt { color:var(--muted); }
+  .clause { padding:10px 0; border-top:1px solid var(--line); }
+  .clause .dot { margin:0 6px 0 0; }
+  .clause blockquote { margin:6px 0; padding:4px 10px; border-left:3px solid var(--line-strong); color:var(--muted); font-size:13px; }
+  pre.market { white-space:pre-wrap; font-size:12.5px; }
+
 </style>
+<script>
+  document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => {
+    const el = document.getElementById(b.dataset.copy);
+    try { await navigator.clipboard.writeText(el.value); } catch (e) { el.select(); document.execCommand("copy"); }
+    const t = b.textContent; b.textContent = "Copied ✓"; setTimeout(() => b.textContent = t, 1500);
+  }));
+  document.querySelectorAll(".chars[data-for]").forEach(out => {
+    const el = document.getElementById(out.dataset.for), max = +out.dataset.max;
+    const show = () => { out.textContent = `${el.value.length} / ${max} characters`; out.classList.toggle("over", el.value.length > max); };
+    el.addEventListener("input", show); show();
+  });
+</script>
 {% endblock %}

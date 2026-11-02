@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Add a job - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Add a job you found</h1>
+  <p class="muted">Paste the link to the posting, or the posting text itself. Claude reads it, the job is saved to your list as “To apply”, and the steps you choose run straight after. You can leave this page; it keeps running.</p>
+  <form method="post" action="/add" data-slow>
+    <label for="add-text">Link or posting text</label>
+    <textarea id="add-text" name="text" required style="min-height:160px" placeholder="https://boards.greenhouse.io/company/jobs/123…
+
+or paste the whole posting here"></textarea>
+    <div class="hint" id="add-kind" style="font-size:12px;color:var(--muted);margin-top:5px">LinkedIn and jobs.bg pages can't be loaded by the app. For those, paste the posting text.</div>
+    <label>Then</label>
+    <div class="steps-choice">
+      {% for key, text in steps.items() %}
+      <label class="check"><input type="radio" name="step" value="{{ key }}" {% if key == 'cv' %}checked{% endif %}> {{ text }}</label>
+      {% endfor %}
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button type="submit">Add job</button>
+      <span class="muted">Each Claude step uses your plan: reading the posting is 1 call, fit +1, CV +1 (or +2 to fit one page), full pack about 6.</span>
+    </div>
+  </form>
+</div>
+
+{% if active or recent %}
+<div class="card">
+  <h2>Added recently</h2>
+  {% for t in active %}<div data-follow>{{ m.running(t) }}</div>{% endfor %}
+  {% for t in recent if t.status not in ['queued', 'running'] %}
+  <div class="row" style="padding:6px 0;border-top:1px solid var(--line)">
+    {% if t.status == 'done' %}<span class="pill ok-pill">✓</span> <a href="{{ t.url }}">{{ t.label[10:] }}</a>
+    {% else %}<span class="pill err-pill">✗</span> <span>{{ t.label[10:] }}</span> <span class="err" style="flex-basis:100%">{{ t.error }}</span>{% endif %}
+    <span class="muted" style="margin-left:auto">{{ t.created | ago }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<style>
+  .steps-choice { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+  .ok-pill { background:var(--good-soft); color:var(--good); } .err-pill { background:var(--bad-soft); color:var(--bad); }
+</style>
+<script>
+  (() => {
+    const box = document.getElementById("add-text"), hint = document.getElementById("add-kind");
+    const base = hint.textContent;
+    box.addEventListener("input", () => {
+      const v = box.value.trim();
+      if (/^https?:\/\/\S+$/.test(v)) hint.textContent = /linkedin\.com|jobs\.bg/.test(v) ? "⚠ The app doesn't load this site. Paste the posting text instead." : "A link: the app loads the page, then Claude reads it.";
+      else hint.textContent = v ? `Pasted text: ${v.split(/\s+/).length} words. Claude reads it as it is.` : base;
+    });
+  })();
+</script>
+{% endblock %}

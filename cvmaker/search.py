@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import yaml
 
-from . import db, settings
+from . import db, people, settings
 from .countries import COUNTRY_TERMS
 from .models import Criteria, Job, Profile
 from .salary import find_salary
@@ -137,7 +137,7 @@ def _run_search(criteria: Criteria, profile: Profile | None, on_progress: Callab
             for company in companies.get(group, []):
                 if criteria.sources and company["type"] not in criteria.sources:
                     continue
-                tasks[pool.submit(_run_company, company, criteria)] = company["name"]
+                tasks[people.submit(pool, _run_company, company, criteria)] = company["name"]
         for name, fn in BOARD_SOURCES.items():
             if criteria.sources and name not in criteria.sources:
                 continue
@@ -145,7 +145,7 @@ def _run_search(criteria: Criteria, profile: Profile | None, on_progress: Callab
                 continue
             if not board_has_key(name) and name not in criteria.sources:
                 continue
-            tasks[pool.submit(fn, criteria)] = name
+            tasks[people.submit(pool, fn, criteria)] = name
 
         result = SearchResult()
         found: dict[str, Job] = {}

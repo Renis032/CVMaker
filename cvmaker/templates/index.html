@@ -10,21 +10,19 @@
 </div>
 
 {% set run = running.get(current.id) %}
-<div class="card">
-  <div class="page-head" style="margin-bottom:10px">
+{% set age_choices = [3, 7, 14, 30, 60, 90] %}
+<div class="card search-card">
+  <div class="page-head" style="margin-bottom:4px">
     <h1>Find jobs</h1>
-    <div class="row">
-      {% for s in searches %}<a class="pill {{ 'on' if s.id == current.id }}" href="/?search={{ s.id }}">{{ s.name }}{% if s.auto %} ⏱{% endif %}{% if running.get(s.id) %} …{% endif %}</a>{% endfor %}
-      <a class="pill {{ 'on' if not current.id }}" href="/?new=1">+ new search</a>
+    <a class="btn secondary" href="/add" title="Paste a link or a posting you found elsewhere">+ Add a job by link or text</a>
+  </div>
+  <div class="row saved-row">
+    <span class="muted">Saved searches</span>
+    <div class="tabs small">
+      {% for s in searches %}<a class="{{ 'on' if s.id == current.id }}" href="/?search={{ s.id }}" title="{{ 'Runs every %g h' % s.every_hours if s.auto else 'Runs only when you start it' }}">{{ s.name }}{% if s.auto %} ⏱{% endif %}{% if running.get(s.id) %} …{% endif %}</a>{% endfor %}
+      <a class="{{ 'on' if not current.id }}" href="/?new=1">+ New search</a>
     </div>
   </div>
-  {% if roles %}
-  <div class="row muted" style="margin-bottom:6px">
-    Fill from a role profile:
-    {% for r in roles %}<a class="pill {{ 'on' if chosen_role and chosen_role.id == r.id }}" href="/?role={{ r.id }}{% if current.id %}&search={{ current.id }}{% endif %}">{{ r.name }}</a>{% endfor %}
-    <a class="pill" href="/roles">+ manage</a>
-  </div>
-  {% endif %}
 
   <datalist id="dl-countries">{% for code, name in suggest.countries %}<option value="{{ code }}">{{ name }}</option>{% endfor %}</datalist>
   <datalist id="dl-skills">{% for s in suggest.skills %}<option value="{{ s }}">{% endfor %}</datalist>
@@ -34,64 +32,147 @@
 
   <form method="post" action="/search" id="search-form">
     <input type="hidden" name="search_id" value="{{ current.id }}">
-    <div class="grid">
-      <div><label for="f-name">Search name</label><input id="f-name" type="text" name="name" value="{{ current.name }}" placeholder="e.g. Java in Sofia"></div>
-      <div><label>Job title must contain one of</label><input type="text" name="role_keywords" data-chips data-list="dl-roles" value="{{ criteria.role_keywords | join(', ') }}"></div>
-      <div><label>Skills (ranking and remote board search)</label><input type="text" name="skill_keywords" data-chips data-list="dl-skills" value="{{ criteria.skill_keywords | join(', ') }}"></div>
-      <div><label>Countries</label><input type="text" name="countries" data-chips data-upper data-list="dl-countries" placeholder="BG, DE…" value="{{ criteria.countries | join(', ') }}"></div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <label class="check"><input type="checkbox" name="include_remote" value="true" {% if criteria.include_remote %}checked{% endif %}> Include fully remote jobs</label>
-      <label class="check"><input type="checkbox" name="remote_only" value="true" {% if criteria.remote_only %}checked{% endif %}> Remote only</label>
-      <label class="check"><input type="checkbox" name="salary_only" value="true" {% if criteria.salary_only %}checked{% endif %}> States a salary</label>
-      <span class="muted" style="margin-left:6px">Seniority:</span>
-      {% for level in seniority_levels %}
-        <label class="check"><input type="checkbox" name="seniority" value="{{ level }}" {% if level in criteria.seniority %}checked{% endif %}> {{ level }}</label>
-      {% endfor %}
-    </div>
 
-    <details style="margin-top:14px">
-      <summary class="muted" style="cursor:pointer;font-weight:600">Advanced: exclusions, regions, age, score, sources, schedule</summary>
+    <p class="search-summary" id="search-summary" aria-live="polite"></p>
+
+    <section class="step">
+      <div class="step-head">
+        <h3><span class="num">1</span> What job</h3>
+        {% if roles %}
+        <div class="row muted quick-fill">Fill from a role profile:
+          {% for r in roles %}<a class="pill {{ 'on' if chosen_role and chosen_role.id == r.id }}" href="/?role={{ r.id }}{% if current.id %}&search={{ current.id }}{% endif %}" title="Puts this role's title words and skills into the fields below">{{ r.name }}</a>{% endfor %}
+          <a class="pill" href="/roles">manage</a>
+        </div>
+        {% endif %}
+      </div>
       <div class="grid">
-        <div><label>Exclude titles containing</label><input type="text" name="exclude" data-chips data-list="dl-exclude" value="{{ criteria.exclude | join(', ') }}"></div>
-        <div><label>Accepted remote regions</label><input type="text" name="remote_regions" data-chips data-list="dl-regions" value="{{ criteria.remote_regions | join(', ') }}"></div>
-        <div><label>Description must mention one of (optional)</label><input type="text" name="must_mention" data-chips data-list="dl-skills" placeholder="e.g. spring boot" value="{{ criteria.must_mention | join(', ') }}"></div>
-        <div class="grid" style="grid-template-columns:1fr 1fr;gap:0 12px">
-          <div><label for="f-age">Max posting age (days)</label><input id="f-age" type="number" name="max_age_days" value="{{ criteria.max_age_days }}"></div>
-          <div><label for="f-min">Min keyword score</label><input id="f-min" type="number" name="min_score" min="0" max="100" value="{{ criteria.min_score }}"></div>
+        <div>
+          <label>Job title contains any of</label>
+          <input type="text" name="role_keywords" data-chips data-list="dl-roles" placeholder="e.g. developer" value="{{ criteria.role_keywords | join(', ') }}">
+          <div class="hint">A job is kept only if its title has at least one of these. Leave empty to keep every title.</div>
+        </div>
+        <div>
+          <label>Your skills</label>
+          <input type="text" name="skill_keywords" data-chips data-list="dl-skills" placeholder="e.g. java" value="{{ criteria.skill_keywords | join(', ') }}">
+          <div class="hint">Jobs that mention more of these rank higher. Remote job boards are searched for them.</div>
         </div>
       </div>
-      <label>Job boards (none ticked in either list = all that apply to your countries)</label>
-      <div class="row">
-        {% for name, label, has_key, key in boards %}
-          <label class="check" {% if not has_key %}title="needs {{ key }} in .env"{% endif %}>
-            <input type="checkbox" name="sources" value="{{ name }}" {% if name in criteria.sources %}checked{% endif %}>
-            {{ label }}{% if not has_key %} <span class="muted">(needs {{ key }})</span>{% endif %}
-          </label>
-        {% endfor %}
-      </div>
-      <label>Company job boards (<a href="/companies">manage companies</a>)</label>
-      <div class="row">
-        {% for s in company_sources %}
-          <label class="check"><input type="checkbox" name="sources" value="{{ s }}" {% if s in criteria.sources %}checked{% endif %}> {{ s }}</label>
-        {% endfor %}
-      </div>
-      <label>Schedule for this search</label>
-      <div class="row">
-        <label class="check"><input type="checkbox" name="auto_run" value="true" {% if current.auto %}checked{% endif %}> run it automatically every</label>
-        <input type="number" name="every_hours" step="0.5" min="0.5" value="{{ current.every_hours }}" style="width:80px;padding:6px 10px" aria-label="hours"> hours
-        <label class="check"><input type="checkbox" name="notify" value="true" {% if current.notify %}checked{% endif %}> desktop notification for new jobs</label>
-      </div>
-    </details>
+    </section>
 
-    <div class="row" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
-      <button type="submit" name="action" value="run" {% if run %}disabled title="This search is already running"{% endif %}>Search jobs</button>
-      <button class="secondary" type="submit" name="action" value="save">Save without searching</button>
-      {% if current.id %}<button class="secondary" type="submit" name="action" value="new">Save as a new search</button>{% endif %}
-      <span style="flex:1"></span>
-      {% if current.id and searches | length > 1 %}
-      <button class="secondary" type="submit" formaction="/searches/{{ current.id }}/delete" onclick="return confirm('Delete the saved search “{{ current.name }}”?')">Delete search</button>
-      {% endif %}
+    <section class="step">
+      <div class="step-head"><h3><span class="num">2</span> Where</h3></div>
+      {% set where = 'remote' if criteria.remote_only else 'both' if criteria.include_remote else 'local' %}
+      <div class="grid">
+        <div>
+          <label>Countries</label>
+          <input type="text" name="countries" data-chips data-upper data-list="dl-countries" placeholder="BG, DE…" value="{{ criteria.countries | join(', ') }}">
+          <div class="hint">Two-letter codes. Decides which company career pages and local job boards are searched.</div>
+        </div>
+        <div>
+          <label id="where-label">Remote jobs</label>
+          <div class="seg" role="radiogroup" aria-labelledby="where-label">
+            <label><input type="radio" name="where" value="local" {% if where == 'local' %}checked{% endif %}> Not wanted</label>
+            <label><input type="radio" name="where" value="both" {% if where == 'both' %}checked{% endif %}> Also include</label>
+            <label><input type="radio" name="where" value="remote" {% if where == 'remote' %}checked{% endif %}> Remote only</label>
+          </div>
+          <div class="when-remote">
+            <label>Remote jobs must allow working from</label>
+            <input type="text" name="remote_regions" data-chips data-list="dl-regions" value="{{ criteria.remote_regions | join(', ') }}">
+            <div class="hint">Remote jobs limited to other regions (e.g. “US only”) are dropped.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="step">
+      <div class="step-head"><h3><span class="num">3</span> Narrow down</h3></div>
+      <div class="grid">
+        <div>
+          <label id="sen-label">Seniority</label>
+          <div class="row" role="group" aria-labelledby="sen-label">
+            <label class="check"><input type="checkbox" id="sen-any" {% if not criteria.seniority %}checked{% endif %}> Any</label>
+            {% for level in seniority_levels %}
+            <label class="check"><input type="checkbox" name="seniority" value="{{ level }}" {% if level in criteria.seniority %}checked{% endif %}> {{ level | capitalize }}</label>
+            {% endfor %}
+          </div>
+          <div class="hint">Guessed from the job title: “Senior”, “Lead” → senior, “Junior”, “Intern” → junior, anything else → mid.</div>
+        </div>
+        <div>
+          <label for="f-age">Posted within</label>
+          <select id="f-age" name="max_age_days">
+            {% for d in age_choices %}<option value="{{ d }}" {% if criteria.max_age_days == d %}selected{% endif %}>the last {{ d }} days</option>{% endfor %}
+            {% if criteria.max_age_days not in age_choices %}<option value="{{ criteria.max_age_days }}" selected>the last {{ criteria.max_age_days }} days</option>{% endif %}
+          </select>
+          <div style="margin-top:10px"><label class="check"><input type="checkbox" name="salary_only" value="true" {% if criteria.salary_only %}checked{% endif %}> Only jobs that state a salary</label></div>
+        </div>
+        <div>
+          <label>Skip titles containing</label>
+          <input type="text" name="exclude" data-chips data-list="dl-exclude" placeholder="e.g. sales" value="{{ criteria.exclude | join(', ') }}">
+        </div>
+      </div>
+      <details class="more" {% if criteria.must_mention or criteria.min_score %}open{% endif %}>
+        <summary>More filters{% if criteria.must_mention or criteria.min_score %} <span class="pill on-count">in use</span>{% endif %}</summary>
+        <div class="grid">
+          <div>
+            <label>Description must mention one of</label>
+            <input type="text" name="must_mention" data-chips data-list="dl-skills" placeholder="e.g. spring boot" value="{{ criteria.must_mention | join(', ') }}">
+            <div class="hint">Stricter than skills: jobs that mention none of these are dropped.</div>
+          </div>
+          <div>
+            <label for="f-min">Minimum keyword score (0-100)</label>
+            <input id="f-min" type="number" name="min_score" min="0" max="100" value="{{ criteria.min_score }}">
+            <div class="hint">How many of your skills a posting mentions. 0 keeps everything.</div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    {% set picked = criteria.sources | length %}
+    <section class="step">
+      <details class="sources" {% if picked %}open{% endif %}>
+        <summary><h3 style="display:inline"><span class="num">4</span> Where to look</h3>
+          <span class="muted" id="sources-state">{% if picked %}{{ picked }} picked{% else %}every source that covers your countries{% endif %}</span></summary>
+        <div class="hint" style="margin-top:6px">Leave everything unticked to search all sources that fit. Tick some to search only those.
+          <a href="#" id="sources-clear">Untick all</a></div>
+        <label>Job boards</label>
+        <div class="row">
+          {% for name, label, has_key, key in boards %}
+            <label class="check" {% if not has_key %}title="Needs {{ key }} in .env"{% endif %}>
+              <input type="checkbox" name="sources" value="{{ name }}" {% if name in criteria.sources %}checked{% endif %}>
+              {{ label }}{% if not has_key %} <span class="muted">(needs {{ key }})</span>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+        <label>Company career pages (<a href="/companies">manage companies</a>)</label>
+        <div class="row">
+          {% for s in company_sources %}
+            <label class="check"><input type="checkbox" name="sources" value="{{ s }}" {% if s in criteria.sources %}checked{% endif %}> {{ s }}</label>
+          {% endfor %}
+        </div>
+      </details>
+    </section>
+
+    <div class="save-bar">
+      <div class="grid">
+        <div><label for="f-name">Name of this search</label><input id="f-name" type="text" name="name" value="{{ current.name }}" placeholder="e.g. Java in Sofia"></div>
+        <div>
+          <label>Schedule</label>
+          <div class="row">
+            <label class="check"><input type="checkbox" name="auto_run" value="true" {% if current.auto %}checked{% endif %}> Repeat every</label>
+            <input type="number" name="every_hours" step="0.5" min="0.5" value="{{ current.every_hours }}" style="width:80px;padding:6px 10px" aria-label="hours"> hours
+            <label class="check"><input type="checkbox" name="notify" value="true" {% if current.notify %}checked{% endif %}> Notify me of new jobs</label>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button type="submit" name="action" value="run" {% if run %}disabled title="This search is already running"{% endif %}>Search now</button>
+        <button class="secondary" type="submit" name="action" value="save" title="Keep these settings without searching">Save</button>
+        {% if current.id %}<button class="secondary" type="submit" name="action" value="new" title="Keep “{{ current.name }}” as it is and save these settings as another search">Save as new search</button>{% endif %}
+        <span style="flex:1"></span>
+        {% if current.id and searches | length > 1 %}
+        <button class="secondary danger" type="submit" formaction="/searches/{{ current.id }}/delete" onclick="return confirm('Delete the saved search “{{ current.name }}”?')">Delete this search</button>
+        {% endif %}
+      </div>
     </div>
   </form>
 
@@ -110,6 +191,173 @@
       <div class="src-progress">{% for k, v in current.last_counts.items() %}<span class="pill ok">{{ k }} ✓ {{ v }}</span>{% endfor %}</div></details>{% endif %}
   </div>
   {% for e in current.last_errors %}<div class="err" style="margin-top:8px">{{ e }}</div>{% endfor %}
+  {% endif %}
+</div>
+<style>
+  .saved-row { margin-bottom:6px; }
+  .search-summary { margin:12px 0 4px; padding:10px 14px; border-radius:var(--radius-sm); background:var(--accent-soft); color:var(--accent-soft-ink); font-size:14px; line-height:1.5; }
+  .search-summary:empty { display:none; }
+  .search-card .step { border-top:1px solid var(--line); margin-top:16px; padding-top:12px; }
+  .search-card .step-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 16px; }
+  .search-card .step h3 { margin:0; font-size:15px; }
+  .search-card .num { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--chip); color:var(--muted); font-size:12px; font-weight:700; margin-right:4px; }
+  .search-card .quick-fill { font-size:12.5px; gap:4px; }
+  .search-card .quick-fill .pill { margin:0; }
+  .search-card .hint { font-size:12px; color:var(--muted); margin-top:5px; line-height:1.45; }
+  .search-card details.more { margin-top:12px; }
+  .search-card details > summary { cursor:pointer; font-weight:600; font-size:13.5px; }
+  .search-card details.sources > summary .muted { font-weight:400; font-size:13px; margin-left:8px; }
+  .search-card .pill.on-count { background:var(--accent-soft); color:var(--accent-soft-ink); margin:0 0 0 6px; }
+  .seg { display:inline-flex; background:var(--chip); padding:3px; border-radius:10px; gap:2px; flex-wrap:wrap; }
+  .seg label { margin:0; padding:6px 12px; border-radius:8px; font-size:13.5px; font-weight:500; color:var(--muted); cursor:pointer; }
+  .seg label:has(input:checked) { background:var(--card); color:var(--ink); font-weight:600; box-shadow:var(--shadow); }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:1px; }
+  .search-card .when-remote[hidden] { display:none; }
+  .search-card .save-bar { margin-top:18px; padding:4px 16px 16px; border-radius:var(--radius-sm); background:var(--chip); }
+  .search-card select { width:100%; }
+</style>
+<script>
+  (() => {
+    const form = document.getElementById("search-form");
+    if (!form) return;
+    const out = document.getElementById("search-summary");
+    const remoteBox = form.querySelector(".when-remote");
+    const any = document.getElementById("sen-any");
+    const levels = [...form.querySelectorAll("input[name=seniority]")];
+    const list = name => (form.elements[name]?.value || "").split(",").map(s => s.trim()).filter(Boolean);
+    const words = (xs, joiner = "or") => xs.length <= 1 ? (xs[0] || "") : xs.slice(0, -1).join(", ") + " " + joiner + " " + xs[xs.length - 1];
+    const q = xs => xs.map(x => "“" + x + "”");
+
+    any.addEventListener("change", () => { if (any.checked) levels.forEach(l => l.checked = false); else if (!levels.some(l => l.checked)) any.checked = true; });
+    levels.forEach(l => l.addEventListener("change", () => { any.checked = !levels.some(x => x.checked); }));
+    document.getElementById("sources-clear").addEventListener("click", e => {
+      e.preventDefault(); form.querySelectorAll("input[name=sources]").forEach(c => c.checked = false); update();
+    });
+
+    function update() {
+      const where = form.querySelector("input[name=where]:checked")?.value || "both";
+      remoteBox.hidden = where === "local";
+      const titles = list("role_keywords"), skills = list("skill_keywords"), countries = list("countries");
+      const exclude = list("exclude"), must = list("must_mention");
+      const sen = levels.filter(l => l.checked).map(l => l.value);
+      const age = form.elements.max_age_days.value;
+      let place;
+      if (where === "remote") place = "fully remote";
+      else if (!countries.length) place = where === "both" ? "remote (no countries set)" : "nowhere yet - add a country";
+      else place = "in " + words(countries) + (where === "both" ? ", plus fully remote" : "");
+      let s = "Finds " + (sen.length ? words(sen) + " " : "") + (titles.length ? words(q(titles)) + " jobs " : "jobs with any title ") + place;
+      s += ", posted in the last " + age + " days";
+      if (form.elements.salary_only.checked) s += ", with a salary";
+      if (exclude.length) s += ", skipping " + words(q(exclude));
+      if (must.length) s += ", whose description mentions " + words(q(must));
+      s += ".";
+      if (skills.length) s += " Ranked by " + words(skills, "and") + ".";
+      const picked = form.querySelectorAll("input[name=sources]:checked").length;
+      document.getElementById("sources-state").textContent = picked ? picked + " picked" : "every source that covers your countries";
+      s += picked ? " Only " + picked + " picked source" + (picked > 1 ? "s" : "") + "." : "";
+      out.textContent = s;
+    }
+    ["input", "change", "click", "focusout", "keyup"].forEach(ev => form.addEventListener(ev, () => setTimeout(update, 0)));
+    update();
+  })();
+</script>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between;margin-bottom:14px;gap:12px">
+    <div class="tabs">
+      <a href="/" class="{{ 'on' if not status and not only_last and not unseen and not salary }}">All saved</a>
+      <a href="/?unseen=1" class="{{ 'on' if unseen }}">Not seen yet{% if unseen_total %} ({{ unseen_total }}){% endif %}</a>
+      {% if current.last_job_ids %}<a href="/?only_last=1" class="{{ 'on' if only_last }}">Last search</a>{% endif %}
+      <a href="/?salary=1" class="{{ 'on' if salary and not status }}">With salary</a>
+      <a href="/?status=liked" class="{{ 'on' if status == 'liked' }}">Liked</a>
+      <a href="/pipeline">Applied →</a>
+      <a href="/?status=hidden" class="{{ 'on' if status == 'hidden' }}">Hidden</a>
+      <a href="/?status=closed" class="{{ 'on' if status == 'closed' }}" title="Postings that look closed or expired">Closed{% if closed_total %} ({{ closed_total }}){% endif %}</a>
+    </div>
+    <div class="row muted">
+      Sort
+      <div class="tabs small">
+      {% for key, label in [("match", "for you"), ("fit", "Claude fit"), ("score", "keywords"), ("title", "job title"), ("newest", "newly found"), ("posted", "posted"), ("salary", "salary"), ("company", "company")] %}
+        <a href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key) }}" class="{{ 'on' if sort == key }}">{{ label }}</a>
+      {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="row muted" style="margin:-4px 0 12px">
+    {% set unrated = rows | selectattr('fit', 'none') | list | length %}
+    <span>{{ rows | length }} jobs{% if unrated %} · {{ unrated }} not rated by Claude yet{% endif %}</span>
+    {% if unrated and not rating_tasks %}
+    <form method="post" action="/rate" style="display:inline">
+      {% for k, v in [("status", status), ("only_last", only_last), ("unseen", unseen), ("salary", salary)] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+      <button class="secondary" type="submit">Rate {{ [unrated, prefs.rate_top] | min }} with Claude</button>
+    </form>
+    {% endif %}
+    <span style="flex:1"></span>
+    <div class="tabs small" role="group" aria-label="Row density">
+      <a href="#" data-density="comfortable" title="Show fit notes and what your feedback taught on every row">Comfortable</a>
+      <a href="#" data-density="compact" title="One line per job">Compact</a>
+    </div>
+    {% if unseen_total %}
+    <form method="post" action="/seen" style="display:inline">
+      <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+      <button class="secondary" type="submit">Mark all as seen</button>
+    </form>
+    {% endif %}
+    {% if check_tasks %}{% for t in check_tasks %}{{ m.running(t) }}{% endfor %}
+    {% else %}<form method="post" action="/check/open" style="display:inline"><button class="secondary" type="submit" title="Checks the jobs you haven't applied to yet against their job boards; closed ones move to the Closed tab">Check they're still open</button></form>{% endif %}
+    <a class="btn secondary" href="/export.csv{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">Export CSV</a>
+    <a class="btn secondary" href="/export.xlsx{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">Export XLSX</a>
+  </div>
+  {% if not rows %}
+    <p class="muted">{% if unseen %}Nothing new since you last looked.{% elif status == 'closed' %}No closed postings found.{% else %}No jobs yet - run a search.{% endif %}</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="jobs" id="jobs-table">
+    <thead><tr>
+      {% for key, label in [("fit", "Fit"), ("score", "Keywords"), ("title", "Job"), ("salary", "Salary")] %}
+      {% set on = sort == key %}
+      <th aria-sort="{{ ('ascending' if dir == 'asc' else 'descending') if on else 'none' }}">
+        <a class="th-sort {{ 'on' if on }}" href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key, dir=('asc' if dir == 'desc' else 'desc') if on else '') }}"
+           title="Sort by {{ label | lower }}{{ ' (click again to reverse)' if on }}">{{ label }} <span class="arrow">{{ ('▲' if dir == 'asc' else '▼') if on else '↕' }}</span></a>
+      </th>
+      {% endfor %}
+      <th>Location</th><th>Source</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}{% set j = r.job %}{% set seen_co = companies_seen.get(' '.join(j.company.lower().split())) %}
+    <tr class="{{ 'unseen' if not r.seen }}">
+      <td>{% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% else %}<span class="muted" title="Not rated by Claude yet">–</span>{% endif %}</td>
+      <td class="score {{ 's-hi' if r.score >= 60 else 's-mid' if r.score >= 30 else 's-lo' }}"><span class="ring" style="--v:{{ r.score }}"><b>{{ r.score }}</b></span></td>
+      <td class="job-cell" title="{{ j.title }} · {{ j.company }}">
+        {% if not r.seen %}<span class="pill new">NEW</span>{% endif %}
+        <a href="/job/{{ j.id }}"><strong>{{ j.title }}</strong></a><br class="detail">
+        <span class="muted"><span class="compact-only"> · </span>{{ j.company }}<span class="detail">{% if j.posted_at %} · posted {{ j.posted_at[:10] }}{% endif %} · found {{ r.first_seen | ago }}</span></span>
+        {% if r.status != 'new' %}{{ m.stage_pill(r.status) }}{% endif %}
+        {% if r.closed_at %}<span class="pill closed-pill" title="{{ r.closed_reason }}">closed</span>{% endif %}
+        {% if seen_co %}<span class="pill company-note detail" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
+        {% if r.fit_data and (r.fit_data.strong or r.fit_data.missing) %}
+        <div class="fitline detail">{% if r.fit_data.strong %}<span class="yes">✓ {{ r.fit_data.strong | join(', ') }}</span>{% endif %}{% if r.fit_data.strong and r.fit_data.missing %} · {% endif %}{% if r.fit_data.missing %}<span class="gap">✗ {{ r.fit_data.missing | join(', ') }}</span>{% endif %}</div>
+        {% elif r.fit_data and r.fit_data.verdict %}<div class="fitline muted detail">{{ r.fit_data.verdict }}</div>{% endif %}
+        {% if r.taste_data %}<div class="detail" title="Learned from what you hid and liked">{{ m.taste_chips(r.taste_data) }}</div>{% endif %}
+        {% if r.status == 'hidden' and r.feedback and r.feedback in hide_reasons %}<span class="pill">hidden: {{ hide_reasons[r.feedback].split(' (')[0] | lower }}</span>{% endif %}
+      </td>
+      <td class="salary">{% if j.salary %}{{ j.salary }}{% if r.salary_month %}<div class="muted detail" style="font-weight:500">{{ r.salary_month | monthly }}</div>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
+      <td class="loc-cell">{{ j.location | truncate(60) }}{% if j.remote %} <span class="pill detail">remote</span>{% endif %}{% if 'hybrid' in j.tags %} <span class="pill detail">hybrid</span>{% endif %}</td>
+      <td><span class="pill">{{ j.source }}</span></td>
+      <td style="white-space:nowrap">
+        <form method="post" action="/job/{{ j.id }}/status" style="display:inline">
+          <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+          <button class="secondary icon like" name="status" value="liked" title="Like" aria-label="Like">♥</button>
+        </form>
+        {{ m.hide_menu(j.id, hide_reasons, request.url.path ~ '?' ~ request.url.query) }}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
   {% endif %}
 </div>
 
@@ -160,107 +408,35 @@
     <label class="check"><input type="checkbox" name="rate_after_search" value="true" {% if prefs.rate_after_search %}checked{% endif %}> After each search, Claude rates the top</label>
     <input type="number" name="rate_top" min="1" max="500" value="{{ prefs.rate_top }}" style="width:80px;padding:6px 10px" aria-label="number of jobs">
     <span>new jobs for fit (1-10)</span>
+    <label class="check"><input type="checkbox" name="pack_after_search" value="true" {% if prefs.pack_after_search %}checked{% endif %}> and makes a full application pack for up to</label>
+    <input type="number" name="pack_max" min="1" max="20" value="{{ prefs.pack_max }}" style="width:70px;padding:6px 10px" aria-label="packs per search">
+    <span>jobs with keyword score ≥</span>
+    <input type="number" name="pack_min_score" min="0" max="100" value="{{ prefs.pack_min_score }}" style="width:70px;padding:6px 10px" aria-label="minimum keyword score">
+    <label class="check"><input type="checkbox" name="check_open" value="true" {% if prefs.check_open %}checked{% endif %}> and checks that saved jobs you haven't applied to are still open</label>
     <button class="secondary" type="submit">Save</button>
   </form>
   {% for t in rating_tasks %}{{ m.running(t) }}{% endfor %}
-  <p class="muted" style="margin:6px 0 0">Schedules run while the app is open; for runs while it is closed, see the README (cron). Ratings use your Claude plan; each batch of 5 jobs is one call.</p>
-</div>
-
-<div class="card">
-  <div class="row" style="justify-content:space-between;margin-bottom:14px;gap:12px">
-    <div class="tabs">
-      <a href="/" class="{{ 'on' if not status and not only_last and not unseen and not salary }}">All saved</a>
-      <a href="/?unseen=1" class="{{ 'on' if unseen }}">Not seen yet{% if unseen_total %} ({{ unseen_total }}){% endif %}</a>
-      {% if current.last_job_ids %}<a href="/?only_last=1" class="{{ 'on' if only_last }}">Last search</a>{% endif %}
-      <a href="/?salary=1" class="{{ 'on' if salary and not status }}">With salary</a>
-      <a href="/?status=liked" class="{{ 'on' if status == 'liked' }}">Liked</a>
-      <a href="/pipeline">Applied →</a>
-      <a href="/?status=hidden" class="{{ 'on' if status == 'hidden' }}">Hidden</a>
-    </div>
-    <div class="row muted">
-      Sort
-      <div class="tabs small">
-      {% for key, label in [("match", "for you"), ("fit", "Claude fit"), ("score", "keywords"), ("title", "job title"), ("newest", "newly found"), ("posted", "posted"), ("salary", "salary"), ("company", "company")] %}
-        <a href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key) }}" class="{{ 'on' if sort == key }}">{{ label }}</a>
-      {% endfor %}
-      </div>
-    </div>
-  </div>
-  <div class="row muted" style="margin:-4px 0 12px">
-    {% set unrated = rows | selectattr('fit', 'none') | list | length %}
-    <span>{{ rows | length }} jobs{% if unrated %} · {{ unrated }} not rated by Claude yet{% endif %}</span>
-    {% if unrated and not rating_tasks %}
-    <form method="post" action="/rate" style="display:inline">
-      {% for k, v in [("status", status), ("only_last", only_last), ("unseen", unseen), ("salary", salary)] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-      <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-      <button class="secondary" type="submit">Rate {{ [unrated, prefs.rate_top] | min }} with Claude</button>
-    </form>
-    {% endif %}
-    <span style="flex:1"></span>
-    <div class="tabs small" role="group" aria-label="Row density">
-      <a href="#" data-density="comfortable" title="Show fit notes and what your feedback taught on every row">Comfortable</a>
-      <a href="#" data-density="compact" title="One line per job">Compact</a>
-    </div>
-    {% if unseen_total %}
-    <form method="post" action="/seen" style="display:inline">
-      <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-      <button class="secondary" type="submit">Mark all as seen</button>
-    </form>
-    {% endif %}
-    <a class="btn secondary" href="/export.csv{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">Export CSV</a>
-    <a class="btn secondary" href="/export.xlsx{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">Export XLSX</a>
-  </div>
-  {% if not rows %}
-    <p class="muted">{% if unseen %}Nothing new since you last looked.{% else %}No jobs yet - run a search.{% endif %}</p>
-  {% else %}
-  <div class="table-wrap">
-  <table class="jobs" id="jobs-table">
-    <thead><tr>
-      {% for key, label in [("fit", "Fit"), ("score", "Keywords"), ("title", "Job"), ("salary", "Salary")] %}
-      {% set on = sort == key %}
-      <th aria-sort="{{ ('ascending' if dir == 'asc' else 'descending') if on else 'none' }}">
-        <a class="th-sort {{ 'on' if on }}" href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key, dir=('asc' if dir == 'desc' else 'desc') if on else '') }}"
-           title="Sort by {{ label | lower }}{{ ' (click again to reverse)' if on }}">{{ label }} <span class="arrow">{{ ('▲' if dir == 'asc' else '▼') if on else '↕' }}</span></a>
-      </th>
-      {% endfor %}
-      <th>Location</th><th>Source</th><th></th>
-    </tr></thead>
-    <tbody>
-    {% for r in rows %}{% set j = r.job %}{% set seen_co = companies_seen.get(' '.join(j.company.lower().split())) %}
-    <tr class="{{ 'unseen' if not r.seen }}">
-      <td>{% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% else %}<span class="muted" title="Not rated by Claude yet">–</span>{% endif %}</td>
-      <td class="score {{ 's-hi' if r.score >= 60 else 's-mid' if r.score >= 30 else 's-lo' }}"><span class="ring" style="--v:{{ r.score }}"><b>{{ r.score }}</b></span></td>
-      <td class="job-cell" title="{{ j.title }} · {{ j.company }}">
-        {% if not r.seen %}<span class="pill new">NEW</span>{% endif %}
-        <a href="/job/{{ j.id }}"><strong>{{ j.title }}</strong></a><br class="detail">
-        <span class="muted"><span class="compact-only"> · </span>{{ j.company }}<span class="detail">{% if j.posted_at %} · posted {{ j.posted_at[:10] }}{% endif %} · found {{ r.first_seen | ago }}</span></span>
-        {% if r.status != 'new' %}{{ m.stage_pill(r.status) }}{% endif %}
-        {% if seen_co %}<span class="pill company-note detail" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
-        {% if r.fit_data and (r.fit_data.strong or r.fit_data.missing) %}
-        <div class="fitline detail">{% if r.fit_data.strong %}<span class="yes">✓ {{ r.fit_data.strong | join(', ') }}</span>{% endif %}{% if r.fit_data.strong and r.fit_data.missing %} · {% endif %}{% if r.fit_data.missing %}<span class="gap">✗ {{ r.fit_data.missing | join(', ') }}</span>{% endif %}</div>
-        {% elif r.fit_data and r.fit_data.verdict %}<div class="fitline muted detail">{{ r.fit_data.verdict }}</div>{% endif %}
-        {% if r.taste_data %}<div class="detail" title="Learned from what you hid and liked">{{ m.taste_chips(r.taste_data) }}</div>{% endif %}
-        {% if r.status == 'hidden' and r.feedback and r.feedback in hide_reasons %}<span class="pill">hidden: {{ hide_reasons[r.feedback].split(' (')[0] | lower }}</span>{% endif %}
-      </td>
-      <td class="salary">{% if j.salary %}{{ j.salary }}{% if r.salary_month %}<div class="muted detail" style="font-weight:500">{{ r.salary_month | monthly }}</div>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
-      <td class="loc-cell">{{ j.location | truncate(60) }}{% if j.remote %} <span class="pill detail">remote</span>{% endif %}{% if 'hybrid' in j.tags %} <span class="pill detail">hybrid</span>{% endif %}</td>
-      <td><span class="pill">{{ j.source }}</span></td>
-      <td style="white-space:nowrap">
-        <form method="post" action="/job/{{ j.id }}/status" style="display:inline">
-          <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-          <button class="secondary icon like" name="status" value="liked" title="Like" aria-label="Like">♥</button>
-        </form>
-        {{ m.hide_menu(j.id, hide_reasons, request.url.path ~ '?' ~ request.url.query) }}
-      </td>
+  {% for t in pack_tasks %}{{ m.running(t) }}{% endfor %}
+  {% if packs %}
+  <h3 style="margin:14px 0 6px">Ready application packs</h3>
+  <table class="fit">
+    <tr><th>Job</th><th>Fit</th><th>Made</th><th>Files</th></tr>
+    {% for p in packs %}
+    <tr>
+      <td><a href="/job/{{ p.job.id }}"><strong>{{ p.job.title }}</strong></a> · {{ p.job.company }}</td>
+      <td>{{ p.fit }}/10</td>
+      <td class="muted">{{ p.made_at | ago }}</td>
+      <td><a href="/cv/{{ p.cv_id }}">CV</a> · <a href="/letter/{{ p.letter_id }}">letter</a> · <a href="/prep/{{ p.job.id }}">prep</a> · <span class="muted">{{ p.dir }}</span></td>
     </tr>
     {% endfor %}
-    </tbody>
   </table>
-  </div>
   {% endif %}
+  <p class="muted" style="margin:6px 0 0">Schedules run while the app is open; for runs while it is closed, see the README (cron). Ratings use your Claude plan; each batch of 5 jobs is one call. A pack is about 5 calls: fit check, GitHub review with project ideas, tailored CV, cover letter and interview prep, saved together in data/packs/.</p>
 </div>
+
 <style>
   .compact-only { display:none; }
+  .pill.closed-pill { background:var(--bad-soft); color:var(--bad); }
   table.jobs.compact td { padding:6px 10px; vertical-align:middle; }
   table.jobs.compact .detail { display:none; }
   table.jobs.compact .compact-only { display:inline; }

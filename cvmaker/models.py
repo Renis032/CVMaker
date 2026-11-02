@@ -321,3 +321,155 @@ class GapAnalysis(BaseModel):
     summary: str
     learn_next: list[str]
     clusters: list[GapCluster]
+
+
+# --- adding a job by link or pasted text ------------------------------------------------------------------
+
+
+class ParsedPosting(BaseModel):
+    is_job_posting: bool
+    title: str
+    company: str
+    location: str
+    remote: bool
+    salary: str
+    posted_at: str
+    apply_url: str
+    description: str
+
+
+# --- posting checks -----------------------------------------------------------------------------------------
+
+
+class PostingFlag(BaseModel):
+    kind: str  # "legitimacy", "work permit", "repost", "pay", "vague", "other"
+    severity: str  # "red", "amber", "info"
+    finding: str
+    evidence: str
+    what_to_do: str
+
+
+class PostingReview(BaseModel):
+    verdict: str
+    trust: int  # 1-10, how much the posting looks like a real, open job
+    work_permit: str  # what the posting says about location / work permit / sponsorship, in the candidate's terms
+    flags: list[PostingFlag]
+    questions_to_ask: list[str]
+
+
+# --- outreach ----------------------------------------------------------------------------------------------
+
+
+class ContactLead(BaseModel):
+    who: str  # role or name, e.g. "Engineering manager of the payments team"
+    why: str
+    search_terms: str  # what to type into LinkedIn people search
+    from_posting: bool
+
+
+class DraftEmail(BaseModel):
+    subject: str
+    body: str
+
+
+class OutreachKit(BaseModel):
+    contacts: list[ContactLead]
+    linkedin_note: str  # connection request note, 300 characters at most
+    linkedin_message: str  # after they accept
+    application_email: DraftEmail
+    follow_up_email: DraftEmail
+    tips: list[str]
+
+
+# --- story bank, practice, debriefs -----------------------------------------------------------------------
+
+
+class Story(BaseModel):
+    id: str = ""
+    title: str
+    situation: str
+    task: str
+    action: str
+    result: str
+    reflection: str = ""
+    skills: list[str] = Field(default_factory=list)
+    good_for: list[str] = Field(default_factory=list)
+    fill_in: list[str] = Field(default_factory=list)  # details only the candidate can add
+    source: str = "manual"
+    updated: float = 0
+
+
+class DraftStory(BaseModel):
+    title: str
+    situation: str
+    task: str
+    action: str
+    result: str
+    reflection: str
+    skills: list[str]
+    good_for: list[str]
+    fill_in: list[str]
+
+
+class DraftStories(BaseModel):
+    stories: list[DraftStory]
+
+
+class PracticeQuestion(BaseModel):
+    category: str
+    question: str
+    why_they_ask: str
+
+
+class PracticeFeedback(BaseModel):
+    score: int  # 1-10
+    verdict: str
+    worked: list[str]
+    improve: list[str]
+    stronger_answer: str
+    follow_up_question: str
+    story_to_use: str
+
+
+class DebriefReview(BaseModel):
+    summary: str
+    went_well: list[str]
+    improve: list[ConPoint]
+    prepare_next: list[str]
+    signals: list[str]
+    story_candidates: list[DraftStory]
+    thank_you_email: DraftEmail
+
+
+# --- offers --------------------------------------------------------------------------------------------------
+
+
+class OfferTerm(BaseModel):
+    term: str
+    value: str
+    comment: str
+
+
+class OfferClause(BaseModel):
+    clause: str
+    quote: str
+    risk: str  # "red", "amber", "green"
+    explanation: str
+    what_to_ask: str
+
+
+class NegotiationPoint(BaseModel):
+    point: str
+    why: str
+    wording: str
+
+
+class OfferReview(BaseModel):
+    summary: str
+    terms: list[OfferTerm]
+    clauses: list[OfferClause]
+    missing: list[str]
+    salary_view: str
+    negotiation: list[NegotiationPoint]
+    questions_before_signing: list[str]
+    reply_email: DraftEmail

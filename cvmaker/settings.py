@@ -6,11 +6,6 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-DATA_DIR = ROOT / "data"
-DB_PATH = DATA_DIR / "cvmaker.db"
-PROFILE_PATH = DATA_DIR / "profile.json"
-PHOTO_PATH = DATA_DIR / "photo.png"
-OUTPUT_DIR = DATA_DIR / "cvs"
 COMPANIES_FILE = ROOT / "companies.yaml"
 
 BACKEND = os.environ.get("CVMAKER_BACKEND", "claude-code")
@@ -30,5 +25,20 @@ FOLLOW_UP_DAYS = float(os.environ.get("CVMAKER_FOLLOW_UP_DAYS", "10"))
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) CVMaker/0.1 (personal job search)"
 
-for d in (DATA_DIR, OUTPUT_DIR):
-    d.mkdir(parents=True, exist_ok=True)
+_PERSON_FILES = {
+    "DB_PATH": "cvmaker.db",
+    "PROFILE_PATH": "profile.json",
+    "PHOTO_PATH": "photo.png",
+    "OUTPUT_DIR": "cvs",
+}
+
+
+def __getattr__(name: str) -> Path:
+    """DATA_DIR and the paths inside it belong to the current person (see people.py)."""
+    from . import people
+
+    if name == "DATA_DIR":
+        return people.data_dir()
+    if name in _PERSON_FILES:
+        return people.data_dir() / _PERSON_FILES[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}People - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>People</h1>
+  <p class="muted">Everyone here has their own profile, photo, jobs, CVs, cover letters, applications, saved searches, role profiles and learned preferences. The company list and API keys are shared. Switch person with the menu in the top bar; this browser remembers the choice.</p>
+</div>
+
+{% for r in rows %}{% set p = r.person %}
+<div class="card" {% if p.id == person.id %}style="box-shadow:inset 4px 0 0 var(--accent), var(--shadow)"{% endif %}>
+  <div class="section-title">
+    <h2 style="margin:0">{{ p.name }}{% if p.id == person.id %} <span class="pill new">selected</span>{% endif %}{% if p.id == 'me' %} <span class="pill">default</span>{% endif %}</h2>
+    <div class="row">
+      {% if p.id != person.id %}
+      <form method="post" action="/people/switch"><input type="hidden" name="person" value="{{ p.id }}">
+        <button type="submit">Switch to {{ p.name }}</button></form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="facts" style="margin-top:6px">
+    {% if r.has_profile %}<span>{{ r.headline or 'Profile set up' }}</span>{% else %}<span style="color:var(--warn)">No profile yet - switch and import a CV</span>{% endif %}
+    <span class="muted">{{ r.totals.jobs }} saved jobs · {{ r.totals.applied }} applications · {{ r.totals.cvs }} CVs</span>
+    <span class="muted">{{ r.folder }}</span>
+  </div>
+  <details style="margin-top:10px">
+    <summary class="muted">Rename{% if p.id != 'me' %} or remove{% endif %}</summary>
+    <form method="post" action="/people/rename" class="row" style="margin-top:8px">
+      <input type="hidden" name="person" value="{{ p.id }}">
+      <input type="text" name="name" value="{{ p.name }}" style="max-width:280px" required>
+      <button class="secondary" type="submit">Rename</button>
+    </form>
+    {% if p.id != 'me' %}
+    <form method="post" action="/people/remove" style="margin-top:8px"
+          onsubmit="return confirm('Remove {{ p.name }} from CVMaker? Their folder is moved to data/people/.removed/, not deleted.')">
+      <input type="hidden" name="person" value="{{ p.id }}">
+      <button class="secondary" type="submit" style="color:var(--bad)">Remove {{ p.name }}</button>
+      <span class="muted">Their data is moved to data/people/.removed/, so it can be restored by hand.</span>
+    </form>
+    {% endif %}
+  </details>
+</div>
+{% endfor %}
+
+<div class="card">
+  <h2>Add a person</h2>
+  <p class="muted">You'll switch to them and land on their profile page, where you can import their CV.</p>
+  <form method="post" action="/people/add" class="row">
+    <input type="text" name="name" placeholder="Their name" style="max-width:280px" required>
+    <button type="submit">Add person</button>
+  </form>
+</div>
+{% endblock %}

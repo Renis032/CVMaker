@@ -4,7 +4,7 @@ import re
 
 import httpx
 
-from . import db, settings
+from . import db, people, settings
 from .models import Profile
 from .web_fetch import http
 
@@ -27,13 +27,14 @@ class GithubError(RuntimeError):
 
 
 def username(profile: Profile | None) -> str:
-    if settings.GITHUB_USER:
-        return settings.GITHUB_USER
+    """The GitHub user in the profile's contact; GITHUB_USER in .env only stands in for the default person."""
     link = profile.contact.github if profile else ""
     match = re.search(r"github\.com/([A-Za-z0-9-]+)", link) or re.fullmatch(r"([A-Za-z0-9-]+)", link.strip())
-    if not match:
-        raise GithubError("No GitHub username - add github.com/<you> to your profile contact or set GITHUB_USER")
-    return match.group(1)
+    if match:
+        return match.group(1)
+    if settings.GITHUB_USER and people.is_default():
+        return settings.GITHUB_USER
+    raise GithubError("No GitHub username - add github.com/<username> to the profile's contact details")
 
 
 def _api_headers() -> dict:

@@ -3,10 +3,13 @@
 import json
 import re
 
-from . import settings
+from . import people, settings
 from .models import RoleProfile
 
-ROLES_PATH = settings.DATA_DIR / "roles.json"
+
+def _roles_path():
+    return settings.DATA_DIR / "roles.json"
+
 
 DEFAULT_ROLES = [
     RoleProfile(
@@ -38,14 +41,16 @@ DEFAULT_ROLES = [
 
 
 def load_roles() -> list[RoleProfile]:
-    if not ROLES_PATH.exists():
-        save_roles(DEFAULT_ROLES)
-        return list(DEFAULT_ROLES)
-    return [RoleProfile.model_validate(r) for r in json.loads(ROLES_PATH.read_text())]
+    if not _roles_path().exists():
+        # The starter roles are written for the default person's background; others start with none.
+        starters = list(DEFAULT_ROLES) if people.is_default() else []
+        save_roles(starters)
+        return starters
+    return [RoleProfile.model_validate(r) for r in json.loads(_roles_path().read_text())]
 
 
 def save_roles(roles: list[RoleProfile]) -> None:
-    ROLES_PATH.write_text(json.dumps([r.model_dump() for r in roles], indent=2, ensure_ascii=False))
+    _roles_path().write_text(json.dumps([r.model_dump() for r in roles], indent=2, ensure_ascii=False))
 
 
 def get_role(role_id: str) -> RoleProfile | None:

@@ -50,14 +50,23 @@
   header { position:sticky; top:0; z-index:20; background:var(--header); backdrop-filter:saturate(180%) blur(12px); -webkit-backdrop-filter:saturate(180%) blur(12px); border-bottom:1px solid var(--line); }
   header .bar { max-width:1180px; margin:0 auto; padding:10px 16px; display:flex; gap:6px; align-items:center; overflow-x:auto; scrollbar-width:none; }
   header .bar::-webkit-scrollbar { display:none; }
-  header .logo { display:flex; align-items:center; gap:8px; font-weight:700; font-size:16px; color:var(--ink); margin-right:14px; white-space:nowrap; }
+  header .logo { display:flex; align-items:center; gap:8px; font-weight:700; font-size:16px; color:var(--ink); margin-right:8px; white-space:nowrap; }
   header .logo .mark { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:linear-gradient(135deg, #6366f1, #22d3ee); color:#fff; font-size:13px; font-weight:700; }
   header nav { display:flex; gap:2px; }
-  header nav a { color:var(--muted); padding:6px 11px; border-radius:8px; font-weight:500; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; }
+  header nav a { color:var(--muted); padding:6px 8px; border-radius:8px; font-weight:500; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; }
   header nav a:hover { color:var(--ink); background:var(--chip); text-decoration:none; }
   header nav a.on { color:var(--ink); background:var(--chip); font-weight:600; }
   header nav a.setup { color:var(--warn); }
   header .spacer { flex:1; }
+  .person-switch { display:flex; align-items:center; gap:6px; margin:0 6px 0 0; flex:none; border:1px solid var(--line); border-radius:999px; padding:2px 4px 2px 3px; background:var(--card); }
+  .person-switch.other { border-color:var(--accent); background:var(--accent-soft); }
+  .person-switch .avatar { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; color:#fff; background:linear-gradient(135deg, #6366f1, #22d3ee); }
+  .person-switch.other .avatar { background:linear-gradient(135deg, #f59e0b, #ef4444); }
+  .person-switch select { width:auto; border:0; background:transparent; padding:3px 4px; font-weight:600; font-size:13.5px; box-shadow:none; color:var(--ink); max-width:150px; }
+  .person-switch select:focus { box-shadow:none; }
+  .ph { background:var(--warn-soft); color:var(--warn); border-radius:4px; padding:0 3px; font-weight:600; }
+  button.danger { color:var(--bad); }
+  a.btn.add-job { padding:6px 12px; font-size:13.5px; white-space:nowrap; margin-right:8px; }
   .theme-toggle { background:transparent; color:var(--muted); border:1px solid var(--line); width:32px; height:32px; padding:0; border-radius:8px; display:grid; place-items:center; flex:none; }
   .theme-toggle:hover { color:var(--ink); background:var(--chip); }
 
@@ -277,9 +286,20 @@
       <a href="/insights" class="{{ 'on' if path.startswith('/insights') }}">Insights</a>
       <a href="/companies" class="{{ 'on' if path.startswith('/companies') }}">Companies</a>
       <a href="/roles" class="{{ 'on' if path.startswith('/roles') }}">Role profiles</a>
+      <a href="/stories" class="{{ 'on' if path.startswith('/stories') }}">Story bank</a>
       <a href="/profile" class="{{ 'on' if path.startswith('/profile') }} {{ 'setup' if not profile_exists }}">My profile{% if not profile_exists %} · set up!{% endif %}</a>
     </nav>
     <span class="spacer"></span>
+    <a class="btn add-job {{ 'on' if path == '/add' }}" href="/add" title="Add a job from a link or pasted text">+ Add job</a>
+    <form method="post" action="/people/switch" class="person-switch {{ 'other' if person.id != 'me' }}" title="Whose job search you're working on">
+      <input type="hidden" name="next_url" value="{{ request.url.path }}">
+      <span class="avatar" aria-hidden="true">{{ person.name[:1] | upper }}</span>
+      <select name="person" aria-label="Person" onchange="this.form.submit()">
+        {% for p in people %}<option value="{{ p.id }}" {% if p.id == person.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+        <option value="__manage">＋ Add or manage people…</option>
+      </select>
+      <noscript><button class="secondary" type="submit">Go</button></noscript>
+    </form>
     <a id="task-indicator" href="/profile#activity" hidden title="Background tasks"><span class="spin"></span><span class="n"></span></a>
     <button class="theme-toggle" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
   </div>
@@ -422,6 +442,7 @@
       const here = document.querySelector(`[data-task-id="${t.id}"]`);
       const samePath = t.url && new URL(t.url, location.href).pathname === location.pathname;
       if (here && samePath && !dirty && t.status === "done") return goTo(t.url);
+      if (here && here.closest("[data-follow]") && !dirty && t.status === "done" && t.url) return goTo(t.url);
       if (here) {
         here.classList.add("done");
         here.replaceChildren(Object.assign(document.createElement("span"), {

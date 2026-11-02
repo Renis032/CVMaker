@@ -20,9 +20,6 @@ BG:
     type: careerpage
     url: https://jobs.commerzbank.com/index.php?ac=search_result&search_criterion_keyword=developer
     render: true
-  - name: Bosch
-    type: smartrecruiters
-    slug: BoschGroup
   - name: Experian
     type: smartrecruiters
     slug: Experian

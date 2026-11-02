@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -9,9 +10,10 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from pydantic import ValidationError
 
-from . import assistant, auto, companies, cvcheck, cvdiff, db, github, insights, render, roles, settings, taste, tasks
+from . import assistant, auto, companies, cvcheck, cvdiff, db, github, insights, pack, people, render, roles, settings, taste, tasks
 from .auto import SavedSearch, load_criteria
 from .countries import COUNTRY_TERMS, country_name
 from .llm import LLMError
@@ -28,7 +30,6 @@ from .models import (
     Project,
     RoleProfile,
     SkillGroup,
-    TailoredCV,
 )
 from .posting import posting_html
 from .salary import format_monthly
@@ -38,19 +39,35 @@ from .sources import BOARD_INFO, COMPANY_SOURCES, board_has_key, ensure_descript
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.backfill()
-    taste.recompute()
+    for person in people.load():
+        with people.acting_as(person.id):
+            db.backfill()
+            taste.recompute()
     tasks.start()
     auto.start()
     yield
 
 
 app = FastAPI(title="CVMaker", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def act_as_selected_person(request: Request, call_next):
+    """Everything a request does - and the background tasks it starts - works on the selected person's data."""
+    token = people.use(request.cookies.get(people.COOKIE, people.DEFAULT))
+    try:
+        return await call_next(request)
+    finally:
+        people.reset(token)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["md_bold"] = render.env.filters["md_bold"]
 templates.env.filters["ago"] = lambda ts: _ago(ts)
 templates.env.filters["monthly"] = format_monthly
 templates.env.filters["posting"] = posting_html
+# "[the bit you still have to add]" highlighted in stories and drafted answers.
+templates.env.filters["ph"] = lambda text: Markup(
+    re.sub(r"\[([^\]\n]{1,200})\]", r'<span class="ph">[\1]</span>', str(escape(text or "")))
+)
 templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
 templates.env.globals["STAGES"] = db.STAGES
 templates.env.globals["STAGE_LABELS"] = db.STAGE_LABELS
@@ -85,12 +102,19 @@ def page(request: Request, name: str, **ctx) -> HTMLResponse:
         name,
         {
             "profile_exists": settings.PROFILE_PATH.exists(),
+            "people": people.load(),
+            "person": people.current_person(),
             "unseen_total": db.unseen_count(),
             "now": time.time(),
             "today": datetime.now().strftime("%Y-%m-%d"),
             **ctx,
         },
     )
+
+
+def _not_found(what: str) -> str:
+    others = len(people.load()) > 1
+    return f"{what} not found" + (f" for {people.current_person().name} - it may belong to someone else; switch person in the top bar." if others else "")
 
 
 def _back(url: str) -> RedirectResponse:
@@ -175,8 +199,10 @@ def _list_rows(
     search: SavedSearch, status: str, only_last: int, unseen: int, salary: int, sort: str, direction: str = ""
 ) -> list[dict]:
     ids = search.last_job_ids if only_last else None
+    closed = status == "closed"
     return db.list_jobs(
-        ids=ids, status=status or None, unseen=bool(unseen), with_salary=bool(salary), sort=sort, direction=direction
+        ids=ids, status=None if closed else status or None, unseen=bool(unseen), with_salary=bool(salary), sort=sort,
+        direction=direction, closed=True if closed else False,
     )
 
 
@@ -219,6 +245,8 @@ def index(
         next_runs={s.id: _until(auto.next_run(s)) for s in searches if s.auto},
         prefs=prefs,
         rating_tasks=db.task_active("rate"),
+        pack_tasks=db.task_active("pack"),
+        packs=pack.recent_packs(8),
         roles=roles.load_roles(),
         chosen_role=chosen,
         rows=_list_rows(current, status, only_last, unseen, salary, sort, dir),
@@ -234,6 +262,8 @@ def index(
         boards=[(name, info["label"], board_has_key(name), info["key"]) for name, info in BOARD_INFO.items()],
         seniority_levels=SENIORITY_LEVELS,
         suggest=_suggestions(),
+        closed_total=db.closed_count(),
+        check_tasks=db.task_active("check"),
     )
 
 
@@ -266,8 +296,11 @@ def search(
     auto_run: bool = Form(False),
     every_hours: float = Form(6),
     notify: bool = Form(False),
+    where: str = Form(""),
 ):
     """Save the form as a saved search (a new one with action 'new'), then run it in the background unless 'save'."""
+    if where:  # the "Remote jobs" choice: not wanted / also include / remote only
+        include_remote, remote_only = where in ("both", "remote"), where == "remote"
     criteria = Criteria(
         role_keywords=_split(role_keywords),
         skill_keywords=_split(skill_keywords),
@@ -319,9 +352,19 @@ def search_delete(search_id: str):
 
 
 @app.post("/prefs")
-def prefs_save(rate_after_search: bool = Form(False), rate_top: int = Form(40)):
+def prefs_save(
+    rate_after_search: bool = Form(False),
+    rate_top: int = Form(40),
+    pack_after_search: bool = Form(False),
+    pack_min_score: int = Form(80),
+    pack_max: int = Form(3),
+    check_open: bool = Form(False),
+):
     prefs = auto.load_prefs()
+    prefs.check_open = check_open
     prefs.rate_after_search, prefs.rate_top = rate_after_search, max(1, min(500, rate_top))
+    prefs.pack_after_search = pack_after_search
+    prefs.pack_min_score, prefs.pack_max = max(0, min(100, pack_min_score)), max(1, min(20, pack_max))
     auto.save_prefs(prefs)
     return _back("/#auto")
 
@@ -395,7 +438,7 @@ def export(
     pipeline: int = 0,
 ):
     rows = (
-        db.list_jobs(statuses=db.STAGES, sort="newest")
+        db.list_jobs(statuses=db.STAGES, sort="newest", closed=None)
         if pipeline
         else _list_rows(auto.active_search(), status, only_last, unseen, salary, sort, dir)
     )
@@ -439,7 +482,7 @@ def export(
 
 @app.get("/pipeline", response_class=HTMLResponse)
 def pipeline_page(request: Request):
-    rows = db.list_jobs(statuses=db.STAGES, sort="newest")
+    rows = db.list_jobs(statuses=db.STAGES, sort="newest", closed=None)
     columns = {s: [] for s in db.STAGES}
     for r in sorted(rows, key=lambda r: r["status_at"], reverse=True):
         columns[r["status"]].append(r)
@@ -532,7 +575,7 @@ def job_followed_up(job_id: str, days: float = Form(7), back: str = Form("/pipel
 def job_page(request: Request, job_id: str):
     found = db.get_job(job_id)
     if not found:
-        return page(request, "error.html", message="Job not found")
+        return page(request, "error.html", message=_not_found("Job"))
     job, status = found
     db.mark_seen([job_id])
     fetch_error = ""
@@ -554,11 +597,38 @@ def job_page(request: Request, job_id: str):
         cvs=_cvs_with_scores(job_id),
         letters=db.letters_for_job(job_id),
         has_prep=_cached_prep(job_id) is not None,
+        pack_info=pack.get_pack(job_id),
         fetch_error=fetch_error,
         roles=roles.load_roles(),
         font_choices=render.FONT_CHOICES_PT,
         hide_reasons=taste.REASONS,
+        **_later_stages(job),
     )
+
+
+def _later_stages(job: Job) -> dict:
+    """What the posting check, outreach, interview and offer tabs show."""
+    from . import checks, stage, stories
+
+    app_row = db.get_application(job.id)
+    profile = assistant.load_profile()
+    outreach = stage.cached_outreach(job.id)
+    practice = db.practice_for_job(job.id)
+    return {
+        "live": checks.last_check(job.id),
+        "local_flags": checks.local_flags(job, profile, app_row),
+        "post_review": checks.cached_review(job.id),
+        "outreach": outreach,
+        "posting_contacts": stage.posting_contacts(job),
+        "posting_emails": [c for c in stage.posting_contacts(job) if "@" in c],
+        "linkedin_search": stage.linkedin_people_search,
+        "debriefs": db.debriefs_for_job(job.id),
+        "debrief_rounds": stage.DEBRIEF_ROUNDS,
+        "practice_count": len(practice),
+        "practice_avg": (lambda xs: round(sum(xs) / len(xs), 1) if xs else None)([p["score"] for p in practice if p["score"] is not None]),
+        "story_count": len(stories.load()),
+        "offer": stage.cached_offer(job.id),
+    }
 
 
 def _cached_fit(job_id: str) -> FitAssessment | None:
@@ -593,19 +663,18 @@ def job_fit(job_id: str):
     job, _ = db.get_job(job_id)
 
     def run(progress):
-        progress.set(step="reading your GitHub")
-        try:
-            repos_text = github.repos_for_prompt(github.fetch_repos(github.username(profile)), compact=True)
-        except Exception:
-            repos_text = ""
-        progress.set(step="Claude is judging your fit")
-        fit = assistant.assess_fit(profile, ensure_description(job), repos_text, taste.for_prompt(profile))
-        db.cache_put(f"fit2:{job_id}", fit.model_dump())
-        db.set_fit(job_id, fit.rating, {"strong": [], "missing": [], "verdict": fit.verdict, "quick": False})
+        pack.fit_check(profile, ensure_description(job), progress)
         return f"/job/{job_id}#fit"
 
     tasks.submit("fit", _job_label("Fit check", job), run, subject=f"fit:{job_id}", job_id=job_id, url=f"/job/{job_id}#fit")
     return _back(f"/job/{job_id}#fit")
+
+
+@app.post("/job/{job_id:path}/pack")
+def job_pack(job_id: str):
+    _need_profile()
+    pack.submit_pack(job_id)
+    return _back(f"/job/{job_id}")
 
 
 def _cached_review(job_id: str) -> GithubReview | None:
@@ -636,8 +705,7 @@ def job_github(job_id: str, refresh: int = Form(0)):
         except github.GithubError as e:
             raise LLMError(str(e)) from e
         progress.set(step="Claude is comparing them with the job")
-        review = assistant.github_review(profile, ensure_description(job), github.repos_for_prompt(repos))
-        db.cache_put(f"ghreview:{job_id}", review.model_dump())
+        pack.github_check(profile, ensure_description(job), repos)
         return f"/job/{job_id}#github"
 
     tasks.submit("github", _job_label("GitHub check", job), run, subject=f"github:{job_id}", job_id=job_id, url=f"/job/{job_id}#github")
@@ -677,8 +745,6 @@ def job_github_add(job_id: str, repo: str = Form(...)):
 
 # --- CVs -----------------------------------------------------------------------------------------------
 
-MAX_SHORTEN_ATTEMPTS = 2
-
 
 def _layout(one_page: bool, font: str, instructions: str = "") -> dict:
     try:
@@ -686,36 +752,6 @@ def _layout(one_page: bool, font: str, instructions: str = "") -> dict:
     except ValueError:
         font_pt = None
     return {"font_pt": font_pt, "one_page": one_page, "instructions": instructions.strip()}
-
-
-def _render_fitting(
-    tailored: TailoredCV, pdf_path: Path, layout: dict, job: Job | None, progress=None
-) -> tuple[int, float]:
-    """Render the CV; when it must fit on one page and does not, have Claude shorten it and render again.
-    Updates tailored.cv in place. Returns (pages, font size used)."""
-    _, pages, used = render.cv_pdf(tailored.cv, pdf_path, layout.get("font_pt"))
-    attempt = 0
-    while layout.get("one_page") and pages > 1 and attempt < MAX_SHORTEN_ATTEMPTS:
-        attempt += 1
-        if progress:
-            progress.set(step=f"shortening to one page (attempt {attempt})")
-        tailored.cv = assistant.shorten_cv(tailored.cv, job, render.overflow(pdf_path), layout.get("instructions", ""))
-        _, pages, used = render.cv_pdf(tailored.cv, pdf_path, layout.get("font_pt"))
-    if attempt:
-        tailored.changes_made.append(
-            f"Shortened by Claude to fit one page ({attempt} pass{'es' if attempt > 1 else ''})"
-            + ("" if pages == 1 else " - still over one page; try a smaller font or edit it")
-        )
-    return pages, used
-
-
-def _save_cv(profile: Profile, owner_id: str, tailored: TailoredCV, label: str, layout: dict, job: Job | None, progress=None) -> int:
-    safe = "".join(ch if ch.isalnum() else "_" for ch in label)[:80]
-    pdf_path = settings.OUTPUT_DIR / f"{profile.name.replace(' ', '_')}_{safe}_{int(time.time())}.pdf"
-    if progress:
-        progress.set(step="rendering the PDF")
-    pages, used = _render_fitting(tailored, pdf_path, layout, job, progress)
-    return db.save_cv(owner_id, tailored, str(pdf_path), {**layout, "font_used": used}, pages)
 
 
 @app.post("/job/{job_id:path}/tailor")
@@ -728,12 +764,7 @@ def job_tailor(
     layout = _layout(one_page, font, instructions)
 
     def run(progress):
-        full = ensure_description(job)
-        progress.set(step="Claude is tailoring your CV")
-        tailored = assistant.tailor(profile, full, role, instructions)
-        cv_id = _save_cv(profile, job_id, tailored, f"{job.company}_{job.title}", layout, full, progress)
-        db.promote(job_id, "liked")
-        return f"/cv/{cv_id}"
+        return f"/cv/{pack.tailored_cv(profile, ensure_description(job), role, layout, progress)}"
 
     tasks.submit("tailor", _job_label("Tailored CV", job), run, subject=f"tailor:{job_id}", job_id=job_id, url=f"/job/{job_id}#docs")
     return _back(f"/job/{job_id}#docs")
@@ -750,7 +781,7 @@ def _owner(owner_id: str) -> tuple[Job | None, RoleProfile | None]:
 def cv_page(request: Request, cv_id: int, saved: int = 0):
     found = db.get_cv(cv_id)
     if not found:
-        return page(request, "error.html", message="CV not found")
+        return page(request, "error.html", message=_not_found("CV"))
     owner_id, tailored, pdf_path = found
     job, role = _owner(owner_id)
     ratings = {}
@@ -849,7 +880,7 @@ def _submit_shorten(cv_id: int) -> None:
     def run(progress):
         _, tailored, pdf_path = db.get_cv(cv_id)
         layout, _ = db.cv_layout(cv_id)
-        pages, used = _render_fitting(tailored, Path(pdf_path), {**layout, "one_page": True}, job and ensure_description(job), progress)
+        pages, used = pack.render_fitting(tailored, Path(pdf_path), {**layout, "one_page": True}, job and ensure_description(job), progress)
         db.update_cv(cv_id, tailored, {**layout, "font_used": used}, pages)
         db.cache_delete(f"cvrate:{cv_id}:profile")
         return f"/cv/{cv_id}"
@@ -1121,7 +1152,7 @@ def roles_cv(role_id: str, instructions: str = Form(""), one_page: bool = Form(F
     def run(progress):
         progress.set(step="Claude is writing your CV")
         tailored = assistant.tailor(profile, None, role, instructions)
-        cv_id = _save_cv(profile, f"role:{role_id}", tailored, role.name, layout, None, progress)
+        cv_id = pack.save_cv(profile, f"role:{role_id}", tailored, role.name, layout, None, progress)
         return f"/cv/{cv_id}"
 
     tasks.submit("tailor", f"General CV · {role.name}", run, subject=f"tailor:role:{role_id}", url="/roles")
@@ -1146,15 +1177,7 @@ def job_letter(
     cv = found[1].cv if found and found[0] == job_id else None
 
     def run(progress):
-        full = ensure_description(job)
-        progress.set(step="Claude is writing your letter")
-        letter = assistant.cover_letter(profile, full, cv, language, tone, length, instructions)
-        body = render.letter_body(letter, profile.name)
-        safe = "".join(ch if ch.isalnum() else "_" for ch in f"{job.company}_{job.title}")[:80]
-        pdf_path = settings.OUTPUT_DIR / f"{profile.name.replace(' ', '_')}_CoverLetter_{safe}_{int(time.time())}.pdf"
-        progress.set(step="rendering the PDF")
-        render.letter_pdf(body, profile, full, pdf_path)
-        letter_id = db.save_letter(job_id, letter, body, str(pdf_path))
+        letter_id = pack.letter(profile, ensure_description(job), cv, language, tone, length, instructions, progress)
         return f"/letter/{letter_id}"
 
     tasks.submit("letter", _job_label("Cover letter", job), run, subject=f"letter:{job_id}", job_id=job_id, url=f"/job/{job_id}#letter")
@@ -1165,7 +1188,7 @@ def job_letter(
 def letter_page(request: Request, letter_id: int, saved: int = 0):
     found = db.get_letter(letter_id)
     if not found:
-        return page(request, "error.html", message="Cover letter not found")
+        return page(request, "error.html", message=_not_found("Cover letter"))
     job, _ = db.get_job(found["job_id"])
     return page(
         request,
@@ -1227,7 +1250,7 @@ def _cached_prep(job_id: str) -> InterviewPrep | None:
 def prep_page(request: Request, job_id: str):
     found = db.get_job(job_id)
     if not found:
-        return page(request, "error.html", message="Job not found")
+        return page(request, "error.html", message=_not_found("Job"))
     return page(
         request, "prep.html", job=found[0], prep=_cached_prep(job_id), has_fit=_cached_fit(job_id) is not None,
         active=db.tasks_for_job(job_id),
@@ -1240,10 +1263,7 @@ def prep_generate(job_id: str):
     job, _ = db.get_job(job_id)
 
     def run(progress):
-        full = ensure_description(job)
-        progress.set(step="Claude is preparing your interview")
-        prep = assistant.interview_prep(profile, full, _cached_fit(job_id))
-        db.cache_put(f"prep:{job_id}", prep.model_dump())
+        pack.prep(profile, ensure_description(job), _cached_fit(job_id), progress)
         return f"/prep/{job_id}"
 
     tasks.submit("prep", _job_label("Interview prep", job), run, subject=f"prep:{job_id}", job_id=job_id, url=f"/prep/{job_id}")
@@ -1317,3 +1337,72 @@ def companies_test(request: Request, group: str = Form(...), name: str = Form(..
     except Exception as e:
         tested["error"] = f"{type(e).__name__}: {e}"
     return page(request, "companies.html", groups=companies.load(), types=list(COMPANY_SOURCES), found=None, tested=tested)
+
+
+# --- people ----------------------------------------------------------------------------------------------
+
+
+def _as_person(response: RedirectResponse, person_id: str) -> RedirectResponse:
+    response.set_cookie(people.COOKIE, person_id, max_age=10 * 365 * 24 * 3600, samesite="lax")
+    return response
+
+
+@app.get("/people", response_class=HTMLResponse)
+def people_page(request: Request):
+    rows = []
+    for p in people.load():
+        with people.acting_as(p.id):
+            profile = assistant.load_profile()
+            rows.append(
+                {
+                    "person": p,
+                    "folder": str(people.data_dir(p.id)),
+                    "headline": profile.headline if profile else "",
+                    "totals": db.overview(),
+                    "has_profile": profile is not None,
+                }
+            )
+    return page(request, "people.html", rows=rows)
+
+
+@app.post("/people/switch")
+def people_switch(request: Request, person: str = Form(...), next_url: str = Form("")):
+    if person == "__manage":
+        return _back("/people")
+    if not people.get(person):
+        return _back("/people")
+    target = next_url if next_url.startswith("/") and not next_url.startswith(("/job/", "/cv/", "/letter/", "/prep/")) else "/"
+    return _as_person(_back(target), person)
+
+
+@app.post("/people/add")
+def people_add(name: str = Form(...)):
+    person = people.add(name)
+    return _as_person(_back("/profile"), person.id)
+
+
+@app.post("/people/rename")
+def people_rename(person: str = Form(...), name: str = Form(...)):
+    people.rename(person, name)
+    return _back("/people")
+
+
+@app.post("/people/remove")
+def people_remove(request: Request, person: str = Form(...)):
+    if person == people.DEFAULT or not people.get(person):
+        return _back("/people")
+    with people.acting_as(person):
+        busy = bool(db.task_active())
+    if busy:
+        return page(request, "error.html", message="That person still has background tasks running - wait for them to finish, then remove them.")
+    people.remove(person)
+    response = _back("/people")
+    if request.cookies.get(people.COOKIE) == person:
+        response = _as_person(response, people.DEFAULT)
+    return response
+
+
+# Adding jobs by link, posting checks, outreach, story bank, practice, debriefs and offers (stage_routes.py).
+from .stage_routes import router as _stage_router  # noqa: E402  (it imports helpers from this module)
+
+app.include_router(_stage_router)

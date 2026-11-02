@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Story bank - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="page-head">
+    <h1>Story bank</h1>
+    <div class="row">
+      {% if not active %}
+      <form method="post" action="/stories/draft" data-slow><button class="{{ 'secondary' if items }}" type="submit">{{ 'Draft more from my profile' if items else 'Draft stories from my profile' }}</button></form>
+      {% endif %}
+      <a class="btn secondary" href="/stories?new=1#edit">+ Write one</a>
+    </div>
+  </div>
+  <p class="muted">Real examples from your work, ready for “Tell me about a time…” questions. Each one follows <strong>STAR+R</strong>: the situation, your task, what you did, the result, and what you took from it. Interview prep, practice feedback and debriefs all use these, so the better they are, the better those get.
+  Claude only drafts from facts in your profile. Where a detail is missing it leaves a <span class="ph">[placeholder]</span> and a question for you.</p>
+  {% for t in active %}{{ m.running(t, "Claude is drafting stories from your profile") }}{% endfor %}
+</div>
+
+{% if editing %}
+<div class="card" id="edit">
+  <h2>{{ 'Edit story' if editing.id else 'New story' }}</h2>
+  <form method="post" action="/stories/save">
+    <input type="hidden" name="id" value="{{ editing.id }}">
+    <label for="s-title">Title</label><input id="s-title" type="text" name="title" value="{{ editing.title }}" required placeholder="e.g. Making the simulation engine 300x faster">
+    {% if editing.fill_in %}<div class="tile idea" style="margin-top:12px"><strong>Claude needs from you:</strong><ul class="tight">{% for q in editing.fill_in %}<li>{{ q }}</li>{% endfor %}</ul>
+      <span class="muted">Fill in the [placeholders] below, then delete the answered questions from the list at the bottom.</span></div>{% endif %}
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div><label for="s-sit">Situation - the context</label><textarea id="s-sit" name="situation">{{ editing.situation }}</textarea></div>
+      <div><label for="s-task">Task - what you had to achieve</label><textarea id="s-task" name="task">{{ editing.task }}</textarea></div>
+      <div><label for="s-act">Action - what you did, step by step</label><textarea id="s-act" name="action" style="min-height:140px">{{ editing.action }}</textarea></div>
+      <div><label for="s-res">Result - what changed, with numbers</label><textarea id="s-res" name="result" style="min-height:140px">{{ editing.result }}</textarea></div>
+    </div>
+    <label for="s-ref">Reflection - what you learned or would do differently</label><textarea id="s-ref" name="reflection">{{ editing.reflection }}</textarea>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div><label for="s-skills">Skills it proves (comma-separated)</label><input id="s-skills" type="text" name="skills" value="{{ editing.skills | join(', ') }}"></div>
+      <div><label for="s-good">Questions it answers (one per line)</label><textarea id="s-good" name="good_for" style="min-height:70px">{{ editing.good_for | join('\n') }}</textarea></div>
+    </div>
+    <label for="s-fill">Open questions for you (one per line; delete them once answered)</label><textarea id="s-fill" name="fill_in" style="min-height:60px">{{ editing.fill_in | join('\n') }}</textarea>
+    <div class="row" style="margin-top:12px">
+      <button type="submit">Save story</button>
+      <a class="btn secondary" href="/stories">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% if not items and not editing %}
+<div class="card"><p class="muted">No stories yet. Let Claude draft 6-8 from your profile, or write your own.</p></div>
+{% endif %}
+
+<div class="story-grid">
+{% for s in items %}
+<article class="card story" id="s-{{ s.id }}">
+  <div class="section-title">
+    <h3 style="margin:0">{{ s.title }}</h3>
+    <span>{% if s.id in incomplete %}<span class="pill new" title="Has placeholders or open questions">needs your details</span>{% endif %}
+      <span class="pill">{{ {'profile': 'drafted from profile', 'debrief': 'from a debrief', 'manual': 'written by you'}.get(s.source, s.source) }}</span></span>
+  </div>
+  <dl class="star">
+    <dt>S</dt><dd>{{ s.situation | ph }}</dd>
+    <dt>T</dt><dd>{{ s.task | ph }}</dd>
+    <dt>A</dt><dd>{{ s.action | ph }}</dd>
+    <dt>R</dt><dd>{{ s.result | ph }}</dd>
+    {% if s.reflection %}<dt>+R</dt><dd>{{ s.reflection | ph }}</dd>{% endif %}
+  </dl>
+  {% if s.good_for %}<div class="muted" style="font-size:12.5px">Answers: {{ s.good_for | join(' · ') }}</div>{% endif %}
+  {% if s.skills %}<div style="margin-top:6px">{% for k in s.skills %}<span class="pill">{{ k }}</span>{% endfor %}</div>{% endif %}
+  <div class="row" style="margin-top:10px">
+    <a class="btn secondary" href="/stories?edit={{ s.id }}#edit">Edit</a>
+    <form method="post" action="/stories/{{ s.id }}/delete" onsubmit="return confirm('Delete “{{ s.title }}”?')"><button class="secondary danger" type="submit">Delete</button></form>
+  </div>
+</article>
+{% endfor %}
+</div>
+<style>
+  .story-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:0 18px; }
+  @media (max-width:520px) { .story-grid { grid-template-columns:1fr; } }
+  dl.star { display:grid; grid-template-columns:28px 1fr; gap:6px 8px; margin:10px 0; }
+  dl.star dt { font-weight:700; color:var(--accent); }
+  dl.star dd { margin:0; line-height:1.5; }
+</style>
+{% endblock %}

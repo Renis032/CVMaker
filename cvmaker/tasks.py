@@ -5,13 +5,14 @@ A task is a function `fn(progress) -> url | None`. It runs on a small thread poo
 where the result is shown. Tasks do not survive a restart of the app (they are marked interrupted).
 """
 
+import contextvars
 import shutil
 import subprocess
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from . import db, settings
+from . import db, people, settings
 
 _pool = ThreadPoolExecutor(max_workers=settings.TASK_WORKERS, thread_name_prefix="cvmaker-task")
 
@@ -45,7 +46,7 @@ def submit(
         if existing:
             return existing[0]["id"]
     task_id = db.task_create(kind, label, subject, job_id, url)
-    _pool.submit(_run, task_id, fn)
+    _pool.submit(contextvars.copy_context().run, _run, task_id, fn)
     return task_id
 
 
@@ -63,7 +64,12 @@ def _run(task_id: int, fn: Callable[[Progress], str | None]) -> None:
     if time.time() - started >= NOTIFY_AFTER_SECONDS:
         task = db.task_get(task_id)
         verb = "finished" if task["status"] == "done" else "failed"
-        notify(f"{task['label']} {verb}")
+        notify(f"{person_prefix()}{task['label']} {verb}")
+
+
+def person_prefix() -> str:
+    """'Anna: ' when working for someone other than the default person, so notifications say whose they are."""
+    return "" if people.is_default() else f"{people.current_person().name}: "
 
 
 def notify(message: str) -> None:
@@ -72,4 +78,6 @@ def notify(message: str) -> None:
 
 
 def start() -> None:
-    db.tasks_interrupt_stale()
+    for person in people.load():
+        with people.acting_as(person.id):
+            db.tasks_interrupt_stale()

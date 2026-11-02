@@ -272,6 +272,14 @@ Ground every answer suggestion in the candidate's real profile; never suggest cl
     content = f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}"
     if fit:
         content += f"\n\nEarlier fit assessment of this candidate for this job:\n{fit.model_dump_json(include={'rating', 'verdict', 'pros', 'cons'}, indent=2)}"
+    from . import stories  # the candidate's own STAR stories: reuse them rather than invent new ones
+
+    bank = stories.load()
+    if bank:
+        content += "\n\nThe candidate's story bank (prefer these for star_stories and name them in your_evidence; keep their facts):\n" + json.dumps(
+            [b.model_dump(include={"title", "situation", "task", "action", "result", "reflection", "good_for"}) for b in bank],
+            ensure_ascii=False, indent=2,
+        )
     return llm.ask(system, content, InterviewPrep)
 
 

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Practice · {{ job.title }} - CVMaker{% endblock %}
+{% block content %}
+<div class="card">
+  <a class="muted" href="/job/{{ job.id }}#interview">← {{ job.title }} at {{ job.company }}</a>
+  <div class="page-head" style="margin-top:6px">
+    <h1>Interview practice</h1>
+    {% if average is not none %}<span class="muted">Average so far <span class="score {{ 's-hi' if average >= 7 else 's-mid' if average >= 5 else 's-lo' }}">{{ average }}/10</span> over {{ items | selectattr('score') | list | length }} answers</span>{% endif %}
+  </div>
+  <p class="muted">Pick a question, answer it the way you would say it out loud, and Claude grades it like the interviewer would: what worked, what to fix, a stronger version built from your own experience, and the follow-up they'd probably ask. {% if not story_titles %}Fill your <a href="/stories">story bank</a> first for better behavioural answers.{% endif %}</p>
+
+  <form method="post" action="/practice/{{ job.id }}/ask" class="ask" data-slow>
+    <div class="grid">
+      {% if prep %}
+      <div>
+        <label for="p-q">A question from your interview prep</label>
+        <select id="p-q" name="question">
+          <option value="">-</option>
+          {% for q in prep.likely_questions %}<option value="{{ q.question }}">[{{ q.category }}] {{ q.question | truncate(110) }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div>
+        <label for="p-cat">{{ 'Or let' if prep else 'Let' }} Claude ask a new one about</label>
+        <select id="p-cat" name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+      </div>
+      <div>
+        <label for="p-own">Or type a question you were asked</label>
+        <input id="p-own" type="text" name="custom" placeholder="e.g. Why do you want to leave your current job?">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="submit">Give me a question</button>
+      <span class="muted">A question you pick or type is added straight away; a new one from Claude takes a few seconds.</span>
+    </div>
+  </form>
+  {% for t in active.values() if t.kind == 'practice-q' %}{{ m.running(t, "Claude is thinking of a question") }}{% endfor %}
+</div>
+
+{% for p in items %}
+<div class="card practice" id="q{{ p.id }}">
+  <div class="section-title">
+    <div><span class="pill">{{ p.category }}</span> <span class="muted">{{ p.created | ago }}</span></div>
+    <div class="row">
+      {% if p.score is not none %}<span class="score {{ 's-hi' if p.score >= 7 else 's-mid' if p.score >= 5 else 's-lo' }}">{{ p.score }}/10</span>{% endif %}
+      <form method="post" action="/practice-delete/{{ p.id }}"><button class="secondary icon" type="submit" title="Delete" aria-label="Delete">✕</button></form>
+    </div>
+  </div>
+  <h3 class="q">“{{ p.question }}”</h3>
+  {% set running = active.get('practice-a:' ~ p.id) %}
+  {% if running %}
+    <blockquote class="answer">{{ p.answer }}</blockquote>
+    {{ m.running(running, "Claude is judging your answer") }}
+  {% elif p.feedback %}
+    {% set fb = p.feedback %}
+    <details><summary class="muted">Your answer</summary><blockquote class="answer">{{ p.answer }}</blockquote></details>
+    <p><strong>{{ fb.verdict }}</strong></p>
+    <div class="two">
+      <div><h4>What worked</h4><ul class="tight plus">{% for x in fb.worked %}<li>{{ x }}</li>{% endfor %}</ul></div>
+      <div><h4>What to fix</h4><ul class="tight minus">{% for x in fb.improve %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    </div>
+    <h4>A stronger answer</h4>
+    <div class="tile">{{ fb.stronger_answer | ph }}</div>
+    <div class="row" style="margin-top:10px;gap:18px">
+      {% if fb.follow_up_question %}<span><strong>They'd likely follow up with:</strong> “{{ fb.follow_up_question }}”</span>{% endif %}
+      {% if fb.story_to_use %}<span><strong>Story to use:</strong> <a href="/stories">{{ fb.story_to_use }}</a></span>{% endif %}
+    </div>
+    <details style="margin-top:10px"><summary class="muted">Try again</summary>
+      <form method="post" action="/practice-answer/{{ p.id }}" data-slow>
+        <textarea name="answer" required style="min-height:140px">{{ p.answer }}</textarea>
+        <div style="margin-top:8px"><button type="submit">Grade my new answer</button></div>
+      </form>
+    </details>
+  {% else %}
+    <form method="post" action="/practice-answer/{{ p.id }}" data-slow>
+      <label for="a{{ p.id }}">Your answer, as you'd say it</label>
+      <textarea id="a{{ p.id }}" name="answer" required style="min-height:160px" placeholder="Answer out loud first if you like, then type roughly what you said."></textarea>
+      <div class="row" style="margin-top:8px"><button type="submit">Grade my answer</button><span class="muted answer-count"></span></div>
+    </form>
+  {% endif %}
+</div>
+{% endfor %}
+<style>
+  .practice h3.q { font-size:17px; line-height:1.45; margin:6px 0 12px; }
+  blockquote.answer { margin:8px 0; padding:8px 12px; border-left:3px solid var(--line-strong); color:var(--muted); white-space:pre-wrap; }
+  .practice h4 { margin:14px 0 6px; }
+</style>
+<script>
+  document.querySelectorAll(".practice textarea[name=answer]").forEach(t => {
+    const out = t.closest("form").querySelector(".answer-count");
+    if (!out) return;
+    const show = () => { const n = t.value.trim().split(/\s+/).filter(Boolean).length; out.textContent = n ? `${n} words · about ${Math.max(1, Math.round(n / 140))} min spoken` : ""; };
+    t.addEventListener("input", show);
+  });
+</script>
+{% endblock %}

@@ -12,12 +12,15 @@ import math
 import re
 from collections import Counter, defaultdict
 
-from . import db, settings
+from . import db, people, settings
 from .cvcheck import TECH_TERMS
 from .models import Criteria, Job, Profile
 from .search import SENIORITY_LEVELS, _contains, seniority
 
-BLOCKED_PATH = settings.DATA_DIR / "feedback.json"
+
+def _blocked_path():
+    return settings.DATA_DIR / "feedback.json"
+
 
 REASONS = {
     "too_senior": "Too senior",
@@ -60,13 +63,13 @@ def _city(job: Job) -> str:
 
 
 def _state() -> dict:
-    if BLOCKED_PATH.exists():
-        return json.loads(BLOCKED_PATH.read_text())
+    if _blocked_path().exists():
+        return json.loads(_blocked_path().read_text())
     return {"blocked_companies": [], "dismissed": []}
 
 
 def _save_state(state: dict) -> None:
-    BLOCKED_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False))
+    _blocked_path().write_text(json.dumps(state, indent=2, ensure_ascii=False))
 
 
 def blocked_companies() -> list[str]:
@@ -98,7 +101,7 @@ def dismiss(suggestion_id: str) -> None:
 
 # --- features ------------------------------------------------------------------------------------------
 
-_feature_cache: dict[tuple[str, int, int], dict[str, str]] = {}
+_feature_cache: dict[tuple[str, str, int, int], dict[str, str]] = {}
 
 
 def _terms(profile: Profile | None) -> list[str]:
@@ -108,7 +111,7 @@ def _terms(profile: Profile | None) -> list[str]:
 
 def features(job: Job, terms: list[str]) -> dict[str, str]:
     """feature id -> human label, e.g. {'level:senior': 'senior roles', 'tech:php': 'php'}."""
-    key = (job.id, len(job.description), len(terms))
+    key = (people.current(), job.id, len(job.description), len(terms))
     if key in _feature_cache:
         return _feature_cache[key]
     text = f"{job.title}\n{job.description[:DESCRIPTION_CHARS]}".lower()

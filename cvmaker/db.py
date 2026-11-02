@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 import statistics
 import time
@@ -59,6 +60,23 @@ CREATE TABLE IF NOT EXISTS tasks (
     finished REAL NOT NULL DEFAULT 0,
     seen INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS practice (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    created REAL NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    feedback TEXT NOT NULL DEFAULT '',
+    score INTEGER
+);
+CREATE TABLE IF NOT EXISTS debriefs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    created REAL NOT NULL,
+    notes TEXT NOT NULL,
+    review TEXT NOT NULL DEFAULT ''
+);
 """
 
 # Jobs that existed before the 'seen' flag count as seen; newly found jobs are inserted unseen.
@@ -78,6 +96,10 @@ MIGRATIONS = [
     ("jobs", "feedback", "ALTER TABLE jobs ADD COLUMN feedback TEXT NOT NULL DEFAULT ''"),
     ("jobs", "taste", "ALTER TABLE jobs ADD COLUMN taste INTEGER NOT NULL DEFAULT 0"),
     ("jobs", "taste_data", "ALTER TABLE jobs ADD COLUMN taste_data TEXT NOT NULL DEFAULT ''"),
+    # Posting checks: when the posting was found closed (0 = open or unknown), why, and when it was last checked.
+    ("jobs", "closed_at", "ALTER TABLE jobs ADD COLUMN closed_at REAL NOT NULL DEFAULT 0"),
+    ("jobs", "closed_reason", "ALTER TABLE jobs ADD COLUMN closed_reason TEXT NOT NULL DEFAULT ''"),
+    ("jobs", "checked_at", "ALTER TABLE jobs ADD COLUMN checked_at REAL NOT NULL DEFAULT 0"),
     ("cvs", "layout", "ALTER TABLE cvs ADD COLUMN layout TEXT NOT NULL DEFAULT '{}'"),
     ("cvs", "pages", "ALTER TABLE cvs ADD COLUMN pages INTEGER NOT NULL DEFAULT 0"),
 ]
@@ -118,22 +140,23 @@ def _order_by(sort: str, direction: str = "") -> str:
         order += ", json_extract(data, '$.salary') = ''"
     return order + ", score DESC, first_seen DESC"
 
-_migrated = False
+# Database files whose schema is up to date in this process (one per person).
+_migrated: set[str] = set()
 
 
 @contextmanager
 def connect():
-    global _migrated
-    conn = sqlite3.connect(settings.DB_PATH, timeout=30)
+    path = str(settings.DB_PATH)
+    conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
     try:
-        if not _migrated:
+        if path not in _migrated:
             conn.executescript(SCHEMA)
             for table, column, sql in MIGRATIONS:
                 if column not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
                     conn.execute(sql)
             conn.commit()
-            _migrated = True
+            _migrated.add(path)
         yield conn
         conn.commit()
     finally:
@@ -161,9 +184,9 @@ def upsert_jobs(jobs: list[Job], scores: dict[str, int]) -> list[str]:
             if row is None:
                 new_ids.append(job.id)
                 c.execute(
-                    "INSERT INTO jobs (id, data, score, first_seen, last_seen, seen, salary_month)"
-                    " VALUES (?, ?, ?, ?, ?, 0, ?)",
-                    (job.id, job.model_dump_json(), scores.get(job.id, 0), now, now, monthly_eur(job.salary)),
+                    "INSERT INTO jobs (id, data, score, first_seen, last_seen, seen, salary_month, checked_at)"
+                    " VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+                    (job.id, job.model_dump_json(), scores.get(job.id, 0), now, now, monthly_eur(job.salary), now),
                 )
                 continue
             # Keep the full description fetched earlier for sources that only list titles.
@@ -171,9 +194,11 @@ def upsert_jobs(jobs: list[Job], scores: dict[str, int]) -> list[str]:
             if len(old.description) > len(job.description):
                 job.description = old.description
             job.salary = job.salary or old.salary
+            # Found again by a search, so it is still listed: open, and checked just now.
             c.execute(
-                "UPDATE jobs SET data = ?, score = ?, last_seen = ?, salary_month = ? WHERE id = ?",
-                (job.model_dump_json(), scores.get(job.id, 0), now, monthly_eur(job.salary), job.id),
+                "UPDATE jobs SET data = ?, score = ?, last_seen = ?, salary_month = ?, closed_at = 0, closed_reason = '',"
+                " checked_at = ? WHERE id = ?",
+                (job.model_dump_json(), scores.get(job.id, 0), now, monthly_eur(job.salary), now, job.id),
             )
     return new_ids
 
@@ -191,7 +216,7 @@ def get_application(job_id: str) -> dict:
     with connect() as c:
         row = c.execute(
             "SELECT status, status_at, notes, contact, next_date, follow_up_at, sent_cv_id, sent_letter_id, fit, fit_data,"
-            " salary_month"
+            " salary_month, closed_at, closed_reason, checked_at, first_seen, last_seen"
             " FROM jobs WHERE id = ?",
             (job_id,),
         ).fetchone()
@@ -224,6 +249,12 @@ def set_status(job_id: str, status: str, at: float | None = None, note: str = ""
             c.execute("UPDATE jobs SET follow_up_at = ?, reminded = 0 WHERE id = ?", (due, job_id))
         elif status != "hidden":
             c.execute("UPDATE jobs SET follow_up_at = 0 WHERE id = ?", (job_id,))
+
+
+def add_event(job_id: str, at: float, status: str, note: str) -> None:
+    """A timeline entry that does not change the stage (e.g. an interview debrief)."""
+    with connect() as c:
+        c.execute("INSERT INTO events (job_id, at, status, note) VALUES (?, ?, ?, ?)", (job_id, at, status, note))
 
 
 def set_feedback(job_id: str, reason: str) -> None:
@@ -378,6 +409,8 @@ def _row(r) -> dict:
         "feedback": r["feedback"],
         "taste": r["taste"],
         "taste_data": json.loads(r["taste_data"]) if r["taste_data"] else [],
+        "closed_at": r["closed_at"],
+        "closed_reason": r["closed_reason"],
     }
 
 
@@ -389,7 +422,9 @@ def list_jobs(
     sort: str = "score",
     statuses: list[str] | None = None,
     direction: str = "",
+    closed: bool | None = False,
 ) -> list[dict]:
+    """closed=False leaves out postings found closed (unless you applied), True lists only those, None both."""
     query = "SELECT * FROM jobs"
     args: list = []
     clauses = []
@@ -406,6 +441,11 @@ def list_jobs(
         args.append(status)
     else:
         clauses.append("status != 'hidden'")
+    if closed is False:
+        clauses.append(f"(closed_at = 0 OR status IN ({','.join('?' * len(APPLIED_STAGES))}))")
+        args.extend(APPLIED_STAGES)
+    elif closed:
+        clauses.append("closed_at > 0")
     if unseen:
         clauses.append("seen = 0")
     if with_salary:
@@ -427,7 +467,7 @@ def mark_seen(job_ids: list[str] | None = None) -> None:
 
 def unseen_count() -> int:
     with connect() as c:
-        return c.execute("SELECT COUNT(*) FROM jobs WHERE seen = 0 AND status != 'hidden'").fetchone()[0]
+        return c.execute("SELECT COUNT(*) FROM jobs WHERE seen = 0 AND status != 'hidden' AND closed_at = 0").fetchone()[0]
 
 
 def _company_key(name: str) -> str:
@@ -463,6 +503,17 @@ def company_summaries() -> dict[str, str]:
     for r in rows:
         counts.setdefault(_company_key(r["company"] or ""), []).append(r["status"])
     return {k: f"applied {len(v)}× · last: {STAGE_LABELS[v[-1]].lower()}" for k, v in counts.items()}
+
+
+def overview() -> dict:
+    """Small totals for the people page: saved jobs, applications, CVs."""
+    with connect() as c:
+        jobs = c.execute("SELECT COUNT(*) FROM jobs WHERE status != 'hidden'").fetchone()[0]
+        applied = c.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE status IN ({','.join('?' * len(APPLIED_STAGES))})", APPLIED_STAGES
+        ).fetchone()[0]
+        cvs = c.execute("SELECT COUNT(*) FROM cvs").fetchone()[0]
+    return {"jobs": jobs, "applied": applied, "cvs": cvs}
 
 
 def stats() -> dict:
@@ -708,3 +759,138 @@ def tasks_interrupt_stale() -> None:
             " finished = ?, seen = 1 WHERE status IN ('queued', 'running')",
             (time.time(),),
         )
+
+
+# --- posting checks --------------------------------------------------------------------------------------
+
+
+def set_open_state(job_id: str, closed: bool, reason: str = "") -> None:
+    """Record a liveness check. A job found open again is reopened."""
+    now = time.time()
+    with connect() as c:
+        if closed:
+            c.execute(
+                "UPDATE jobs SET closed_at = CASE WHEN closed_at = 0 THEN ? ELSE closed_at END, closed_reason = ?,"
+                " checked_at = ? WHERE id = ?",
+                (now, reason, now, job_id),
+            )
+        else:
+            c.execute("UPDATE jobs SET closed_at = 0, closed_reason = '', checked_at = ? WHERE id = ?", (now, job_id))
+
+
+def jobs_to_check(max_age_hours: float, statuses: list[str], limit: int) -> list[str]:
+    """Open jobs in these stages that were not checked in the last max_age_hours, oldest check first."""
+    with connect() as c:
+        rows = c.execute(
+            f"SELECT id FROM jobs WHERE closed_at = 0 AND status IN ({','.join('?' * len(statuses))})"
+            " AND checked_at < ? AND json_extract(data, '$.url') != '' ORDER BY checked_at LIMIT ?",
+            (*statuses, time.time() - max_age_hours * 3600, limit),
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
+def closed_count() -> int:
+    with connect() as c:
+        return c.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE closed_at > 0 AND status NOT IN ('hidden', {','.join('?' * len(APPLIED_STAGES))})",
+            APPLIED_STAGES,
+        ).fetchone()[0]
+
+
+def similar_jobs(job_id: str, company: str, title_key: str) -> list[dict]:
+    """Other saved jobs at the same company whose normalised title is the same: earlier sightings or reposts."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT id, data, status, first_seen, last_seen, closed_at FROM jobs WHERE id != ?", (job_id,)
+        ).fetchall()
+    out = []
+    for r in rows:
+        job = Job.model_validate_json(r["data"])
+        if _company_key(job.company) == _company_key(company) and title_key_of(job.title) == title_key:
+            out.append({"id": r["id"], "job": job, "status": r["status"], "first_seen": r["first_seen"],
+                        "last_seen": r["last_seen"], "closed_at": r["closed_at"]})
+    return sorted(out, key=lambda x: x["first_seen"])
+
+
+def title_key_of(title: str) -> str:
+    title = re.sub(r"\(.*?\)|\[.*?\]", " ", title.lower())
+    return " ".join(re.sub(r"[^\w+#]+", " ", title).split())
+
+
+# --- interview practice and debriefs ---------------------------------------------------------------------
+
+
+def practice_add(job_id: str, category: str, question: str) -> int:
+    with connect() as c:
+        return c.execute(
+            "INSERT INTO practice (job_id, created, category, question) VALUES (?, ?, ?, ?)",
+            (job_id, time.time(), category, question),
+        ).lastrowid
+
+
+def practice_update(practice_id: int, **fields) -> None:
+    if "feedback" in fields and not isinstance(fields["feedback"], str):
+        fields["feedback"] = json.dumps(fields["feedback"])
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    with connect() as c:
+        c.execute(f"UPDATE practice SET {sets} WHERE id = ?", (*fields.values(), practice_id))
+
+
+def practice_for_job(job_id: str) -> list[dict]:
+    with connect() as c:
+        rows = c.execute("SELECT * FROM practice WHERE job_id = ? ORDER BY created DESC", (job_id,)).fetchall()
+    return [{**dict(r), "feedback": json.loads(r["feedback"]) if r["feedback"] else None} for r in rows]
+
+
+def practice_get(practice_id: int) -> dict | None:
+    with connect() as c:
+        r = c.execute("SELECT * FROM practice WHERE id = ?", (practice_id,)).fetchone()
+    return {**dict(r), "feedback": json.loads(r["feedback"]) if r["feedback"] else None} if r else None
+
+
+def practice_delete(practice_id: int) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM practice WHERE id = ?", (practice_id,))
+
+
+def debrief_add(job_id: str, notes: dict) -> int:
+    with connect() as c:
+        return c.execute(
+            "INSERT INTO debriefs (job_id, created, notes) VALUES (?, ?, ?)", (job_id, time.time(), json.dumps(notes))
+        ).lastrowid
+
+
+def debrief_set_review(debrief_id: int, review: dict) -> None:
+    with connect() as c:
+        c.execute("UPDATE debriefs SET review = ? WHERE id = ?", (json.dumps(review), debrief_id))
+
+
+def _debrief(r) -> dict:
+    return {**dict(r), "notes": json.loads(r["notes"]), "review": json.loads(r["review"]) if r["review"] else None}
+
+
+def debriefs_for_job(job_id: str) -> list[dict]:
+    with connect() as c:
+        rows = c.execute("SELECT * FROM debriefs WHERE job_id = ? ORDER BY created DESC", (job_id,)).fetchall()
+    return [_debrief(r) for r in rows]
+
+
+def debrief_get(debrief_id: int) -> dict | None:
+    with connect() as c:
+        r = c.execute("SELECT * FROM debriefs WHERE id = ?", (debrief_id,)).fetchone()
+    return _debrief(r) if r else None
+
+
+def debrief_delete(debrief_id: int) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM debriefs WHERE id = ?", (debrief_id,))
+
+
+def find_by_url(url: str) -> str | None:
+    """The id of a saved job with this posting address, ignoring a trailing slash and query string."""
+    key = url.split("?")[0].rstrip("/").lower()
+    if not key:
+        return None
+    with connect() as c:
+        rows = c.execute("SELECT id, json_extract(data, '$.url') AS u FROM jobs WHERE u != ''").fetchall()
+    return next((r["id"] for r in rows if r["u"].split("?")[0].rstrip("/").lower() == key), None)

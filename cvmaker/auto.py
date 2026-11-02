@@ -12,16 +12,28 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel, Field
 
-from . import assistant, db, settings, taste, tasks
+from . import assistant, db, pack, people, settings, taste, tasks
 from .models import Criteria
 from .search import run_search
 from .sources import ensure_description
 
-SEARCHES_PATH = settings.DATA_DIR / "searches.json"
-PREFS_PATH = settings.DATA_DIR / "prefs.json"
+def _searches_path():
+    return settings.DATA_DIR / "searches.json"
+
+
+def _prefs_path():
+    return settings.DATA_DIR / "prefs.json"
+
+
 # Files of the single saved search before there were several; read once to migrate.
-OLD_CRITERIA_PATH = settings.DATA_DIR / "criteria.json"
-OLD_AUTO_PATH = settings.DATA_DIR / "auto.json"
+def _old_criteria_path():
+    return settings.DATA_DIR / "criteria.json"
+
+
+def _old_auto_path():
+    return settings.DATA_DIR / "auto.json"
+
+
 CHECK_EVERY_SECONDS = 60
 RATE_BATCH = 5
 RATE_PARALLEL = 3
@@ -48,6 +60,12 @@ class Prefs(BaseModel):
     active_search: str = "default"
     rate_after_search: bool = True
     rate_top: int = 40
+    # Application packs (fit, CV, letter, prep, project ideas) for jobs with a keyword score of at least this.
+    pack_after_search: bool = True
+    pack_min_score: int = 80
+    pack_max: int = 3
+    # After each search, check that saved jobs you haven't applied to are still open (no Claude, just the web).
+    check_open: bool = True
 
 
 class SearchList(BaseModel):
@@ -58,19 +76,20 @@ _lock = threading.RLock()
 
 
 def load_prefs() -> Prefs:
-    return Prefs.model_validate_json(PREFS_PATH.read_text()) if PREFS_PATH.exists() else Prefs()
+    path = _prefs_path()
+    return Prefs.model_validate_json(path.read_text()) if path.exists() else Prefs()
 
 
 def save_prefs(prefs: Prefs) -> None:
-    PREFS_PATH.write_text(prefs.model_dump_json(indent=2))
+    _prefs_path().write_text(prefs.model_dump_json(indent=2))
 
 
 def _migrate() -> list[SavedSearch]:
     search = SavedSearch(id="default", name="My search")
-    if OLD_CRITERIA_PATH.exists():
-        search.criteria = Criteria.model_validate_json(OLD_CRITERIA_PATH.read_text())
-    if OLD_AUTO_PATH.exists():
-        data = json.loads(OLD_AUTO_PATH.read_text())
+    if _old_criteria_path().exists():
+        search.criteria = Criteria.model_validate_json(_old_criteria_path().read_text())
+    if _old_auto_path().exists():
+        data = json.loads(_old_auto_path().read_text())
         search.auto, search.every_hours, search.notify = data.get("enabled", False), data.get("every_hours", 6), data.get("notify", True)
         search.last_run, search.last_seconds = data.get("last_run", 0), data.get("last_seconds", 0)
         search.last_found, search.last_new = data.get("last_found", 0), data.get("last_new", 0)
@@ -79,13 +98,13 @@ def _migrate() -> list[SavedSearch]:
 
 def load_searches() -> list[SavedSearch]:
     with _lock:
-        if not SEARCHES_PATH.exists():
+        if not _searches_path().exists():
             _write(_migrate())
-        return SearchList.model_validate_json(SEARCHES_PATH.read_text()).searches
+        return SearchList.model_validate_json(_searches_path().read_text()).searches
 
 
 def _write(searches: list[SavedSearch]) -> None:
-    SEARCHES_PATH.write_text(SearchList(searches=searches).model_dump_json(indent=2))
+    _searches_path().write_text(SearchList(searches=searches).model_dump_json(indent=2))
 
 
 def get_search(search_id: str) -> SavedSearch | None:
@@ -152,8 +171,9 @@ def search_running(search_id: str) -> dict | None:
 def run_saved(
     search_id: str, progress: tasks.Progress | None = None, scheduled: bool = False, rate_inline: bool = False
 ) -> SavedSearch:
-    """Run one saved search and remember its results. New jobs are then rated by Claude: as a separate
-    background task, or right here when rate_inline (from cron, where there is no task pool to outlive us)."""
+    """Run one saved search and remember its results. New jobs are then rated by Claude, and the best-scoring
+    jobs get an application pack: as separate background tasks, or right here when rate_inline (from cron,
+    where there is no task pool to outlive us)."""
     search = get_search(search_id)
     started = time.time()
     on_progress = (lambda sources: progress.set(sources=sources)) if progress else None
@@ -184,7 +204,27 @@ def run_saved(
             rate_jobs(top)
         else:
             submit_rating(top, f"Rate new jobs from '{search.name}'")
+    if prefs.pack_after_search and found:
+        pack.run_packs(found, prefs.pack_min_score, prefs.pack_max, inline=rate_inline)
+    if prefs.check_open:
+        submit_open_check(inline=rate_inline)
     return get_search(search_id)
+
+
+def submit_open_check(inline: bool = False, limit: int = 80) -> int | None:
+    """Check saved jobs not checked in the last day are still open; closed ones leave the jobs list."""
+    from . import checks
+
+    ids = db.jobs_to_check(20, checks.CHECK_STAGES, limit)
+    if not ids:
+        return None
+    if inline:
+        checks.check_many(ids)
+        return None
+    return tasks.submit(
+        "check", f"Check {len(ids)} postings are still open", lambda progress: (checks.check_many(ids, progress), "/?status=closed")[1],
+        subject="check:open", url="/?status=closed",
+    )
 
 
 def submit_search(search_id: str, scheduled: bool = False) -> int:
@@ -238,7 +278,7 @@ def rate_jobs(job_ids: list[str], progress: tasks.Progress | None = None) -> int
         return rated
 
     with ThreadPoolExecutor(max_workers=RATE_PARALLEL) as pool:
-        for future in [pool.submit(rate_batch, b) for b in batches]:
+        for future in [people.submit(pool, rate_batch, b) for b in batches]:
             try:
                 done += future.result()
             except Exception as e:
@@ -270,20 +310,22 @@ def remind_follow_ups() -> None:
     if not due:
         return
     names = ", ".join(f"{d['job'].company}" for d in due[:3]) + (" …" if len(due) > 3 else "")
-    tasks.notify(f"Time to follow up on {len(due)} application{'s' if len(due) != 1 else ''}: {names} - http://127.0.0.1:8000/pipeline")
+    tasks.notify(f"{tasks.person_prefix()}Time to follow up on {len(due)} application{'s' if len(due) != 1 else ''}: {names} - http://127.0.0.1:8000/pipeline")
     db.mark_reminded([d["job"].id for d in due])
 
 
 def _loop() -> None:
     while True:
         time.sleep(CHECK_EVERY_SECONDS)
-        try:
-            for s in load_searches():
-                if s.auto and time.time() >= next_run(s) and not search_running(s.id):
-                    submit_search(s.id, scheduled=True)
-            remind_follow_ups()
-        except Exception as e:  # keep the scheduler alive; the next tick tries again
-            print(f"cvmaker scheduler: {e}")
+        for person in people.load():
+            with people.acting_as(person.id):
+                try:
+                    for s in load_searches():
+                        if s.auto and time.time() >= next_run(s) and not search_running(s.id):
+                            submit_search(s.id, scheduled=True)
+                    remind_follow_ups()
+                except Exception as e:  # keep the scheduler alive; the next tick tries again
+                    print(f"cvmaker scheduler ({person.name}): {e}")
 
 
 _thread: threading.Thread | None = None
@@ -298,10 +340,16 @@ def start() -> None:
 
 
 if __name__ == "__main__":
-    # From cron: run every search that has its schedule on (or the active one if none has).
-    for chosen in [s for s in load_searches() if s.auto] or [active_search()]:
-        done = run_saved(chosen.id, scheduled=True, rate_inline=True)
-        print(f"{done.name}: {done.last_found} matching jobs, {done.last_new} new, in {done.last_seconds}s")
-        for e in done.last_errors:
-            print("error:", e)
-    remind_follow_ups()
+    # From cron: for each person, run every search that has its schedule on (the default person's active
+    # search if none has; other people only run searches they scheduled).
+    for person in people.load():
+        with people.acting_as(person.id):
+            scheduled = [s for s in load_searches() if s.auto]
+            if not scheduled and person.id == people.DEFAULT:
+                scheduled = [active_search()]
+            for chosen in scheduled:
+                done = run_saved(chosen.id, scheduled=True, rate_inline=True)
+                print(f"{person.name} / {done.name}: {done.last_found} matching jobs, {done.last_new} new, in {done.last_seconds}s")
+                for e in done.last_errors:
+                    print("error:", e)
+            remind_follow_ups()
