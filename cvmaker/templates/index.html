@@ -153,7 +153,7 @@
     <div class="job-list" id="job-list">
     {% for r in rows %}{% set j = r.job %}{% set seen_co = companies_seen.get(' '.join(j.company.lower().split())) %}
       <article class="jcard {{ 'unseen' if not r.seen }}">
-        <div class="jlogo" style="--h:{{ j.company | hue }}" aria-hidden="true">{{ j.company | initials }}</div>
+        <div class="jlogo" style="--h:{{ j.company | hue }}" aria-hidden="true">{{ j.company | initials }}<img src="/logo?c={{ j.company | urlencode }}&u={{ j.url | urlencode }}&l={{ j.location | urlencode }}" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()"></div>
         <div class="jmain">
           <div class="jtitle">
             <a href="/job/{{ j.id }}" class="stretched">{{ j.title }}</a>
@@ -525,6 +525,8 @@
   .hs-where { border-left:1px solid var(--line); }
   .hero-search input[type=search], .hero-search select { border:0; background:transparent; box-shadow:none !important; padding:10px 2px; font-size:14.5px; color:var(--ink); }
   .hero-search select { width:auto; cursor:pointer; }
+  .hero-search .cs-btn { border:0; background:transparent; box-shadow:none !important; padding:10px 2px; font-size:14.5px; }
+  .sort-sel .cs-btn { padding:7px 12px; font-size:13.5px; font-weight:550; }
   .hero-search button { padding:10px 22px; border-radius:10px; }
   .hero-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
   .hero-actions form { margin:0; }
@@ -595,7 +597,10 @@
     background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); transition:border-color .12s, box-shadow .12s, transform .12s; }
   .jcard:hover { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow:var(--shadow-lg); }
   .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent), var(--shadow); }
-  .jlogo { width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-weight:800; font-size:17px; letter-spacing:-.02em;
+  .jlogo img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:7px; background:#fff; border-radius:inherit; opacity:0; transition:opacity .2s; }
+  .jlogo.has-img img { opacity:1; }
+  .jlogo.has-img { border-color:var(--line); }
+  .jlogo { position:relative; overflow:hidden; width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-weight:800; font-size:17px; letter-spacing:-.02em;
     color:hsl(var(--h) 70% 42%); background:hsl(var(--h) 85% 95%); border:1px solid hsl(var(--h) 60% 88%); }
   :root[data-theme="dark"] .jlogo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jlogo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); } }
@@ -645,6 +650,7 @@
   .job-list.compact .jcard:last-child { border-bottom:0; }
   .job-list.compact .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent); }
   .job-list.compact .jlogo { width:34px; height:34px; border-radius:9px; font-size:12px; }
+  .job-list.compact .jlogo img { padding:4px; }
   .job-list.compact .jdetail, .job-list.compact .jwhen, .job-list.compact .jsal small { display:none; }
   .job-list.compact .jtitle a { font-size:14.5px; }
   .job-list.compact .jmeta { margin-top:0; font-size:12.5px; }

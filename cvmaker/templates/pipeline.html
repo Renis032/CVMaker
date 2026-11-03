@@ -2,13 +2,20 @@
 {% import "_macros.html" as m %}
 {% block title %}Pipeline - CVMaker{% endblock %}
 {% block content %}
-<div class="stats">
-  <div class="stat"><div class="k">Applications</div><div class="v">{{ stats.applications }}</div><div class="sub">{{ stats.applied_week }} this week</div></div>
-  <div class="stat"><div class="k">Response rate</div><div class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</div><div class="sub">{{ stats.response.responded }} of {{ stats.response.n }} answered</div></div>
-  <div class="stat"><div class="k">With a tailored CV sent</div><div class="v">{{ stats.response_tailored.pct ~ '%' if stats.response_tailored.pct is not none else '–' }}</div><div class="sub">response rate · {{ stats.response_tailored.n }} applications</div></div>
-  <div class="stat"><div class="k">Without one recorded</div><div class="v">{{ stats.response_untailored.pct ~ '%' if stats.response_untailored.pct is not none else '–' }}</div><div class="sub">response rate · {{ stats.response_untailored.n }} applications</div></div>
-  <div class="stat"><div class="k">Interviews · offers</div><div class="v">{{ stats.by_stage.get('interview', 0) }} · {{ stats.by_stage.get('offer', 0) }}</div><div class="sub">right now</div></div>
-</div>
+<section class="pipe-hero">
+  <div>
+    <span class="eyebrow-s">Pipeline</span>
+    <h1>Your applications</h1>
+    <p class="muted">Drag a card to another column or use its menu. Click a card for notes, contact and timeline.</p>
+  </div>
+  <div class="pipe-stats">
+    <div class="ps"><span class="k">Applications</span><span class="v">{{ stats.applications }}</span><span class="sub">{{ stats.applied_week }} this week</span></div>
+    <div class="ps"><span class="k">Response rate</span><span class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</span><span class="sub">{{ stats.response.responded }} of {{ stats.response.n }} answered</span></div>
+    <div class="ps"><span class="k">With a tailored CV</span><span class="v">{{ stats.response_tailored.pct ~ '%' if stats.response_tailored.pct is not none else '–' }}</span><span class="sub">response · {{ stats.response_tailored.n }} sent</span></div>
+    <div class="ps"><span class="k">Without one</span><span class="v">{{ stats.response_untailored.pct ~ '%' if stats.response_untailored.pct is not none else '–' }}</span><span class="sub">response · {{ stats.response_untailored.n }} sent</span></div>
+    <div class="ps"><span class="k">Interviews · offers</span><span class="v">{{ stats.by_stage.get('interview', 0) }} · {{ stats.by_stage.get('offer', 0) }}</span><span class="sub">right now</span></div>
+  </div>
+</section>
 
 <div class="card" id="follow-ups">
   <div class="section-title">
@@ -41,16 +48,18 @@
   {% endif %}
 </div>
 
-<p class="muted" style="margin:0 0 10px">Drag a card to another column, or use its menu. Click a card to open the job (notes, contact, timeline).</p>
 <div class="board">
   {% for stage in STAGES %}
-  <section class="col" data-stage="{{ stage }}" aria-label="{{ STAGE_LABELS[stage] }}">
-    <h3>{{ m.stage_pill(stage) }} <span class="muted">{{ columns[stage] | length }}</span></h3>
+  <section class="col st-{{ stage }}" data-stage="{{ stage }}" aria-label="{{ STAGE_LABELS[stage] }}">
+    <h3><span class="dot"></span>{{ STAGE_LABELS[stage] }} <span class="count">{{ columns[stage] | length }}</span></h3>
     <div class="cards">
       {% for r in columns[stage] %}{% set j = r.job %}
       <article class="jcard" draggable="true" data-job="{{ j.id }}">
-        <a href="/job/{{ j.id }}#application"><strong>{{ j.title }}</strong></a>
-        <div class="muted">{{ j.company }}</div>
+        <div class="pc-head">
+          <span class="pc-logo" style="--h:{{ j.company | hue }}" aria-hidden="true">{{ j.company | initials }}<img src="/logo?c={{ j.company | urlencode }}&u={{ j.url | urlencode }}&l={{ j.location | urlencode }}" alt="" loading="lazy" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()"></span>
+          <div class="pc-title"><a href="/job/{{ j.id }}#application"><strong>{{ j.title }}</strong></a>
+            <div class="muted">{{ j.company }}</div></div>
+        </div>
         <div class="row" style="gap:4px;margin-top:6px">
           {% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% endif %}
           <span class="muted">{{ r.status_at | ago if r.status_at else '' }}</span>
@@ -74,7 +83,33 @@
 </div>
 
 <style>
-  .board { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(150px, 1fr); gap:12px; overflow-x:auto; padding-bottom:10px; }
+  .pipe-hero { display:grid; grid-template-columns:minmax(240px, 1fr) minmax(0, 2.2fr); gap:24px; align-items:center; padding:24px 28px; margin-bottom:18px; border-radius:22px; background:var(--hero); border:1px solid var(--hero-line); }
+  .pipe-hero h1 { margin:2px 0 4px; font-size:clamp(24px, 2.8vw, 32px); letter-spacing:-.03em; font-weight:800; }
+  .pipe-hero p { margin:0; }
+  .eyebrow-s { font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.07em; color:var(--accent-soft-ink); }
+  .pipe-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; }
+  .ps { display:flex; flex-direction:column; gap:1px; padding:12px 14px; border-radius:14px; background:color-mix(in srgb, var(--card) 80%, transparent); border:1px solid var(--hero-line); }
+  .ps .k { font-size:12px; color:var(--muted); font-weight:550; } .ps .v { font-size:22px; font-weight:750; letter-spacing:-.02em; } .ps .sub { font-size:11.5px; color:var(--muted); }
+  @media (max-width:900px) { .pipe-hero { grid-template-columns:1fr; } }
+  .col h3 .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .col h3 .count { margin-left:auto; font-size:12px; font-weight:650; padding:1px 8px; border-radius:999px; background:var(--card); color:var(--muted); border:1px solid var(--line); }
+  .col { border-top:3px solid var(--line-strong); }
+  .st-liked { border-top-color:#ec4899; } .st-liked .dot { background:#ec4899; }
+  .st-applied { border-top-color:var(--accent); } .st-applied .dot { background:var(--accent); }
+  .st-screening, .st-interview { border-top-color:var(--warn); } .st-screening .dot, .st-interview .dot { background:var(--warn); }
+  .st-offer { border-top-color:var(--good); } .st-offer .dot { background:var(--good); }
+  .st-rejected { border-top-color:var(--bad); } .st-rejected .dot { background:var(--bad); }
+  .pc-head { display:flex; gap:9px; align-items:flex-start; }
+  .pc-title { min-width:0; overflow-wrap:anywhere; line-height:1.35; }
+  .pc-logo { position:relative; overflow:hidden; width:30px; height:30px; flex:none; border-radius:8px; display:grid; place-items:center; font-weight:800; font-size:11px;
+    color:hsl(var(--h) 70% 42%); background:hsl(var(--h) 85% 95%); }
+  :root[data-theme="dark"] .pc-logo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pc-logo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); } }
+  .pc-logo img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:3px; background:#fff; opacity:0; }
+  .pc-logo.has-img img { opacity:1; }
+  .jcard:hover { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .jcard .move .cs-btn { padding:4px 9px; font-size:12.5px; }
+  .board { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(200px, 1fr); gap:12px; overflow-x:auto; padding-bottom:10px; }
   .col { background:var(--sunken); border:1px solid var(--line); border-radius:var(--radius); padding:10px; min-height:220px; }
   .col.over { border-color:var(--accent); background:var(--accent-soft); }
   .col h3 { display:flex; align-items:center; gap:6px; margin:0 0 10px; }

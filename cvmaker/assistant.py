@@ -42,6 +42,9 @@ def load_profile() -> Profile | None:
 
 
 def save_profile(profile: Profile) -> None:
+    from . import history
+
+    history.snapshot("Profile changed")
     settings.PROFILE_PATH.write_text(profile.model_dump_json(indent=2))
 
 

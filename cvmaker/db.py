@@ -10,6 +10,15 @@ from .models import CoverLetter, Job, TailoredCV
 from .salary import monthly_eur
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    created REAL NOT NULL,
+    read INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL,
@@ -990,3 +999,42 @@ def chat_set_files(message_id: int, files: list[dict]) -> None:
 def chat_set_state(message_id: int, state: str) -> None:
     with connect() as c:
         c.execute("UPDATE chat_messages SET state = ? WHERE id = ?", (state, message_id))
+
+
+# --- notifications (the bell in the top bar) --------------------------------------------------------------------
+
+# Notifications older than this are dropped.
+NOTIFICATION_DAYS = 60
+
+
+def notification_add(kind: str, title: str, body: str = "", url: str = "") -> int:
+    with connect() as c:
+        c.execute("DELETE FROM notifications WHERE created < ?", (time.time() - NOTIFICATION_DAYS * 86400,))
+        return c.execute(
+            "INSERT INTO notifications (kind, title, body, url, created) VALUES (?, ?, ?, ?, ?)",
+            (kind, title, body, url, time.time()),
+        ).lastrowid
+
+
+def notifications(limit: int = 30) -> list[dict]:
+    with connect() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM notifications ORDER BY created DESC, id DESC LIMIT ?", (limit,))]
+
+
+def notification_get(notification_id: int) -> dict | None:
+    with connect() as c:
+        r = c.execute("SELECT * FROM notifications WHERE id = ?", (notification_id,)).fetchone()
+        return dict(r) if r else None
+
+
+def notifications_unread() -> int:
+    with connect() as c:
+        return c.execute("SELECT COUNT(*) FROM notifications WHERE read = 0").fetchone()[0]
+
+
+def notifications_mark_read(notification_id: int | None = None) -> None:
+    with connect() as c:
+        if notification_id is None:
+            c.execute("UPDATE notifications SET read = 1 WHERE read = 0")
+        else:
+            c.execute("UPDATE notifications SET read = 1 WHERE id = ?", (notification_id,))

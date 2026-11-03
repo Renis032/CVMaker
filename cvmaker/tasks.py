@@ -61,10 +61,16 @@ def _run(task_id: int, fn: Callable[[Progress], str | None]) -> None:
         db.task_update(task_id, **fields)
     except Exception as e:  # shown on the page; the task list is where errors surface
         db.task_update(task_id, status="error", error=f"{e}"[:1500] or type(e).__name__, finished=time.time())
-    if time.time() - started >= NOTIFY_AFTER_SECONDS:
-        task = db.task_get(task_id)
-        verb = "finished" if task["status"] == "done" else "failed"
-        notify(f"{person_prefix()}{task['label']} {verb}")
+    task = db.task_get(task_id)
+    ok = task["status"] == "done"
+    # Every finished task goes in the bell; long ones also pop up on the desktop.
+    notify(
+        f"{task['label']} {'finished' if ok else 'failed'}",
+        "" if ok else (task.get("error") or "")[:300],
+        url=task.get("url") or "",
+        kind="task" if ok else "error",
+        desktop=time.time() - started >= NOTIFY_AFTER_SECONDS,
+    )
 
 
 def person_prefix() -> str:
@@ -72,9 +78,18 @@ def person_prefix() -> str:
     return "" if people.is_default() else f"{people.current_person().name}: "
 
 
-def notify(message: str) -> None:
-    if shutil.which("notify-send"):
-        subprocess.run(["notify-send", "CVMaker", message], check=False)
+APP_URL = "http://127.0.0.1:8000"
+
+
+def notify(title: str, body: str = "", url: str = "", kind: str = "info", desktop: bool = True) -> None:
+    """Tell the person: always in the bell (for the current person), and as a desktop notification unless desktop=False."""
+    try:
+        db.notification_add(kind, title, body, url)
+    except Exception:  # a notification must never break the work that triggered it
+        pass
+    if desktop and shutil.which("notify-send"):
+        text = person_prefix() + title + (f": {body}" if body else "") + (f" - {APP_URL}{url}" if url.startswith("/") else "")
+        subprocess.run(["notify-send", "CVMaker", text], check=False)
 
 
 def start() -> None:

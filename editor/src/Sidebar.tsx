@@ -1,5 +1,5 @@
 // The left side: an icon rail and the drawer it opens, like Canva's side panel.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -7,13 +7,14 @@ import type { CvData, FreeEl, PageLayout, Style, Variant } from './types';
 import { FONTS, FONT_SETS, PALETTES, TEMPLATES, applyFontSet, applyTemplate, documentColors, fontLabel } from './design';
 import { ICONS, iconSvg } from './icons';
 import { API } from './model';
+import { Dropdown } from './ui';
 import { newFree } from './Free';
 import { ColorPicker, Slider, type Sel } from './Toolbar';
 import { VersionsPanel } from './Panels';
 
 type Update = (fn: (d: CvData) => void) => void;
 
-export type Tab = 'design' | 'elements' | 'text' | 'uploads' | 'layout' | 'versions' | 'layers';
+export type Tab = 'design' | 'elements' | 'text' | 'uploads' | 'layout' | 'versions' | 'layers' | 'job' | 'history';
 
 const TABS: [Tab, string, string][] = [
   ['design', 'Design', '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'],
@@ -23,6 +24,8 @@ const TABS: [Tab, string, string][] = [
   ['layout', 'Layout', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M3 9h12"/>'],
   ['versions', 'Versions', '<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>'],
   ['layers', 'Layers', '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 12 12 17 22 12"/>'],
+  ['job', 'Job match', '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'],
+  ['history', 'History', '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'],
 ];
 
 interface Props {
@@ -42,7 +45,7 @@ export function Sidebar(props: Props) {
   return (
     <>
       <nav className="rail">
-        {TABS.map(([id, label, icon]) => (
+        {TABS.filter(([id]) => id !== 'job' || props.data.job).map(([id, label, icon]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(tab === id ? null : id)} title={label}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: icon }} />
             <span>{label}</span>
@@ -61,6 +64,8 @@ export function Sidebar(props: Props) {
           {tab === 'layout' && <LayoutTab {...props} />}
           {tab === 'versions' && <VersionsPanel data={props.data} variant={props.variant} update={props.update} select={props.select} />}
           {tab === 'layers' && <LayersTab {...props} />}
+          {tab === 'job' && props.data.job && <JobTab {...props} />}
+          {tab === 'history' && <HistoryTab {...props} />}
         </aside>
       )}
     </>
@@ -337,16 +342,10 @@ function LayoutTab({ data, update }: Props) {
       </div>
 
       <h3>Text and spacing</h3>
-      <label className="field">
+      <div className="field">
         <span>Font</span>
-        <select value={style.font} onChange={(e) => set('font', e.target.value)}>
-          {FONTS.map(([label, value]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
+        <Dropdown value={style.font} onChange={(v) => set('font', v)} options={FONTS.map(([label, value]) => ({ value, label, style: { fontFamily: value } }))} />
+      </div>
       {NUMBERS.map(([k, label, min, max, step, unit]) => (
         <Slider key={k} label={label} value={style[k]} min={min} max={max} step={step} unit={unit} onChange={(v) => set(k, v)} />
       ))}
@@ -482,6 +481,154 @@ function LayersTab({ data, update, variant, sel, setSel }: Props) {
         </SortableContext>
       </DndContext>
       {!free.length && <p className="hint">No elements yet. Add text, shapes, icons or images from the tabs above.</p>}
+    </div>
+  );
+}
+
+
+// --- Job match: which of the posting's key skills this CV shows --------------------------------------------------
+
+const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** The term as a whole word (so "java" doesn't match "javascript", and "c++" works). */
+export function mentions(text: string, term: string): boolean {
+  return new RegExp(`(?<![a-z0-9])${esc(term.toLowerCase())}(?![a-z0-9])`).test(text.toLowerCase());
+}
+
+function JobTab({ data, variant, update, setSel }: Props) {
+  const job = data.job!;
+  const [pageText, setPageText] = useState('');
+  // Read what the page actually shows (hidden parts and editing buttons are not part of it).
+  useLayoutEffect(() => {
+    const t = document.querySelector<HTMLElement>('.canvas .page')?.innerText ?? '';
+    if (t !== pageText) setPageText(t);
+  });
+  const vi = data.variants.findIndex((v) => v.id === variant.id);
+  const hidden = new Set(variant.hidden);
+  const c = data.content;
+  /** A part of the CV that mentions the term but is hidden in this CV. */
+  const hiddenHit = (term: string): { id: string; what: string } | null => {
+    for (const j of c.experience) {
+      if (hidden.has(j.id) && [j.role, ...j.bullets.map((b) => b.text)].some((t) => mentions(t, term))) return { id: j.id, what: `job “${j.role}”` };
+      for (const b of j.bullets) if (hidden.has(b.id) && mentions(b.text, term)) return { id: b.id, what: `bullet in ${j.company}` };
+    }
+    for (const p of c.projects) {
+      if (hidden.has(p.id) && [p.title, p.tech, ...p.bullets.map((b) => b.text)].some((t) => mentions(t, term))) return { id: p.id, what: `project “${p.title}”` };
+      for (const b of p.bullets) if (hidden.has(b.id) && mentions(b.text, term)) return { id: b.id, what: `bullet in ${p.title}` };
+    }
+    for (const g of c.skills) if (hidden.has(g.id) && mentions(`${g.label} ${g.value}`, term)) return { id: g.id, what: `skill group “${g.label}”` };
+    return null;
+  };
+  const rows = job.keywords.map((k) => ({ k, ok: mentions(pageText, k) }));
+  const covered = rows.filter((r) => r.ok).length;
+  const pct = rows.length ? Math.round((covered / rows.length) * 100) : 0;
+  const goToSkills = () => {
+    setSel({ type: 'el', k: 'section', i: 'skills' });
+    document.querySelector('.canvas [data-k="section"][data-i="skills"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  return (
+    <div className="panel">
+      <h3>Job match</h3>
+      <p className="hint">
+        What <a href={job.url} target="_top">{job.title} · {job.company}</a> asks for, and whether this CV shows it. Updates as you edit.
+      </p>
+      <div className="match">
+        <div className="match-bar"><i style={{ width: `${pct}%` }} /></div>
+        <span><strong>{covered}</strong> of {rows.length} covered · {pct}%</span>
+      </div>
+      {!rows.length && <p className="hint">No key skills found in the posting.</p>}
+      <ul className="kw-list">
+        {rows
+          .sort((a, b) => Number(a.ok) - Number(b.ok))
+          .map(({ k, ok }) => {
+            const hit = ok ? null : hiddenHit(k);
+            return (
+              <li key={k} className={ok ? 'ok' : 'miss'}>
+                <span className="kw-mark">{ok ? '✓' : '✗'}</span>
+                <span className="kw-name">{k}</span>
+                {!ok && hit && (
+                  <button title={`Your profile mentions it in a hidden ${hit.what}`} onClick={() => update((d) => void (d.variants[vi].hidden = d.variants[vi].hidden.filter((h) => h !== hit.id)))}>
+                    Show hidden {hit.what.split(' ')[0]}
+                  </button>
+                )}
+                {!ok && !hit && (
+                  <button title="Only add it if it is true for you" onClick={goToSkills}>
+                    Where to add
+                  </button>
+                )}
+              </li>
+            );
+          })}
+      </ul>
+      <p className="hint">Only add a skill you really have. To rephrase a bullet towards this job, select it and use ✦ Rewrite → Fit this job.</p>
+    </div>
+  );
+}
+
+// --- History: restore points of your profile, versions and design ------------------------------------------------
+
+interface Snap {
+  id: string;
+  reason: string;
+  created: number;
+  versions: string[];
+  jobs: number;
+  projects: number;
+  summary: string;
+  free: number;
+}
+
+function when(ts: number): string {
+  const d = new Date(ts * 1000);
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return days === 0 ? `Today ${time}` : days === 1 ? `Yesterday ${time}` : `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+}
+
+function HistoryTab({ data }: Props) {
+  const [items, setItems] = useState<Snap[] | null>(null);
+  const [busy, setBusy] = useState('');
+  useEffect(() => {
+    fetch(`${API}history`)
+      .then((r) => r.json())
+      .then((b) => setItems(b.items ?? []))
+      .catch(() => setItems([]));
+  }, []);
+  const restore = async (s: Snap) => {
+    if (!confirm(`Restore your CV as it was ${when(s.created).toLowerCase()}?\n\nYour profile text, versions and design go back to that point. The current state is kept as a restore point first, so this can be undone.`)) return;
+    setBusy(s.id);
+    const res = await fetch(`${API}history/${encodeURIComponent(s.id)}/restore`, { method: 'POST' });
+    if (res.ok) location.reload();
+    else {
+      setBusy('');
+      alert((await res.json().catch(() => ({}))).error || 'Could not restore.');
+    }
+  };
+  return (
+    <div className="panel">
+      <h3>History</h3>
+      <p className="hint">
+        CVMaker keeps a restore point before your CV changes (at most one per 10 minutes of editing, and always before a version is deleted).
+        {data.mode === 'cv' && ' This covers your profile and versions; a tailored CV is restored from its own page.'}
+      </p>
+      {items === null && <p className="hint">Loading…</p>}
+      {items && !items.length && <p className="hint">No restore points yet. The first one is made with your next change.</p>}
+      <ul className="history">
+        {items?.map((s) => (
+          <li key={s.id}>
+            <div className="h-top">
+              <strong>{when(s.created)}</strong>
+              <button disabled={!!busy} onClick={() => restore(s)}>
+                {busy === s.id ? 'Restoring…' : 'Restore'}
+              </button>
+            </div>
+            <div className="h-reason">{s.reason}</div>
+            <div className="h-meta">
+              {s.versions.length > 0 && <span title={s.versions.join('\n')}>{s.versions.length} version{s.versions.length > 1 ? 's' : ''}: {s.versions.join(', ')}</span>}
+              <span>{s.jobs} job{s.jobs === 1 ? '' : 's'} · {s.projects} project{s.projects === 1 ? '' : 's'}{s.free ? ` · ${s.free} elements` : ''}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

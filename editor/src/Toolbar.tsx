@@ -5,6 +5,8 @@ import { DEFAULT_COLORS, FONTS, KINDS, documentColors, elemStyle, fontLabel, sty
 import { columns, uid } from './model';
 import { measuredHeight } from './Free';
 import { ICONS, iconSvg } from './icons';
+import { RewritePanel } from './Rewrite';
+import { textField } from './fields';
 
 type Update = (fn: (d: CvData) => void) => void;
 
@@ -416,6 +418,16 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
     );
   };
 
+  const rewritePop = () =>
+    textField(data, variant, sel) &&
+    pop(
+      'rewrite',
+      'Rewrite with Claude',
+      <span className="rw-btn">✦ Rewrite</span>,
+      <RewritePanel data={data} variant={variant} sel={sel} update={update} close={() => setOpen(null)} />,
+      true,
+    );
+
   let body: ReactNode;
   if (!sel) {
     body = (
@@ -446,6 +458,7 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
     body = (
       <>
         <span className="tb-kind">{kind.label}</span>
+        {rewritePop()}
         {shown && kind.cat === 'text' && (
           <>
             {textControls(stored, shown, set)}
@@ -612,6 +625,7 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
       body = (
         <>
           <span className="tb-kind">{{ text: 'Text box', rect: 'Shape', ellipse: 'Circle', line: 'Line', image: 'Image', icon: 'Icon' }[el.type]}</span>
+          {rewritePop()}
           {el.type === 'text' && shown && textControls(s, shown, (p) => set((f) => {
             const next = { ...(f.style ?? {}), ...p };
             for (const [k, v] of Object.entries(p)) if (v === undefined) delete next[k as keyof ElemStyle];

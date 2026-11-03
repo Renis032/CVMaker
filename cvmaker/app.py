@@ -108,6 +108,8 @@ def page(request: Request, name: str, **ctx) -> HTMLResponse:
             "people": people.load(),
             "person": people.current_person(),
             "unseen_total": db.unseen_count(),
+            "notes": db.notifications(20),
+            "notes_unread": db.notifications_unread(),
             "now": time.time(),
             "today": datetime.now().strftime("%Y-%m-%d"),
             **ctx,
@@ -158,6 +160,7 @@ def api_tasks():
         "now": time.time(),
         "active": [_task_json(t) for t in db.task_active()],
         "finished": [_task_json(t) for t in db.tasks_unseen_finished()],
+        "unread": db.notifications_unread(),
     }
 
 
@@ -1033,7 +1036,9 @@ def cv_pdf(cv_id: int):
 
 
 @app.get("/profile", response_class=HTMLResponse)
-def profile_page(request: Request, error: str = ""):
+def profile_page(request: Request, error: str = "", backup_error: str = "", restored: int = 0):
+    from . import backup, history
+
     profile = assistant.load_profile()
     return page(
         request,
@@ -1050,6 +1055,12 @@ def profile_page(request: Request, error: str = ""):
         imported_at=editor.load_layout().get("imported_at") if editor.exists() else None,
         cveditor_path=str(editor.CVEDITOR_DATA).replace(str(Path.home()), "~"),
         import_report=db.cache_get("editor:import-report", 24 * 30),
+        history_items=[{**h, **history.summary(h["id"])} for h in history.list_snapshots()[:12]],
+        history_total=len(history.list_snapshots()),
+        backups=backup.list_backups(),
+        backup_error=backup_error,
+        backup_report=db.cache_get("backup:report", 1),
+        restored=restored,
     )
 
 
@@ -1474,3 +1485,6 @@ app.include_router(_chat_router)
 from .editor_routes import router as _editor_router  # noqa: E402
 
 app.include_router(_editor_router)
+from .extras_routes import router as _extras_router  # noqa: E402
+
+app.include_router(_extras_router)

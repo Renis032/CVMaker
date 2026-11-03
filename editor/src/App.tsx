@@ -8,6 +8,7 @@ import { CanvasContext, blurFields, useFreeDrag, type CanvasCtx, type Guides } f
 import { Toolbar, freeOps, selectorFor, type Clip, type Sel } from './Toolbar';
 import { Sidebar, type Tab } from './Sidebar';
 import { BoxHandles } from './Resize';
+import { Dropdown } from './ui';
 
 declare global {
   interface Window { __CV_READY__?: boolean; __CV_PRINT__?: CvData }
@@ -406,13 +407,7 @@ export default function App() {
             )}
             <strong className="brand">{data.label || 'CV editor'}</strong>
             {!isCv && (
-              <select className="version-select" value={variant.id} onChange={(e) => select(e.target.value)} title="The version you are editing">
-                {data.variants.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
+              <Dropdown className="version-select" title="The version you are editing" value={variant.id} onChange={select} options={data.variants.map((v) => ({ value: v.id, label: v.name }))} />
             )}
             <button className="ghost" onClick={undo} disabled={!past.current.length} title="Undo (Ctrl+Z)">
               ↶ Undo

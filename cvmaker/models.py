@@ -481,3 +481,11 @@ class ChatReply(BaseModel):
     reply: str
     profile_changes: list[str]
     new_profile_json: str
+
+
+
+class RewriteResult(BaseModel):
+    """Claude's rewrites of one piece of CV text (CV editor)."""
+
+    options: list[str] = Field(default_factory=list)
+    note: str = ""

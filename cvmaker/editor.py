@@ -99,7 +99,26 @@ def load_layout() -> dict:
     return layout
 
 
+def _before_change(new_layout: dict | None) -> None:
+    """Keep a restore point before the layout changes; always a new one when versions are about to disappear."""
+    from . import history
+
+    removed = []
+    if new_layout is not None and _path().exists():
+        try:
+            old = json.loads(_path().read_text()).get("variants", [])
+            kept = {v.get("id") for v in new_layout.get("variants", [])}
+            removed = [v.get("name", "") for v in old if v.get("id") not in kept]
+        except ValueError:
+            pass
+    if removed:
+        history.snapshot("Before deleting " + ", ".join(f"“{n}”" for n in removed), force=True)
+    else:
+        history.snapshot("CV editor changes")
+
+
 def save_layout(layout: dict) -> None:
+    _before_change(layout)
     tmp = _path().with_suffix(".tmp")
     tmp.write_text(json.dumps(layout, indent=2, ensure_ascii=False))
     tmp.replace(_path())
@@ -331,6 +350,8 @@ def save_profile_document(data: dict) -> str:
     profile = assistant.load_profile()
     if data.get("rev") and data["rev"] != revision(profile):
         raise Conflict("Your profile was changed somewhere else (My profile, the chat…). Reload the editor to get the new version.")
+    # One restore point covering both files, taken before either is written.
+    _before_change({"variants": data.get("variants", [])})
     layout = load_layout()
     cv, reg, kinds = from_content(data["content"], profile, layout, layout["ids"])
     _keep_layout(layout, data, reg, kinds)
@@ -536,6 +557,9 @@ def import_cveditor(path: Path = CVEDITOR_DATA) -> list[str]:
     profile = assistant.load_profile()
     if not profile:
         raise ValueError("Set up your profile first (My profile → Import my CV).")
+    from . import history
+
+    history.snapshot("Before importing from CVEditor", force=True)
     backup = settings.PROFILE_PATH.with_name(f"profile.before-cveditor-import-{time.strftime('%Y%m%d-%H%M%S')}.json")
     shutil.copy(settings.PROFILE_PATH, backup)
     report = [f"Your profile before the import is saved as {backup.name}."]

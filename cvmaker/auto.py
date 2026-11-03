@@ -196,7 +196,7 @@ def run_saved(
     )
     taste.recompute()
     if scheduled and search.notify and new_ids:
-        tasks.notify(f"{search.name}: {len(new_ids)} new job{'s' if len(new_ids) != 1 else ''} - http://127.0.0.1:8000/?unseen=1")
+        tasks.notify(f"{len(new_ids)} new job{'s' if len(new_ids) != 1 else ''} from “{search.name}”", url="/?unseen=1", kind="jobs")
     prefs = load_prefs()
     if prefs.rate_after_search and new_ids:
         top = _top_by_score(new_ids, prefs.rate_top)
@@ -218,13 +218,18 @@ def submit_open_check(inline: bool = False, limit: int = 80) -> int | None:
     ids = db.jobs_to_check(20, checks.CHECK_STAGES, limit)
     if not ids:
         return None
+    def run(progress=None) -> str:
+        counts = checks.check_many(ids, progress)
+        if counts["closed"]:
+            n = counts["closed"]
+            tasks.notify(f"{n} saved posting{'s' if n != 1 else ''} closed", "They moved to the Closed tab.", url="/?status=closed", kind="closed",
+                         desktop=False)
+        return "/?status=closed"
+
     if inline:
-        checks.check_many(ids)
+        run()
         return None
-    return tasks.submit(
-        "check", f"Check {len(ids)} postings are still open", lambda progress: (checks.check_many(ids, progress), "/?status=closed")[1],
-        subject="check:open", url="/?status=closed",
-    )
+    return tasks.submit("check", f"Check {len(ids)} postings are still open", run, subject="check:open", url="/?status=closed")
 
 
 def submit_search(search_id: str, scheduled: bool = False) -> int:
@@ -310,7 +315,7 @@ def remind_follow_ups() -> None:
     if not due:
         return
     names = ", ".join(f"{d['job'].company}" for d in due[:3]) + (" …" if len(due) > 3 else "")
-    tasks.notify(f"{tasks.person_prefix()}Time to follow up on {len(due)} application{'s' if len(due) != 1 else ''}: {names} - http://127.0.0.1:8000/pipeline")
+    tasks.notify(f"Time to follow up on {len(due)} application{'s' if len(due) != 1 else ''}", names, url="/pipeline#follow-ups", kind="follow-up")
     db.mark_reminded([d["job"].id for d in due])
 
 

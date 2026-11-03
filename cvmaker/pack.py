@@ -185,7 +185,7 @@ def run_packs(job_ids: list[str], min_score: int, limit: int, inline: bool = Fal
             print(f"pack for {job_id} failed: {e}")
     if done:
         names = ", ".join(db.get_job(i)[0].company for i in done[:3]) + (" …" if len(done) > 3 else "")
-        tasks.notify(f"{tasks.person_prefix()}{len(done)} application pack{'s' if len(done) != 1 else ''} ready: {names} - {packs_dir()}")
+        tasks.notify(f"{len(done)} application pack{'s' if len(done) != 1 else ''} ready", names, url="/#auto", kind="pack")
     return done
 
 

@@ -16,23 +16,26 @@
 {% elif status == 'offer' and not (offer and offer.review) %}{% set next = ("Review the offer before you sign", "#offer", "Clauses, pay against the market, what to negotiate.") %}
 {% else %}{% set next = ("", "", "") %}{% endif %}
 
-<div class="card job-head">
-  <a class="muted" href="/">← All jobs</a>
-  <div class="head-main">
-    <div>
+<div class="job-hero">
+  <a class="back-link" href="/">← All jobs</a>
+  <div class="jh-top">
+    <div class="jh-logo" style="--h:{{ job.company | hue }}" aria-hidden="true">{{ job.company | initials }}<img src="/logo?c={{ job.company | urlencode }}&u={{ job.url | urlencode }}&l={{ job.location | urlencode }}" alt="" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()"></div>
+    <div class="jh-main">
+      <div class="jh-company"><strong>{{ job.company }}</strong><span class="muted"> · via {{ job.source }}</span>{% if status != 'new' %} {{ m.stage_pill(status) }}{% endif %}</div>
       <h1>{{ job.title }}</h1>
-      <div class="facts">
-        <span><strong>{{ job.company }}</strong></span>
-        <span>{{ job.location }}{% if job.remote %} · remote{% endif %}</span>
-        {% if job.salary %}<span class="sal">{{ job.salary }}{% if app.salary_month %} <span class="muted">≈ {{ app.salary_month | monthly }}</span>{% endif %}</span>{% endif %}
-        {% if job.posted_at %}<span class="muted">posted {{ job.posted_at[:10] }}</span>{% endif %}
-        <span class="muted">via {{ job.source }}</span>
+      <div class="jh-meta">
+        {% if job.location %}<span class="mp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>{{ job.location }}</span>{% endif %}
+        {% if job.remote %}<span class="mp mode-remote">Remote</span>{% elif 'hybrid' in job.tags %}<span class="mp mode-hybrid">Hybrid</span>{% endif %}
+        {% if job.salary %}<span class="mp sal"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>{{ job.salary }}{% if app.salary_month %} <span class="muted">≈ {{ app.salary_month | monthly }}</span>{% endif %}</span>{% endif %}
+        {% if job.posted_at %}<span class="mp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Posted {{ job.posted_at[:10] }}</span>{% endif %}
       </div>
     </div>
-    <div class="head-badges">
-      {{ m.stage_pill(status) if status != 'new' }}
-      {% if app.fit is not none %}<span class="muted">fit</span> {{ m.fit_badge(app.fit, app.fit_data) }}{% endif %}
-    </div>
+    {% if app.fit is not none %}
+    <a class="jh-fit {{ 'f-hi' if app.fit >= 7 else 'f-mid' if app.fit >= 5 else 'f-lo' }}" href="#fit" title="Claude's fit rating · see Fit & gaps">
+      <span class="ring" style="--v:{{ app.fit * 10 }}"><span class="rv"><b>{{ app.fit }}</b><small>/10</small></span></span>
+      <span class="lbl">Claude fit</span>
+    </a>
+    {% endif %}
   </div>
 
   {% if app.closed_at %}
@@ -49,8 +52,8 @@
   </div>
   {% endif %}
 
-  <div class="row head-actions">
-    {% if job.url %}<a class="btn" href="{{ job.url }}" target="_blank" rel="noopener">Open posting ↗</a>{% endif %}
+  <div class="jh-actions">
+    {% if job.url %}<a class="btn glow" href="{{ job.url }}" target="_blank" rel="noopener">Open posting ↗</a>{% endif %}
     <form method="post" action="/job/{{ job.id }}/status" class="row">
       <input type="hidden" name="back" value="/job/{{ job.id }}">
       {% if status == 'new' %}<button class="secondary" name="status" value="liked">♥ Like</button>{% endif %}
@@ -58,15 +61,16 @@
     </form>
     {% if status != 'hidden' %}{{ m.hide_menu(job.id, hide_reasons, '/', '✕ Hide') }}{% endif %}
     {% if active.get('pack') %}{{ m.running(active['pack']) }}
-    {% elif pack_info %}<span class="muted">Application pack ready · {{ pack_info.dir }}</span>
+    {% elif pack_info %}<span class="pill pack-ready" title="{{ pack_info.dir }}">✓ Application pack ready</span>
     {% else %}<form method="post" action="/job/{{ job.id }}/pack" data-slow><button class="secondary" type="submit" title="Fit check, project ideas, tailored CV, cover letter and interview prep in one go">Make application pack</button></form>{% endif %}
-    <a class="btn secondary" href="/chat?job={{ job.id | urlencode }}" title="Chat with Claude about this job: should you apply, what they'll ask, how to word things">Ask Claude</a>
-    {% if next[0] %}
-    <a class="next-step" href="{{ next[1] or '#' }}">
-      <span class="k">Next step</span> <strong>{{ next[0] }}</strong>{% if next[2] %} <span class="muted">{{ next[2] }}</span>{% endif %}{% if next[1] %} <span aria-hidden="true">→</span>{% endif %}
-    </a>
-    {% endif %}
+    <a class="btn secondary" href="/chat?job={{ job.id | urlencode }}" title="Chat with Claude about this job: should you apply, what they'll ask, how to word things">✦ Ask Claude</a>
   </div>
+  {% if next[0] %}
+  <a class="next-banner" href="{{ next[1] or '#' }}">
+    <span class="nb-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+    <span class="nb-text"><span class="k">Next step</span><strong>{{ next[0] }}</strong>{% if next[2] %}<span class="muted">{{ next[2] }}</span>{% endif %}</span>
+  </a>
+  {% endif %}
 </div>
 
 <nav class="page-tabs" aria-label="Job sections" data-alias='{"plan": "fit", "letter": "docs", "cv": "docs", "prep": "interview", "debrief": "interview", "contact": "outreach"}'>
@@ -675,6 +679,47 @@
 </section>
 
 <style>
+  .job-hero { position:relative; padding:22px 26px 20px; margin-bottom:6px; border-radius:22px; background:var(--hero); border:1px solid var(--hero-line); }
+  .back-link { font-size:13px; color:var(--muted); font-weight:550; }
+  .jh-top { display:grid; grid-template-columns:72px minmax(0, 1fr) auto; gap:20px; align-items:center; margin-top:12px; }
+  .jh-logo { position:relative; overflow:hidden; width:72px; height:72px; border-radius:18px; display:grid; place-items:center; font-weight:800; font-size:22px;
+    color:hsl(var(--h) 70% 42%); background:hsl(var(--h) 85% 95%); border:1px solid hsl(var(--h) 60% 88%); box-shadow:var(--shadow); }
+  :root[data-theme="dark"] .jh-logo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jh-logo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); } }
+  .jh-logo img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:10px; background:#fff; opacity:0; transition:opacity .2s; }
+  .jh-logo.has-img img { opacity:1; }
+  .jh-company { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; font-size:14.5px; }
+  .jh-company .pill { margin:0; }
+  .jh-main h1 { margin:4px 0 10px; font-size:clamp(22px, 2.6vw, 30px); line-height:1.15; letter-spacing:-.025em; font-weight:800; overflow-wrap:anywhere; }
+  .jh-meta { display:flex; flex-wrap:wrap; gap:6px; }
+  .mp { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; font-size:13px; font-weight:550; background:color-mix(in srgb, var(--card) 80%, transparent); border:1px solid var(--hero-line); color:var(--ink); }
+  .mp svg { color:var(--muted); }
+  .mp.sal { color:var(--good); } .mp.sal svg { color:var(--good); }
+  .mode-remote { color:var(--good); background:var(--good-soft); border-color:transparent; }
+  .mode-hybrid { color:var(--accent-soft-ink); background:var(--accent-soft); border-color:transparent; }
+  .jh-fit { display:flex; flex-direction:column; align-items:center; gap:4px; color:inherit; }
+  .jh-fit:hover { text-decoration:none; }
+  .jh-fit .ring { width:78px; height:78px; border-radius:50%; display:grid; place-items:center; position:relative;
+    background:conic-gradient(currentColor calc(var(--v) * 1%), var(--line) 0); }
+  .jh-fit .ring::before { content:""; position:absolute; inset:6px; border-radius:50%; background:var(--card); }
+  .jh-fit .ring .rv { position:relative; display:flex; align-items:baseline; }
+  .jh-fit .ring b { position:relative; font-size:26px; font-weight:800; }
+  .jh-fit .ring small { position:relative; font-size:12px; font-weight:650; opacity:.7; }
+  .jh-fit .lbl { font-size:12px; font-weight:600; color:var(--muted); }
+  .jh-fit.f-hi { color:var(--good); } .jh-fit.f-mid { color:var(--warn); } .jh-fit.f-lo { color:var(--muted); }
+  .jh-fit, .jh-fit.f-hi, .jh-fit.f-mid, .jh-fit.f-lo { background:none; padding:0; }
+  .jh-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:18px; }
+  .jh-actions form { margin:0; }
+  .btn.glow { box-shadow:0 10px 24px -10px var(--accent); }
+  .pill.pack-ready { background:var(--good-soft); color:var(--good); margin:0; padding:6px 12px; font-size:13px; font-weight:600; }
+  .next-banner { display:flex; align-items:center; gap:14px; margin-top:16px; padding:12px 16px; border-radius:14px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); color:var(--ink); }
+  .next-banner:hover { text-decoration:none; border-color:var(--accent); }
+  .nb-ico { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; flex:none; color:#fff; background:linear-gradient(135deg, #6d5efc, #a78bfa); }
+  .nb-text { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; }
+  .nb-text .k { width:100%; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--accent-soft-ink); }
+  .nb-text strong { font-size:15px; }
+  .nb-text .muted { font-size:13px; }
+  @media (max-width:700px) { .jh-top { grid-template-columns:56px minmax(0, 1fr); } .jh-logo { width:56px; height:56px; font-size:18px; } .jh-fit { grid-column:1 / -1; flex-direction:row; justify-content:flex-start; } .jh-fit .ring { width:56px; height:56px; } .jh-fit .ring b { font-size:19px; } .job-hero { padding:18px; } }
   .job-head { padding-bottom:16px; }
   .head-main { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-top:6px; flex-wrap:wrap; }
   .head-main h1 { margin:0 0 6px; font-size:26px; line-height:1.25; }
@@ -682,6 +727,7 @@
   .facts .sal { color:var(--good); font-weight:600; }
   .head-badges { display:flex; align-items:center; gap:6px; }
   .head-badges .pill { margin:0; }
+  .job-hero .tile { margin-top:14px; }
   .warn-tile { margin-top:14px; border-color:var(--warn); background:var(--warn-soft); color:var(--warn); }
   .head-actions { margin-top:16px; }
   .overview { display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:18px; align-items:start; }

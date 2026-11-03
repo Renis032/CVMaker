@@ -108,6 +108,8 @@ export interface CvData {
   fontPt?: number | null;
   /** Page layout, styles of single elements and the free elements (text boxes, shapes, icons, images). */
   design: Design;
+  /** A tailored CV's job: what the posting asks for (key skills and tools). */
+  job?: { title: string; company: string; url: string; keywords: string[] };
 }
 
 /** How one kind of element (all job titles) or one element (this job title) looks. Unset = the template's look. */

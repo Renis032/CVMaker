@@ -98,6 +98,65 @@
   .app-page .sidenav .logo .txt, .app-page .nav-group .nav-h, .app-page .sidenav a.nav span, .app-page .nav-promo, .app-page .sidenav a.nav .badge { display:none; }
   .app-page .sidenav a.nav { justify-content:center; padding:10px 0; }
   .app-page header .bar { max-width:none; }
+  /* styled dropdowns: every <select> gets this look (the real select stays underneath for forms) */
+  .cs { position:relative; display:block; width:100%; }
+  .cs.auto { display:inline-block; width:auto; }
+  .cs > select { position:absolute; inset:0; opacity:0; pointer-events:none; width:100%; }
+  .cs-btn { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:9px 12px; background:var(--card); color:var(--ink);
+    border:1px solid var(--line-strong); border-radius:var(--radius-sm); font:inherit; font-weight:500; text-align:left; cursor:pointer; box-shadow:none; transition:border-color .15s, box-shadow .15s; }
+  .cs-btn:hover { filter:none; border-color:var(--accent); }
+  .cs-btn:active { transform:none; }
+  .cs-btn .cs-val { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cs-btn svg { color:var(--muted); flex:none; transition:transform .15s; }
+  .cs.open .cs-btn { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .cs.open .cs-btn svg { transform:rotate(180deg); }
+  .cs.disabled .cs-btn { opacity:.6; cursor:default; }
+  .cs-list { position:fixed; z-index:1000; max-height:320px; overflow-y:auto; padding:5px; background:var(--card); border:1px solid var(--line);
+    border-radius:12px; box-shadow:var(--shadow-lg); }
+  .cs-opt { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:8px 10px; border:0; border-radius:8px; background:none;
+    color:var(--ink); font:inherit; font-size:14px; font-weight:500; text-align:left; cursor:pointer; white-space:nowrap; }
+  .cs-opt:hover, .cs-opt.active { background:var(--chip); filter:none; }
+  .cs-opt:active { transform:none; }
+  .cs-opt.on { background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:600; }
+  .cs-opt[disabled] { opacity:.45; cursor:default; }
+  .cs-opt svg { color:var(--accent); flex:none; }
+  .cs-group { font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:8px 10px 4px; }
+  /* file pickers in the site's style */
+  input[type=file] { font:inherit; font-size:13.5px; color:var(--muted); max-width:100%; }
+  input[type=file]::file-selector-button { font:inherit; font-weight:600; font-size:13.5px; margin-right:10px; padding:7px 14px; border-radius:var(--radius-sm);
+    border:1px solid var(--line-strong); background:var(--card); color:var(--ink); cursor:pointer; transition:background .15s; }
+  input[type=file]::file-selector-button:hover { background:var(--chip); }
+  /* notification bell */
+  .bell-menu { position:relative; flex:none; }
+  .bell-menu > summary { list-style:none; width:36px; height:36px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--muted); display:grid; place-items:center; cursor:pointer; position:relative; }
+  .bell-menu > summary::-webkit-details-marker, .bell-menu > summary::before { display:none; }
+  .bell-menu > summary:hover, .bell-menu[open] > summary { color:var(--ink); background:var(--chip); }
+  .bell-n { position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:10.5px; font-weight:750; display:grid; place-items:center; border:2px solid var(--bg); }
+  .bell-n[hidden] { display:none; }
+  .bell-panel { position:absolute; right:0; top:calc(100% + 8px); z-index:40; width:min(380px, calc(100vw - 24px)); background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow-lg); overflow:hidden; }
+  .bell-head { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); }
+  .bell-head form { margin:0; }
+  button.link-btn { background:none; border:0; color:var(--accent); padding:0; font-size:12.5px; font-weight:600; }
+  button.link-btn:hover { filter:none; text-decoration:underline; }
+  button.link-btn:disabled { color:var(--muted); opacity:.6; text-decoration:none; cursor:default; }
+  .bell-list { max-height:min(460px, 70vh); overflow-y:auto; padding:6px; }
+  .bell-item { display:flex; gap:11px; padding:9px 10px; border-radius:10px; color:var(--ink); position:relative; }
+  .bell-item:hover { background:var(--chip); text-decoration:none; }
+  .bell-item.unread { background:color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+  .bell-item.unread::after { content:""; position:absolute; right:10px; top:14px; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  .bi-ico { width:30px; height:30px; border-radius:9px; flex:none; display:grid; place-items:center; background:var(--chip); color:var(--muted); font-size:14px; }
+  .bi-ico::before { content:"•"; }
+  .k-jobs .bi-ico { background:var(--accent-soft); color:var(--accent); } .k-jobs .bi-ico::before { content:"✦"; }
+  .k-follow-up .bi-ico { background:var(--warn-soft); color:var(--warn); } .k-follow-up .bi-ico::before { content:"↻"; font-weight:800; }
+  .k-closed .bi-ico { background:var(--bad-soft); color:var(--bad); } .k-closed .bi-ico::before { content:"⊘"; }
+  .k-task .bi-ico { background:var(--good-soft); color:var(--good); } .k-task .bi-ico::before { content:"✓"; font-weight:800; }
+  .k-error .bi-ico { background:var(--bad-soft); color:var(--bad); } .k-error .bi-ico::before { content:"!"; font-weight:800; }
+  .k-pack .bi-ico { background:var(--good-soft); color:var(--good); } .k-pack .bi-ico::before { content:"▣"; }
+  .bi-text { display:flex; flex-direction:column; min-width:0; padding-right:12px; }
+  .bi-title { font-size:13.5px; font-weight:600; line-height:1.35; }
+  .bi-body { font-size:12.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .bi-time { font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .bell-empty { padding:22px 16px; color:var(--muted); font-size:13px; text-align:center; }
   /* person menu (who you're working on) */
   .person-menu { position:relative; flex:none; }
   .person-menu > summary { list-style:none; display:flex; align-items:center; gap:8px; cursor:pointer; padding:3px 10px 3px 3px; border:1px solid var(--line); border-radius:999px; background:var(--card); font-weight:600; font-size:13.5px; user-select:none; }
@@ -385,6 +444,26 @@
       <input type="search" name="q" value="{{ qp.get('q', '') if path == '/' else '' }}" placeholder="Search your jobs: title, company, skill…" aria-label="Search your jobs">
     </form>
     <span class="spacer"></span>
+    <details class="bell-menu">
+      <summary class="bell" title="Notifications" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>
+        <span class="bell-n" {% if not notes_unread %}hidden{% endif %}>{{ notes_unread }}</span>
+      </summary>
+      <div class="bell-panel">
+        <div class="bell-head"><strong>Notifications</strong>
+          <form method="post" action="/notifications/read"><button type="submit" class="link-btn" {% if not notes_unread %}disabled{% endif %}>Mark all as read</button></form></div>
+        <div class="bell-list">
+          {% for n in notes %}
+          <a class="bell-item {{ 'unread' if not n.read }} k-{{ n.kind }}" href="/notifications/{{ n.id }}/open">
+            <span class="bi-ico"></span>
+            <span class="bi-text"><span class="bi-title">{{ n.title }}</span>{% if n.body %}<span class="bi-body">{{ n.body }}</span>{% endif %}<span class="bi-time">{{ n.created | ago }}</span></span>
+          </a>
+          {% else %}
+          <div class="bell-empty">Nothing yet. New jobs from scheduled searches, follow-ups due, closed postings and finished tasks show up here.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </details>
     <a id="task-indicator" href="/profile#activity" hidden title="Background tasks"><span class="spin"></span><span class="n"></span></a>
     <a class="btn add-job {{ 'on' if path == '/add' }}" href="/add" title="Add a job from a link or pasted text">+<span class="lbl"> Add job</span></a>
     <details class="person-menu {{ 'other' if person.id != 'me' }}">
@@ -428,9 +507,35 @@
     f.classList.add("working");
     f.querySelectorAll("button").forEach(b => b.disabled = true);
   }));
-  const personMenu = document.querySelector(".person-menu");
-  document.addEventListener("click", e => { if (personMenu?.open && !personMenu.contains(e.target)) personMenu.open = false; });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && personMenu?.open) { personMenu.open = false; personMenu.querySelector("summary").focus(); } });
+  // Top-bar menus (person, bell): one open at a time, closed by a click elsewhere or Esc.
+  const topMenus = [...document.querySelectorAll(".person-menu, .bell-menu")];
+  topMenus.forEach(m => m.addEventListener("toggle", () => { if (m.open) topMenus.forEach(o => { if (o !== m) o.open = false; }); }));
+  document.addEventListener("click", e => topMenus.forEach(m => { if (m.open && !m.contains(e.target)) m.open = false; }));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") topMenus.forEach(m => { if (m.open) { m.open = false; m.querySelector("summary").focus(); } }); });
+  // The bell's count and list follow new notifications without a reload.
+  const bellCount = document.querySelector(".bell-n");
+  let bellUnread = Number(bellCount?.textContent || 0);
+  const agoText = ts => { const s = Date.now() / 1000 - ts; return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`; };
+  async function refreshBell(unread) {
+    if (!bellCount || unread === bellUnread) return;
+    bellUnread = unread;
+    bellCount.textContent = unread; bellCount.hidden = !unread;
+    document.querySelector(".bell-head .link-btn").disabled = !unread;
+    try {
+      const data = await (await fetch("/api/notifications", { cache: "no-store" })).json();
+      const list = document.querySelector(".bell-list");
+      if (!data.items.length) return;
+      list.replaceChildren(...data.items.map(n => {
+        const a = Object.assign(document.createElement("a"), { className: `bell-item k-${n.kind}${n.read ? "" : " unread"}`, href: `/notifications/${n.id}/open` });
+        const text = Object.assign(document.createElement("span"), { className: "bi-text" });
+        text.append(Object.assign(document.createElement("span"), { className: "bi-title", textContent: n.title }));
+        if (n.body) text.append(Object.assign(document.createElement("span"), { className: "bi-body", textContent: n.body }));
+        text.append(Object.assign(document.createElement("span"), { className: "bi-time", textContent: agoText(n.created) }));
+        a.append(Object.assign(document.createElement("span"), { className: "bi-ico" }), text);
+        return a;
+      }));
+    } catch (e) {}
+  }
   document.querySelectorAll("[data-nav-toggle], [data-nav-close]").forEach(b => b.addEventListener("click", () => document.body.classList.toggle("nav-open")));
   document.querySelector(".theme-toggle").addEventListener("click", () => {
     const root = document.documentElement;
@@ -542,6 +647,7 @@
     try { data = await (await fetch("/api/tasks", { cache: "no-store" })).json(); }
     catch (e) { return setTimeout(poll, 10000); }
     skew = Date.now() / 1000 - data.now;
+    if (typeof data.unread === "number") refreshBell(data.unread);
     indicator.hidden = !data.active.length;
     indicator.querySelector(".n").textContent = `${data.active.length} running`;
     indicator.title = data.active.map(t => t.label).join("\n");
@@ -616,6 +722,118 @@
     document.body.classList.add("tabs-on");
     show(location.hash.slice(1), false);
     window.addEventListener("hashchange", () => show(location.hash.slice(1), true));
+  })();
+</script>
+<script>
+  // Styled dropdowns: wrap each <select> in a button + list in the site's style. The select stays in the form
+  // (hidden), so submitting and onchange handlers work as before. Add data-native to keep a browser select.
+  (() => {
+    const chev = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>';
+    const tick = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    let openBox = null;
+    function close() {
+      if (!openBox) return;
+      openBox.box.classList.remove("open");
+      openBox.list.remove();
+      openBox.btn.setAttribute("aria-expanded", "false");
+      openBox = null;
+    }
+    function enhance(sel) {
+      if (sel.multiple || sel.size > 1 || sel.dataset.native !== undefined || sel.closest(".cs")) return;
+      const box = document.createElement("span");
+      const autoWidth = getComputedStyle(sel).width !== getComputedStyle(sel.parentElement).width || sel.style.width;
+      box.className = "cs" + (autoWidth ? " auto" : "");
+      if (sel.style.width) box.style.width = sel.style.width;
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.className = "cs-btn";
+      btn.setAttribute("aria-haspopup", "listbox"); btn.setAttribute("aria-expanded", "false");
+      if (sel.getAttribute("aria-label")) btn.setAttribute("aria-label", sel.getAttribute("aria-label"));
+      if (sel.title) btn.title = sel.title;
+      const val = document.createElement("span"); val.className = "cs-val";
+      btn.append(val); btn.insertAdjacentHTML("beforeend", chev);
+      sel.parentNode.insertBefore(box, sel); box.append(sel, btn);
+      sel.tabIndex = -1;
+      if (sel.id) document.querySelectorAll(`label[for="${CSS.escape(sel.id)}"]`).forEach(l => l.addEventListener("click", e => { e.preventDefault(); btn.focus(); }));
+      const sync = () => { val.textContent = sel.selectedOptions[0]?.textContent.trim() || ""; box.classList.toggle("disabled", sel.disabled); };
+      sync();
+      sel.addEventListener("change", sync);
+      let active = 0;
+      const options = () => [...sel.options];
+      function open() {
+        close();
+        if (sel.disabled) return;
+        const list = document.createElement("div");
+        list.className = "cs-list"; list.setAttribute("role", "listbox");
+        let group = null;
+        options().forEach((o, i) => {
+          if (o.parentElement.tagName === "OPTGROUP" && o.parentElement !== group) {
+            group = o.parentElement;
+            list.append(Object.assign(document.createElement("div"), { className: "cs-group", textContent: group.label }));
+          }
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "cs-opt" + (o.selected ? " on" : ""); b.dataset.ix = i; b.disabled = o.disabled;
+          b.setAttribute("role", "option");
+          b.append(Object.assign(document.createElement("span"), { textContent: o.textContent.trim() }));
+          if (o.selected) b.insertAdjacentHTML("beforeend", tick);
+          b.addEventListener("mousedown", e => e.preventDefault());
+          b.addEventListener("click", () => choose(i));
+          b.addEventListener("mouseenter", () => setActive(i));
+          list.append(b);
+        });
+        document.body.append(list);
+        const r = btn.getBoundingClientRect();
+        list.style.minWidth = r.width + "px";
+        list.style.left = Math.min(r.left, innerWidth - list.offsetWidth - 8) + "px";
+        const below = innerHeight - r.bottom - 8;
+        if (below < Math.min(list.offsetHeight, 240) && r.top > below) list.style.top = Math.max(8, r.top - list.offsetHeight - 6) + "px";
+        else { list.style.top = r.bottom + 6 + "px"; list.style.maxHeight = Math.max(160, below - 6) + "px"; }
+        // Inside a modal <dialog>, the list must live in the dialog to stay clickable.
+        const dlg = sel.closest("dialog[open]");
+        if (dlg) dlg.append(list);
+        box.classList.add("open"); btn.setAttribute("aria-expanded", "true");
+        openBox = { box, btn, list, sel };
+        setActive(Math.max(0, sel.selectedIndex));
+      }
+      function setActive(i) {
+        active = i;
+        openBox?.list.querySelectorAll(".cs-opt").forEach(b => b.classList.toggle("active", Number(b.dataset.ix) === i));
+        // Keep the highlighted option visible by scrolling the list only (scrolling the page would close it).
+        const list = openBox?.list, el = list?.querySelector(`.cs-opt[data-ix="${i}"]`);
+        if (el) {
+          if (el.offsetTop < list.scrollTop) list.scrollTop = el.offsetTop - 5;
+          else if (el.offsetTop + el.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = el.offsetTop + el.offsetHeight - list.clientHeight + 5;
+        }
+      }
+      function choose(i) {
+        const o = options()[i];
+        close();
+        btn.focus();
+        if (!o || o.disabled || sel.selectedIndex === i) return;
+        sel.selectedIndex = i;
+        sel.dispatchEvent(new Event("input", { bubbles: true }));
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      btn.addEventListener("click", () => (openBox?.sel === sel ? close() : open()));
+      btn.addEventListener("keydown", e => {
+        const isOpen = openBox?.sel === sel;
+        const step = d => { let i = active; do { i += d; } while (options()[i]?.disabled); if (options()[i]) setActive(i); };
+        if (!isOpen && ["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); open(); }
+        else if (isOpen && e.key === "ArrowDown") { e.preventDefault(); step(1); }
+        else if (isOpen && e.key === "ArrowUp") { e.preventDefault(); step(-1); }
+        else if (isOpen && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); choose(active); }
+        else if (e.key === "Escape" && isOpen) { e.preventDefault(); e.stopPropagation(); close(); }
+        else if (e.key === "Tab") close();
+        else if (isOpen && e.key.length === 1) {
+          const i = options().findIndex(o => o.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase()));
+          if (i >= 0) setActive(i);
+        }
+      });
+    }
+    document.addEventListener("pointerdown", e => { if (openBox && !openBox.box.contains(e.target) && !openBox.list.contains(e.target)) close(); });
+    addEventListener("scroll", e => { if (openBox && !openBox.list.contains(e.target)) close(); }, true);
+    addEventListener("resize", close);
+    document.querySelectorAll("select").forEach(enhance);
+    window.enhanceSelects = root => (root || document).querySelectorAll("select").forEach(enhance);
   })();
 </script>
 </body>
