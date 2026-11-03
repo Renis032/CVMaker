@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
-from . import auto, checks, db, intake, stage, stories, tasks
+from . import assistant, auto, checks, claims, db, intake, stage, stories, tasks
 from .app import _back, _cached_prep, _job_label, _need_profile, _not_found, page
 from .llm import LLMError
 from .models import DraftStory, Story
@@ -297,3 +297,15 @@ async def offer_review(job_id: str, text: str = Form(""), wishes: str = Form("")
 
     tasks.submit("offer", _job_label("Offer review", job), run, subject=f"offer:{job_id}", job_id=job_id, url=f"/job/{job_id}#offer")
     return _back(f"/job/{job_id}#offer")
+
+
+# --- skill check --------------------------------------------------------------------------------------------
+
+
+@router.post("/claims/add-skill")
+def claims_add_skill(term: str = Form(...), back: str = Form("/profile")):
+    """The candidate confirmed a flagged technology is true: add it to the profile so it stops being flagged."""
+    profile = _need_profile()
+    claims.add_skill(profile, term)
+    assistant.save_profile(profile)
+    return _back(back if back.startswith("/") and not back.startswith("//") else "/profile")

@@ -11,33 +11,40 @@
   try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
 <style>
+  /* Design tokens. Indigo/violet accent; dark theme follows the system unless the toggle chose one. */
   :root {
-    --bg:#f6f7fb; --card:#ffffff; --sunken:#f9fafc; --ink:#111827; --muted:#6b7280; --line:#e6e8ef; --line-strong:#d4d8e2;
-    --brand:#1f3a5a; --accent:#4f46e5; --accent-ink:#ffffff; --accent-soft:#eef0ff; --accent-soft-ink:#3730a3;
-    --good:#059669; --good-soft:#e7f7f0; --warn:#b45309; --warn-soft:#fff4e0; --bad:#dc2626; --bad-soft:#fdecec;
-    --chip:#f1f3f8; --header:rgba(255,255,255,.78);
+    --bg:#f6f6fb; --card:#ffffff; --sunken:#f9f9fd; --ink:#0f1222; --muted:#646b80; --line:#e8e8f1; --line-strong:#d7d9e5;
+    --brand:#2a2560; --accent:#5b4bff; --accent-ink:#ffffff; --accent-soft:#efedff; --accent-soft-ink:#4130d8;
+    --good:#059669; --good-soft:#e5f6ef; --warn:#b45309; --warn-soft:#fff3df; --bad:#dc2626; --bad-soft:#fdecec;
+    --chip:#f2f2f8; --header:rgba(246,246,251,.8); --nav:#ffffff;
+    --hero:radial-gradient(900px 300px at 85% -10%, rgba(124,108,255,.28), transparent 60%), radial-gradient(700px 260px at 0% 120%, rgba(56,189,248,.16), transparent 60%), linear-gradient(135deg, #f3f1ff, #ece9ff);
+    --hero-line:#e2ddff;
     --shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
-    --shadow-lg:0 10px 30px -12px rgba(16,24,40,.18);
-    --radius:14px; --radius-sm:9px;
+    --shadow-lg:0 18px 40px -18px rgba(40,30,120,.28);
+    --radius:16px; --radius-sm:10px; --nav-w:248px;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg:#0b0d12; --card:#14171f; --sunken:#0f1218; --ink:#e7e9ee; --muted:#9097a6; --line:#242935; --line-strong:#323848;
-      --brand:#c7d2fe; --accent:#818cf8; --accent-ink:#0b0d12; --accent-soft:#1e2140; --accent-soft-ink:#c7d2fe;
-      --good:#34d399; --good-soft:#0f2a22; --warn:#fbbf24; --warn-soft:#2a2210; --bad:#f87171; --bad-soft:#2c1517;
-      --chip:#1c2029; --header:rgba(16,18,24,.75);
-      --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-lg:0 10px 30px -12px rgba(0,0,0,.6);
+      --bg:#090a10; --card:#11131c; --sunken:#0d0f17; --ink:#e9eaf2; --muted:#8c92a8; --line:#1e2130; --line-strong:#2a2e42;
+      --brand:#c4bcff; --accent:#7c6cff; --accent-ink:#ffffff; --accent-soft:#1c1a3a; --accent-soft-ink:#c9c2ff;
+      --good:#34d399; --good-soft:#0e2a21; --warn:#fbbf24; --warn-soft:#2a2110; --bad:#f87171; --bad-soft:#2c1418;
+      --chip:#1a1d29; --header:rgba(9,10,16,.72); --nav:#0d0f17;
+      --hero:radial-gradient(900px 300px at 85% -10%, rgba(124,108,255,.35), transparent 60%), radial-gradient(700px 260px at 0% 120%, rgba(56,189,248,.14), transparent 60%), #10111d;
+      --hero-line:#25233f;
+      --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 18px 40px -16px rgba(0,0,0,.75);
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
-    --bg:#0b0d12; --card:#14171f; --sunken:#0f1218; --ink:#e7e9ee; --muted:#9097a6; --line:#242935; --line-strong:#323848;
-    --brand:#c7d2fe; --accent:#818cf8; --accent-ink:#0b0d12; --accent-soft:#1e2140; --accent-soft-ink:#c7d2fe;
-    --good:#34d399; --good-soft:#0f2a22; --warn:#fbbf24; --warn-soft:#2a2210; --bad:#f87171; --bad-soft:#2c1517;
-    --chip:#1c2029; --header:rgba(16,18,24,.75);
-    --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-lg:0 10px 30px -12px rgba(0,0,0,.6);
-    color-scheme: dark;
+      --bg:#090a10; --card:#11131c; --sunken:#0d0f17; --ink:#e9eaf2; --muted:#8c92a8; --line:#1e2130; --line-strong:#2a2e42;
+      --brand:#c4bcff; --accent:#7c6cff; --accent-ink:#ffffff; --accent-soft:#1c1a3a; --accent-soft-ink:#c9c2ff;
+      --good:#34d399; --good-soft:#0e2a21; --warn:#fbbf24; --warn-soft:#2a2110; --bad:#f87171; --bad-soft:#2c1418;
+      --chip:#1a1d29; --header:rgba(9,10,16,.72); --nav:#0d0f17;
+      --hero:radial-gradient(900px 300px at 85% -10%, rgba(124,108,255,.35), transparent 60%), radial-gradient(700px 260px at 0% 120%, rgba(56,189,248,.14), transparent 60%), #10111d;
+      --hero-line:#25233f;
+      --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 18px 40px -16px rgba(0,0,0,.75);
+      color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
@@ -46,19 +53,52 @@
   a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; text-underline-offset:2px; }
   ::selection { background:var(--accent-soft); }
 
-  /* top bar */
-  header { position:sticky; top:0; z-index:20; background:var(--header); backdrop-filter:saturate(180%) blur(12px); -webkit-backdrop-filter:saturate(180%) blur(12px); border-bottom:1px solid var(--line); }
-  header .bar { max-width:1180px; margin:0 auto; padding:10px 16px; display:flex; gap:6px; align-items:center; overflow-x:auto; scrollbar-width:none; }
-  header .bar::-webkit-scrollbar { display:none; }
-  header .logo { display:flex; align-items:center; gap:8px; font-weight:700; font-size:16px; color:var(--ink); margin-right:8px; white-space:nowrap; }
-  header .logo .mark { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:linear-gradient(135deg, #6366f1, #22d3ee); color:#fff; font-size:13px; font-weight:700; }
-  header nav { display:flex; gap:2px; }
-  header nav a { color:var(--muted); padding:6px 8px; border-radius:8px; font-weight:500; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; }
-  header nav a:hover { color:var(--ink); background:var(--chip); text-decoration:none; }
-  header nav a.on { color:var(--ink); background:var(--chip); font-weight:600; }
-  header nav a.setup { color:var(--warn); }
+  /* app shell: sidebar navigation + top bar + page */
+  .shell { display:flex; min-height:100vh; }
+  .sidenav { width:var(--nav-w); flex:none; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:4px;
+    background:var(--nav); border-right:1px solid var(--line); padding:16px 12px; overflow-y:auto; z-index:30; }
+  .sidenav .logo { display:flex; align-items:center; gap:10px; font-weight:750; font-size:17px; color:var(--ink); padding:4px 8px 14px; letter-spacing:-.02em; }
+  .sidenav .logo:hover { text-decoration:none; }
+  .logo .mark { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:linear-gradient(135deg, #6d5efc, #38bdf8); color:#fff; font-size:13px; font-weight:800; box-shadow:0 6px 16px -6px rgba(109,94,252,.7); }
+  .nav-group { display:flex; flex-direction:column; gap:2px; margin-bottom:10px; }
+  .nav-group .nav-h { font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); padding:8px 10px 4px; opacity:.85; }
+  .sidenav a.nav { display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:10px; color:var(--muted); font-weight:550; font-size:14px; white-space:nowrap; }
+  .sidenav a.nav svg { width:18px; height:18px; flex:none; }
+  .sidenav a.nav:hover { color:var(--ink); background:var(--chip); text-decoration:none; }
+  .sidenav a.nav.on { color:var(--accent-soft-ink); background:var(--accent-soft); font-weight:650; }
+  .sidenav a.nav.setup { color:var(--warn); }
+  .sidenav a.nav .badge { margin-left:auto; }
+  .nav-promo { margin-top:auto; border-radius:14px; padding:16px; background:var(--hero); border:1px solid var(--hero-line); }
+  .nav-promo strong { display:block; font-size:14px; margin-bottom:4px; }
+  .nav-promo p { font-size:12.5px; color:var(--muted); margin:0 0 10px; }
+  .nav-promo .btn { width:100%; padding:7px 10px; font-size:13px; }
+  .main-col { flex:1; min-width:0; display:flex; flex-direction:column; }
+  header.topbar { position:sticky; top:0; z-index:20; background:var(--header); backdrop-filter:saturate(180%) blur(14px); -webkit-backdrop-filter:saturate(180%) blur(14px); border-bottom:1px solid var(--line); }
+  header .bar { max-width:1320px; margin:0 auto; padding:10px 24px; display:flex; gap:8px; align-items:center; }
   header .spacer { flex:1; }
-  .person-switch { display:flex; align-items:center; gap:6px; margin:0 6px 0 0; flex:none; border:1px solid var(--line); border-radius:999px; padding:2px 4px 2px 3px; background:var(--card); }
+  .quick-search { position:relative; flex:1; max-width:440px; }
+  .quick-search svg { position:absolute; left:12px; top:50%; translate:0 -50%; width:16px; height:16px; color:var(--muted); pointer-events:none; }
+  .quick-search input[type=search] { width:100%; padding:8px 12px 8px 36px; border-radius:999px; background:var(--card); border:1px solid var(--line); font:inherit; font-size:14px; color:var(--ink); }
+  .quick-search input[type=search]:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .nav-toggle { display:none; background:transparent; color:var(--ink); border:1px solid var(--line); width:36px; height:36px; padding:0; border-radius:10px; }
+  .nav-toggle:hover { background:var(--chip); filter:none; }
+  .nav-scrim { display:none; }
+  @media (max-width:960px) {
+    .sidenav { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s; box-shadow:var(--shadow-lg); }
+    .nav-open .sidenav { transform:none; }
+    .nav-open .nav-scrim { display:block; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:25; }
+    .nav-toggle { display:grid; place-items:center; flex:none; }
+    header .bar { padding:10px 14px; }
+    .quick-search { max-width:none; }
+  }
+  @media (max-width:640px) { .quick-search { display:none; } a.btn.add-job .lbl { display:none; } }
+  /* Full-window pages (the CV editor): a slim icon-only sidebar. */
+  .app-page .sidenav { width:68px; padding:14px 8px; }
+  .app-page .sidenav .logo { justify-content:center; padding:4px 0 12px; }
+  .app-page .sidenav .logo .txt, .app-page .nav-group .nav-h, .app-page .sidenav a.nav span, .app-page .nav-promo, .app-page .sidenav a.nav .badge { display:none; }
+  .app-page .sidenav a.nav { justify-content:center; padding:10px 0; }
+  .app-page header .bar { max-width:none; }
+  .person-switch { display:flex; align-items:center; gap:6px; margin:0; flex:none; border:1px solid var(--line); border-radius:999px; padding:2px 4px 2px 3px; background:var(--card); }
   .person-switch.other { border-color:var(--accent); background:var(--accent-soft); }
   .person-switch .avatar { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; color:#fff; background:linear-gradient(135deg, #6366f1, #22d3ee); }
   .person-switch.other .avatar { background:linear-gradient(135deg, #f59e0b, #ef4444); }
@@ -66,11 +106,22 @@
   .person-switch select:focus { box-shadow:none; }
   .ph { background:var(--warn-soft); color:var(--warn); border-radius:4px; padding:0 3px; font-weight:600; }
   button.danger { color:var(--bad); }
-  a.btn.add-job { padding:6px 12px; font-size:13.5px; white-space:nowrap; margin-right:8px; }
-  .theme-toggle { background:transparent; color:var(--muted); border:1px solid var(--line); width:32px; height:32px; padding:0; border-radius:8px; display:grid; place-items:center; flex:none; }
+  .skill-check { margin:8px 0; display:flex; flex-direction:column; gap:6px; }
+  .skill-check .sc-row { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 12px; border-radius:var(--radius-sm); font-size:13.5px; }
+  .skill-check .sc-row.bad { background:var(--bad-soft); } .skill-check .sc-row.bad strong { color:var(--bad); }
+  .skill-check .sc-row.ok { background:var(--chip); }
+  .skill-check .sc-sent { font-size:12.5px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+  .skill-check.compact .sc-row { padding:6px 10px; }
+  a.btn.add-job { padding:8px 14px; font-size:13.5px; white-space:nowrap; border-radius:999px; box-shadow:0 6px 16px -8px var(--accent); }
+  .theme-toggle { background:var(--card); color:var(--muted); border:1px solid var(--line); width:36px; height:36px; padding:0; border-radius:10px; display:grid; place-items:center; flex:none; }
+  .theme-toggle svg { width:17px; height:17px; }
+  .theme-toggle .moon { display:none; }
+  :root[data-theme="dark"] .theme-toggle .sun { display:none; } :root[data-theme="dark"] .theme-toggle .moon { display:block; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .theme-toggle .sun { display:none; } :root:not([data-theme="light"]) .theme-toggle .moon { display:block; } }
   .theme-toggle:hover { color:var(--ink); background:var(--chip); }
 
-  .wrap { max-width:1180px; margin:28px auto 64px; padding:0 16px; }
+  .wrap { max-width:1320px; width:100%; margin:24px auto 64px; padding:0 24px; }
+  @media (max-width:640px) { .wrap { padding:0 14px; margin-top:16px; } }
 
   /* surfaces */
   .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px; margin-bottom:18px; box-shadow:var(--shadow); }
@@ -274,23 +325,48 @@
   @media (max-width:900px) { .next-step { margin-left:0; } }
 </style>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% set path = request.url.path %}{% set qp = request.query_params %}
-<header>
+<div class="shell">
+<aside class="sidenav" id="sidenav" aria-label="Main">
+  <a class="logo" href="/"><span class="mark">CV</span><span class="txt">CVMaker</span></a>
+  <nav class="nav-group">
+    <span class="nav-h">Job search</span>
+    <a class="nav {{ 'on' if path == '/' and not qp.get('unseen') }}" href="/" title="Jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Jobs</span></a>
+    <a class="nav {{ 'on' if path == '/' and qp.get('unseen') }}" href="/?unseen=1" title="New jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg><span>New</span>{% if unseen_total %}<span class="badge">{{ unseen_total }}</span>{% endif %}</a>
+    <a class="nav {{ 'on' if path.startswith('/pipeline') }}" href="/pipeline" title="Pipeline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span>Pipeline</span></a>
+    <a class="nav {{ 'on' if path.startswith('/companies') }}" href="/companies" title="Companies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="10" height="18" rx="1.5"/><path d="M14 9h5a1 1 0 0 1 1 1v11h-6"/><path d="M8 7h2M8 11h2M8 15h2"/></svg><span>Companies</span></a>
+    <a class="nav {{ 'on' if path.startswith('/insights') }}" href="/insights" title="Insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Insights</span></a>
+  </nav>
+  <nav class="nav-group">
+    <span class="nav-h">Your CV</span>
+    <a class="nav {{ 'on' if path.startswith('/editor') }}" href="/editor" title="CV editor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="m9.5 16.5 5-5 1.5 1.5-5 5H9.5z"/></svg><span>CV editor</span></a>
+    <a class="nav {{ 'on' if path.startswith('/profile') }} {{ 'setup' if not profile_exists }}" href="/profile" title="My profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>My profile{% if not profile_exists %} · set up!{% endif %}</span></a>
+    <a class="nav {{ 'on' if path.startswith('/roles') }}" href="/roles" title="Role profiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg><span>Role profiles</span></a>
+    <a class="nav {{ 'on' if path.startswith('/stories') }}" href="/stories" title="Story bank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5"/><path d="M9 8h6"/></svg><span>Story bank</span></a>
+  </nav>
+  <nav class="nav-group">
+    <span class="nav-h">Assistant</span>
+    <a class="nav {{ 'on' if path.startswith('/chat') }}" href="/chat" title="Ask Claude about your CV or a job"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg><span>Chat</span></a>
+  </nav>
+  <div class="nav-promo">
+    <strong>Stand out for each job</strong>
+    <p>Design your CV once, then let CVMaker tailor it to every posting.</p>
+    <a class="btn" href="/editor">Open the CV editor →</a>
+  </div>
+</aside>
+<div class="nav-scrim" data-nav-close></div>
+<div class="main-col">
+<header class="topbar">
   <div class="bar">
-    <a class="logo" href="/"><span class="mark">CV</span>CVMaker</a>
-    <nav>
-      <a href="/" class="{{ 'on' if path == '/' and not qp.get('unseen') and not qp.get('status') }}">Jobs</a>
-      <a href="/?unseen=1" class="{{ 'on' if path == '/' and qp.get('unseen') }}">New{% if unseen_total %} <span class="badge">{{ unseen_total }}</span>{% endif %}</a>
-      <a href="/pipeline" class="{{ 'on' if path.startswith('/pipeline') }}">Pipeline</a>
-      <a href="/insights" class="{{ 'on' if path.startswith('/insights') }}">Insights</a>
-      <a href="/companies" class="{{ 'on' if path.startswith('/companies') }}">Companies</a>
-      <a href="/roles" class="{{ 'on' if path.startswith('/roles') }}">Role profiles</a>
-      <a href="/stories" class="{{ 'on' if path.startswith('/stories') }}">Story bank</a>
-      <a href="/profile" class="{{ 'on' if path.startswith('/profile') }} {{ 'setup' if not profile_exists }}">My profile{% if not profile_exists %} · set up!{% endif %}</a>
-    </nav>
+    <button class="nav-toggle" type="button" aria-label="Menu" aria-controls="sidenav" data-nav-toggle><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <form class="quick-search" method="get" action="/" role="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" name="q" value="{{ qp.get('q', '') if path == '/' else '' }}" placeholder="Search your jobs: title, company, skill…" aria-label="Search your jobs">
+    </form>
     <span class="spacer"></span>
-    <a class="btn add-job {{ 'on' if path == '/add' }}" href="/add" title="Add a job from a link or pasted text">+ Add job</a>
+    <a id="task-indicator" href="/profile#activity" hidden title="Background tasks"><span class="spin"></span><span class="n"></span></a>
+    <a class="btn add-job {{ 'on' if path == '/add' }}" href="/add" title="Add a job from a link or pasted text">+<span class="lbl"> Add job</span></a>
     <form method="post" action="/people/switch" class="person-switch {{ 'other' if person.id != 'me' }}" title="Whose job search you're working on">
       <input type="hidden" name="next_url" value="{{ request.url.path }}">
       <span class="avatar" aria-hidden="true">{{ person.name[:1] | upper }}</span>
@@ -300,18 +376,25 @@
       </select>
       <noscript><button class="secondary" type="submit">Go</button></noscript>
     </form>
-    <a id="task-indicator" href="/profile#activity" hidden title="Background tasks"><span class="spin"></span><span class="n"></span></a>
-    <button class="theme-toggle" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+    <button class="theme-toggle" type="button" title="Switch light / dark theme" aria-label="Switch light or dark theme">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
   </div>
 </header>
-<div class="wrap">
+<main class="page-main">
+{% block body %}<div class="wrap">
 {% block content %}{% endblock %}
+</div>{% endblock %}
+</main>
+</div>
 </div>
 <script>
   document.querySelectorAll("form[data-slow]").forEach(f => f.addEventListener("submit", () => {
     f.classList.add("working");
     f.querySelectorAll("button").forEach(b => b.disabled = true);
   }));
+  document.querySelectorAll("[data-nav-toggle], [data-nav-close]").forEach(b => b.addEventListener("click", () => document.body.classList.toggle("nav-open")));
   document.querySelector(".theme-toggle").addEventListener("click", () => {
     const root = document.documentElement;
     const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -482,7 +565,7 @@
     const panels = [...document.querySelectorAll(".tab-panel")];
     const alias = JSON.parse(bar.dataset.alias || "{}");
     const names = new Set(tabs.map(t => t.dataset.tab));
-    const header = document.querySelector("header");
+    const header = document.querySelector("header.topbar");
     const headH = () => header ? header.offsetHeight : 0;
     document.documentElement.style.setProperty("--head-h", headH() + "px");
 

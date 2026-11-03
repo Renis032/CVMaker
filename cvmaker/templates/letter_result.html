@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}Cover letter for {{ job.title }} - CVMaker{% endblock %}
 {% block content %}
 <div class="card">
@@ -26,7 +27,9 @@
     </form>
   </div>
   <div class="card">
-    <h2>What it covers</h2>
+    <h2>Skill check</h2>
+    {{ m.skill_findings(skill_check, '/letter/' ~ l.id) }}
+    <h2 style="margin-top:14px">What it covers</h2>
     <ul class="tight">{% for x in l.letter.emphasised %}<li>{{ x }}</li>{% endfor %}</ul>
     {% if l.letter.left_out %}
     <h2 style="margin-top:14px">Not claimed (not in your profile)</h2>

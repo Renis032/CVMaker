@@ -22,14 +22,20 @@ class LLMError(RuntimeError):
     pass
 
 
-def ask(system: str, text: str, schema: type[T], effort: str = "high", pdf: bytes | None = None) -> T:
-    """One structured Claude call: returns a validated instance of `schema`."""
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+
+
+def ask(system: str, text: str, schema: type[T], effort: str = "high", pdf: bytes | None = None,
+        files: list[tuple[str, bytes]] | None = None) -> T:
+    """One structured Claude call: returns a validated instance of `schema`.
+    `files` are (name, content) pairs Claude can read: PDFs, images, and plain text."""
     if settings.BACKEND == "api":
-        return _ask_api(system, text, schema, effort, pdf)
-    return _ask_claude_code(system, text, schema, effort, pdf)
+        return _ask_api(system, text, schema, effort, pdf, files or [])
+    return _ask_claude_code(system, text, schema, effort, pdf, files or [])
 
 
-def _ask_claude_code(system: str, text: str, schema: type[T], effort: str, pdf: bytes | None) -> T:
+def _ask_claude_code(system: str, text: str, schema: type[T], effort: str, pdf: bytes | None,
+                     files: list[tuple[str, bytes]]) -> T:
     """Runs headless Claude Code, so calls use the Claude subscription it is logged in with."""
     env = {
         **os.environ,
@@ -42,6 +48,15 @@ def _ask_claude_code(system: str, text: str, schema: type[T], effort: str, pdf: 
         if pdf is not None:
             (Path(workdir) / "cv.pdf").write_bytes(pdf)
             text = f"The CV is the file cv.pdf in the current directory - read it with the Read tool.\n\n{text}"
+            tools = "Read"
+        if files:
+            folder = Path(workdir) / "attachments"
+            folder.mkdir()
+            for name, content in files:
+                (folder / name).write_bytes(content)
+            names = "\n".join(f"- attachments/{name}" for name, _ in files)
+            text = (f"The candidate attached these files (in the current directory). Read each one with the Read tool "
+                    f"before answering:\n{names}\n\n{text}")
             tools = "Read"
         cmd = [
             settings.CLAUDE_BIN,
@@ -101,8 +116,19 @@ def _client_api() -> anthropic.Anthropic:
     return _client
 
 
-def _ask_api(system: str, text: str, schema: type[T], effort: str, pdf: bytes | None) -> T:
+def _ask_api(system: str, text: str, schema: type[T], effort: str, pdf: bytes | None,
+             files: list[tuple[str, bytes]]) -> T:
     content: list[dict] = [{"type": "text", "text": text}]
+    for name, data in reversed(files):
+        suffix = Path(name).suffix.lower()
+        encoded = base64.standard_b64encode(data).decode("ascii")
+        if suffix in IMAGE_TYPES:
+            block = {"type": "image", "source": {"type": "base64", "media_type": IMAGE_TYPES[suffix], "data": encoded}}
+        elif suffix == ".pdf":
+            block = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": encoded}}
+        else:
+            block = {"type": "text", "text": f"Attached file {name}:\n{data.decode('utf-8', 'replace')}"}
+        content.insert(0, block)
     if pdf is not None:
         content.insert(0, {
             "type": "document",

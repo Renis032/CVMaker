@@ -60,6 +60,7 @@
     {% if active.get('pack') %}{{ m.running(active['pack']) }}
     {% elif pack_info %}<span class="muted">Application pack ready · {{ pack_info.dir }}</span>
     {% else %}<form method="post" action="/job/{{ job.id }}/pack" data-slow><button class="secondary" type="submit" title="Fit check, project ideas, tailored CV, cover letter and interview prep in one go">Make application pack</button></form>{% endif %}
+    <a class="btn secondary" href="/chat?job={{ job.id | urlencode }}" title="Chat with Claude about this job: should you apply, what they'll ask, how to word things">Ask Claude</a>
     {% if next[0] %}
     <a class="next-step" href="{{ next[1] or '#' }}">
       <span class="k">Next step</span> <strong>{{ next[0] }}</strong>{% if next[2] %} <span class="muted">{{ next[2] }}</span>{% endif %}{% if next[1] %} <span aria-hidden="true">→</span>{% endif %}
@@ -428,10 +429,12 @@
       <div class="draft">
         <div class="draft-head"><h3>LinkedIn connection note</h3><span class="muted"><span class="chars" data-for="d-note" data-max="300"></span></span><button type="button" class="secondary" data-copy="d-note">Copy</button></div>
         <textarea id="d-note" rows="4">{{ k.linkedin_note }}</textarea>
+        {{ m.skill_findings(skill_check.get('note', []), '/job/' ~ job.id ~ '#outreach', compact=True) }}
       </div>
       <div class="draft">
         <div class="draft-head"><h3>Message after they accept</h3><button type="button" class="secondary" data-copy="d-msg">Copy</button></div>
         <textarea id="d-msg" rows="6">{{ k.linkedin_message }}</textarea>
+        {{ m.skill_findings(skill_check.get('msg', []), '/job/' ~ job.id ~ '#outreach', compact=True) }}
       </div>
       {% for key, title, mail in [('app', 'Application e-mail', k.application_email), ('fu', 'Follow-up e-mail (7-10 days after applying)', k.follow_up_email)] %}
       <div class="draft">
@@ -440,6 +443,7 @@
           <button type="button" class="secondary" data-copy="d-{{ key }}">Copy</button></div>
         <input type="text" value="{{ mail.subject }}" aria-label="Subject" style="margin-bottom:6px">
         <textarea id="d-{{ key }}" rows="8">{{ mail.body }}</textarea>
+        {{ m.skill_findings(skill_check.get(key, []), '/job/' ~ job.id ~ '#outreach', compact=True) }}
       </div>
       {% endfor %}
       {% if k.tips %}<h3>Tips</h3><ul class="tight">{% for t in k.tips %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
@@ -528,6 +532,7 @@
       <div class="draft">
         <div class="draft-head"><h4>Thank-you note</h4><a class="btn secondary" href="mailto:?subject={{ r.thank_you_email.subject | urlencode }}&body={{ r.thank_you_email.body | urlencode }}">Open in e-mail app</a><button type="button" class="secondary" data-copy="ty-{{ d.id }}">Copy</button></div>
         <textarea id="ty-{{ d.id }}" rows="6">{{ r.thank_you_email.body }}</textarea>
+        {{ m.skill_findings(skill_check.get('ty-' ~ d.id, []), '/job/' ~ job.id ~ '#interview', compact=True) }}
       </div>
     {% endif %}
     <details><summary class="muted">Your notes</summary>
@@ -596,6 +601,7 @@
         <div class="draft-head"><h2 style="margin:0">Reply</h2><a class="btn secondary" href="mailto:?subject={{ o.reply_email.subject | urlencode }}&body={{ o.reply_email.body | urlencode }}">Open in e-mail app</a><button type="button" class="secondary" data-copy="of-reply">Copy</button></div>
         <input type="text" value="{{ o.reply_email.subject }}" aria-label="Subject" style="margin:8px 0 6px">
         <textarea id="of-reply" rows="12">{{ o.reply_email.body }}</textarea>
+        {{ m.skill_findings(skill_check.get('reply', []), '/job/' ~ job.id ~ '#offer', compact=True) }}
       </div>
     </div>
   </div>

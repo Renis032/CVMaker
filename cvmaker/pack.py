@@ -50,14 +50,14 @@ def github_check(profile: Profile, job: Job, repos: list[dict]) -> GithubReview:
 def render_fitting(tailored: TailoredCV, pdf_path: Path, layout: dict, job: Job | None, progress=None) -> tuple[int, float]:
     """Render the CV; when it must fit on one page and does not, have Claude shorten it and render again.
     Updates tailored.cv in place. Returns (pages, font size used)."""
-    _, pages, used = render.cv_pdf(tailored.cv, pdf_path, layout.get("font_pt"))
+    _, pages, used = render.cv_pdf(tailored.cv, pdf_path, layout.get("font_pt"), layout)
     attempt = 0
     while layout.get("one_page") and pages > 1 and attempt < MAX_SHORTEN_ATTEMPTS:
         attempt += 1
         if progress:
             progress.set(step=f"shortening to one page (attempt {attempt})")
         tailored.cv = assistant.shorten_cv(tailored.cv, job, render.overflow(pdf_path), layout.get("instructions", ""))
-        _, pages, used = render.cv_pdf(tailored.cv, pdf_path, layout.get("font_pt"))
+        _, pages, used = render.cv_pdf(tailored.cv, pdf_path, layout.get("font_pt"), layout)
     if attempt:
         tailored.changes_made.append(
             f"Shortened by Claude to fit one page ({attempt} pass{'es' if attempt > 1 else ''})"

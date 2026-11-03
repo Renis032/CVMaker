@@ -473,3 +473,11 @@ class OfferReview(BaseModel):
     negotiation: list[NegotiationPoint]
     questions_before_signing: list[str]
     reply_email: DraftEmail
+
+
+class ChatReply(BaseModel):
+    """One answer in the chat. When the candidate asks to change their profile (their original CV), Claude puts
+    the whole updated profile in new_profile_json and lists the changes; the candidate applies them with a click."""
+    reply: str
+    profile_changes: list[str]
+    new_profile_json: str

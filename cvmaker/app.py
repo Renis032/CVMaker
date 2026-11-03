@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import re
@@ -13,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from pydantic import ValidationError
 
-from . import assistant, auto, companies, cvcheck, cvdiff, db, github, insights, pack, people, render, roles, settings, taste, tasks
+from . import assistant, auto, claims, companies, cvcheck, cvdiff, db, editor, github, insights, pack, people, render, roles, settings, taste, tasks
 from .auto import SavedSearch, load_criteria
 from .countries import COUNTRY_TERMS, country_name
 from .llm import LLMError
@@ -68,6 +69,8 @@ templates.env.filters["posting"] = posting_html
 templates.env.filters["ph"] = lambda text: Markup(
     re.sub(r"\[([^\]\n]{1,200})\]", r'<span class="ph">[\1]</span>', str(escape(text or "")))
 )
+templates.env.filters["hue"] = lambda text: int(hashlib.md5((text or "").lower().encode()).hexdigest()[:4], 16) % 360
+templates.env.filters["initials"] = lambda text: "".join(w[0] for w in re.findall(r"[A-Za-z0-9]+", text or "?")[:2]).upper() or "?"
 templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
 templates.env.globals["STAGES"] = db.STAGES
 templates.env.globals["STAGE_LABELS"] = db.STAGE_LABELS
@@ -206,6 +209,21 @@ def _list_rows(
     )
 
 
+def _filter_rows(rows: list[dict], q: str, where: str) -> list[dict]:
+    """Narrow the job list by words (all must appear in the title, company, location or tags) and by work mode."""
+    words = q.lower().split()
+    out = []
+    for r in rows:
+        j = r["job"]
+        hybrid = "hybrid" in [t.lower() for t in j.tags]
+        if where == "remote" and not j.remote or where == "hybrid" and not hybrid or where == "onsite" and (j.remote or hybrid):
+            continue
+        text = " ".join([j.title, j.company, j.location, " ".join(j.tags), j.source]).lower()
+        if all(w in text for w in words):
+            out.append(r)
+    return out
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
@@ -218,6 +236,8 @@ def index(
     sort: str = "score",
     dir: str = "",
     new: int = 0,
+    q: str = "",
+    where: str = "",
 ):
     prefs = auto.load_prefs()
     if search and auto.get_search(search) and prefs.active_search != search:
@@ -249,7 +269,10 @@ def index(
         packs=pack.recent_packs(8),
         roles=roles.load_roles(),
         chosen_role=chosen,
-        rows=_list_rows(current, status, only_last, unseen, salary, sort, dir),
+        rows=_filter_rows(_list_rows(current, status, only_last, unseen, salary, sort, dir), q, where),
+        q=q,
+        where=where,
+        settings_open=bool(new or role),
         companies_seen=db.company_summaries(),
         stats=db.stats(),
         status=status,
@@ -600,7 +623,7 @@ def job_page(request: Request, job_id: str):
         pack_info=pack.get_pack(job_id),
         fetch_error=fetch_error,
         roles=roles.load_roles(),
-        font_choices=render.FONT_CHOICES_PT,
+        font_choices=render.font_choices(),
         hide_reasons=taste.REASONS,
         **_later_stages(job),
     )
@@ -628,7 +651,25 @@ def _later_stages(job: Job) -> dict:
         "practice_avg": (lambda xs: round(sum(xs) / len(xs), 1) if xs else None)([p["score"] for p in practice if p["score"] is not None]),
         "story_count": len(stories.load()),
         "offer": stage.cached_offer(job.id),
+        "skill_check": _draft_skill_check(job, profile, outreach),
     }
+
+
+def _draft_skill_check(job: Job, profile, outreach: dict | None) -> dict:
+    """Skill check of every draft on the job page that goes to the employer."""
+    from . import stage
+
+    texts = {}
+    if outreach:
+        k = outreach["kit"]
+        texts |= {"note": k.linkedin_note, "msg": k.linkedin_message, "app": k.application_email.body, "fu": k.follow_up_email.body}
+    for d in db.debriefs_for_job(job.id):
+        if d["review"]:
+            texts[f"ty-{d['id']}"] = d["review"]["thank_you_email"]["body"]
+    offer = stage.cached_offer(job.id)
+    if offer and offer.get("review"):
+        texts["reply"] = offer["review"].reply_email.body
+    return claims.check_many(texts, profile, job)
 
 
 def _cached_fit(job_id: str) -> FitAssessment | None:
@@ -777,11 +818,23 @@ def _owner(owner_id: str) -> tuple[Job | None, RoleProfile | None]:
     return (found[0] if found else None), None
 
 
+def refresh_cv_pdf(cv_id: int) -> None:
+    """Re-render a CV's PDF after it was edited in the CV editor (the editor saves text, not PDFs)."""
+    layout, _ = db.cv_layout(cv_id)
+    if not layout.get("pdf_stale"):
+        return
+    _, tailored, pdf_path = db.get_cv(cv_id)
+    _, pages, used = render.cv_pdf(tailored.cv, Path(pdf_path), layout.get("font_pt"), layout)
+    db.update_cv(cv_id, layout={**layout, "font_used": used, "pdf_stale": False}, pages=pages)
+
+
 @app.get("/cv/{cv_id}", response_class=HTMLResponse)
 def cv_page(request: Request, cv_id: int, saved: int = 0):
     found = db.get_cv(cv_id)
     if not found:
         return page(request, "error.html", message=_not_found("CV"))
+    refresh_cv_pdf(cv_id)
+    found = db.get_cv(cv_id)
     owner_id, tailored, pdf_path = found
     job, role = _owner(owner_id)
     ratings = {}
@@ -813,8 +866,8 @@ def cv_page(request: Request, cv_id: int, saved: int = 0):
         letters=db.letters_for_job(owner_id) if job else [],
         layout=layout,
         pages=pages,
-        font_choices=render.FONT_CHOICES_PT,
-        diff=cvdiff.diff(profile, tailored.cv) if profile else None,
+        font_choices=render.font_choices(),
+        diff=cvdiff.diff(profile, tailored.cv, job) if profile else None,
         skills_text="\n".join(f"{g.category}: {', '.join(g.items)}" for g in tailored.cv.skills),
         cv_json=tailored.cv.model_dump_json(indent=2),
         active={t["kind"]: t for t in db.task_active() if t["subject"].endswith(f":cv:{cv_id}")},
@@ -854,8 +907,8 @@ async def cv_edit(request: Request, cv_id: int):
         cv.languages = _lines(str(form.get("languages", "")))
         cv.interests = _lines(str(form.get("interests", "")))
     layout, _ = db.cv_layout(cv_id)
-    _, pages, used = render.cv_pdf(tailored.cv, Path(pdf_path), layout.get("font_pt"))
-    db.update_cv(cv_id, tailored, {**layout, "font_used": used}, pages)
+    _, pages, used = render.cv_pdf(tailored.cv, Path(pdf_path), layout.get("font_pt"), layout)
+    db.update_cv(cv_id, tailored, {**layout, "font_used": used, "pdf_stale": False}, pages)
     db.cache_delete(f"cvrate:{cv_id}:profile")
     return _back(f"/cv/{cv_id}?saved=1#edit")
 
@@ -866,8 +919,8 @@ def cv_layout(cv_id: int, font: str = Form("auto"), one_page: bool = Form(False)
     owner_id, tailored, pdf_path = db.get_cv(cv_id)
     old, _ = db.cv_layout(cv_id)
     layout = _layout(one_page, font, old.get("instructions", ""))
-    _, pages, used = render.cv_pdf(tailored.cv, Path(pdf_path), layout["font_pt"])
-    db.update_cv(cv_id, layout={**layout, "font_used": used}, pages=pages)
+    _, pages, used = render.cv_pdf(tailored.cv, Path(pdf_path), layout["font_pt"], {**old, **layout})
+    db.update_cv(cv_id, layout={**old, **layout, "font_used": used, "pdf_stale": False}, pages=pages)
     if one_page and pages > 1:
         _submit_shorten(cv_id)
     return _back(f"/cv/{cv_id}#layout")
@@ -930,6 +983,7 @@ def cv_rate(cv_id: int, baseline: str = Form("profile")):
     job, role = _owner(owner_id)
 
     def run(progress):
+        refresh_cv_pdf(cv_id)
         _, tailored, pdf_path = db.get_cv(cv_id)
         full = ensure_description(job) if job else None
         extra = (role.key_skills + role.skill_keywords) if role else load_criteria().skill_keywords
@@ -965,11 +1019,12 @@ def cv_rate(cv_id: int, baseline: str = Form("profile")):
 def cv_preview(cv_id: int):
     _, tailored, _ = db.get_cv(cv_id)
     layout, _ = db.cv_layout(cv_id)
-    return HTMLResponse(render.cv_html(tailored.cv, layout.get("font_used") or layout.get("font_pt") or render.FONT_SIZES_PT[0]))
+    return HTMLResponse(render.cv_html(tailored.cv, layout.get("font_pt") or layout.get("font_used"), layout))
 
 
 @app.get("/cv/{cv_id}/pdf")
 def cv_pdf(cv_id: int):
+    refresh_cv_pdf(cv_id)
     _, _, pdf_path = db.get_cv(cv_id)
     return FileResponse(pdf_path, media_type="application/pdf", filename=Path(pdf_path).name)
 
@@ -990,6 +1045,11 @@ def profile_page(request: Request, error: str = ""):
         activity=db.tasks_recent(60),
         documents=db.all_documents(),
         importing=db.task_active("import"),
+        editor_versions=[v["name"] for v in editor.load_layout()["variants"]] if editor.exists() else [],
+        can_import=editor.CVEDITOR_DATA.exists(),
+        imported_at=editor.load_layout().get("imported_at") if editor.exists() else None,
+        cveditor_path=str(editor.CVEDITOR_DATA).replace(str(Path.home()), "~"),
+        import_report=db.cache_get("editor:import-report", 24 * 30),
     )
 
 
@@ -1015,6 +1075,7 @@ async def profile_import(cv: UploadFile = File(...)):
 @app.post("/profile/photo")
 async def profile_photo(photo: UploadFile = File(...)):
     settings.PHOTO_PATH.write_bytes(await photo.read())
+    editor.use_profile_photo()
     return _back("/profile")
 
 
@@ -1107,7 +1168,7 @@ def roles_page(request: Request, edit: str = ""):
     active = {t["subject"][len("tailor:role:"):]: t for t in db.task_active("tailor") if t["subject"].startswith("tailor:role:")}
     return page(
         request, "roles.html", roles=all_roles, editing=editing or RoleProfile(id="", name=""), cvs=cvs, active=active,
-        font_choices=render.FONT_CHOICES_PT,
+        font_choices=render.font_choices(),
     )
 
 
@@ -1199,6 +1260,7 @@ def letter_page(request: Request, letter_id: int, saved: int = 0):
         others=[x for x in db.letters_for_job(found["job_id"]) if x["id"] != letter_id],
         pdf_name=Path(found["pdf_path"]).name,
         is_sent=db.get_application(found["job_id"]).get("sent_letter_id") == letter_id,
+        skill_check=claims.unsupported(found["body"], assistant.load_profile(), job=job),
     )
 
 
@@ -1406,3 +1468,9 @@ def people_remove(request: Request, person: str = Form(...)):
 from .stage_routes import router as _stage_router  # noqa: E402  (it imports helpers from this module)
 
 app.include_router(_stage_router)
+from .chat_routes import router as _chat_router  # noqa: E402
+
+app.include_router(_chat_router)
+from .editor_routes import router as _editor_router  # noqa: E402
+
+app.include_router(_editor_router)

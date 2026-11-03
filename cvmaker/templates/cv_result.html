@@ -2,7 +2,7 @@
 {% block title %}CV for {{ job.title if job else role.name if role else "role" }} - CVMaker{% endblock %}
 {% import "_macros.html" as m %}
 {% block content %}
-{% set unsupported = ((diff.unsupported_skills | length) + (diff.unsupported_numbers | length)) if diff else 0 %}
+{% set unsupported = ((diff.unsupported_skills | length) + (diff.unsupported_numbers | length) + (diff.unsupported_tech | rejectattr('honest') | list | length)) if diff else 0 %}
 {% if unsupported %}{% set next = ("Check " ~ unsupported ~ " fact" ~ ("s" if unsupported != 1 else "") ~ " not found in your profile", "#changes", "The CV may only contain facts from your profile.") %}
 {% elif pages > 1 %}{% set next = ("Get it onto one page", "#preview", "It runs to " ~ pages ~ " pages. Shrink the font or let Claude shorten it.") %}
 {% elif not ratings %}{% set next = ("Rate it against your original CV", "#rating", "Scores both on the same scale and checks the keywords and PDF text.") %}
@@ -24,6 +24,7 @@
   {% if saved %}<div class="pill new" style="margin-top:8px">Saved - PDF updated</div>{% endif %}
   <div class="row" style="margin-top:14px">
     <a class="btn" href="/cv/{{ cv_id }}/pdf">Download PDF</a>
+    <a class="btn secondary" href="/editor?cv={{ cv_id }}" title="Edit this CV on the page: wording, order, what is shown, style">Open in CV editor</a>
     {% if job and job.url %}<a class="btn secondary" href="{{ job.url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
     {% if job and not is_sent %}
     <form method="post" action="/cv/{{ cv_id }}/sent" style="display:inline"><button class="secondary" type="submit" title="Records this CV on the application and moves the job to Applied if it isn't yet">I sent this CV</button></form>{% endif %}
@@ -58,7 +59,8 @@
     <label class="muted" style="margin:0" for="l-font">Font size</label>
     <select id="l-font" name="font" style="width:auto">
       <option value="auto" {% if not layout.font_pt %}selected{% endif %}>auto (shrinks a little to fit one page)</option>
-      {% for f in font_choices %}<option value="{{ f }}" {% if layout.font_pt == f %}selected{% endif %}>{{ f }} pt{{ ' (default)' if f == 9.6 }}</option>{% endfor %}
+      {% if layout.font_pt and layout.font_pt not in font_choices %}<option value="{{ layout.font_pt }}" selected>{{ layout.font_pt }} pt (set in the CV editor)</option>{% endif %}
+      {% for f in font_choices %}<option value="{{ f }}" {% if layout.font_pt == f %}selected{% endif %}>{{ f }} pt{{ ' (your CV editor size)' if loop.index0 == 4 }}</option>{% endfor %}
     </select>
     <label class="check"><input type="checkbox" name="one_page" value="true" {% if layout.one_page %}checked{% endif %}> Keep it to one page (Claude shortens it if needed)</label>
     <button class="secondary" type="submit">Save layout</button>
@@ -95,12 +97,13 @@
   </div>
 </section>
 <section class="tab-panel" data-tab="changes">
-{% if diff and (diff.unsupported_skills or diff.unsupported_numbers) %}
+{% if diff and (diff.unsupported_skills or diff.unsupported_numbers or diff.unsupported_tech) %}
 <div class="card" style="border-color:var(--bad);box-shadow:inset 4px 0 0 var(--bad), var(--shadow)">
   <h2>Check these: not found in your profile</h2>
   <p class="muted">The CV may only contain facts from your profile. These could not be found there; fix them in the <a href="#edit">editor</a>, or add them to your profile if they are true.</p>
   {% if diff.unsupported_skills %}<div><strong>Skills:</strong> {% for x in diff.unsupported_skills %}<span class="pill" style="background:var(--bad-soft);color:var(--bad)">{{ x }}</span>{% endfor %}</div>{% endif %}
   {% if diff.unsupported_numbers %}<ul class="tight">{% for n, text in diff.unsupported_numbers %}<li><strong>{{ n }}</strong> in “{{ text | truncate(140) }}”</li>{% endfor %}</ul>{% endif %}
+  {% if diff.unsupported_tech %}<div style="margin-top:8px"><strong>Technologies mentioned in the text:</strong>{{ m.skill_findings(diff.unsupported_tech, request.url.path ~ '#changes', compact=True) }}</div>{% endif %}
 </div>
 {% endif %}
 

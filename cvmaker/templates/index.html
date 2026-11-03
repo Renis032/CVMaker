@@ -1,29 +1,287 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
+{% block title %}Jobs · CVMaker{% endblock %}
 {% block content %}
-<div class="stats">
-  <a class="stat" href="/?sort=newest"><div class="k">New this week</div><div class="v">{{ stats.new_week }}</div><div class="sub">jobs found</div></a>
-  <a class="stat" href="/pipeline"><div class="k">Applications</div><div class="v">{{ stats.applications }}</div><div class="sub">{{ stats.applied_week }} this week</div></a>
-  <a class="stat" href="/pipeline"><div class="k">Response rate</div><div class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</div><div class="sub">{{ stats.response.responded }} of {{ stats.response.n }} answered</div></a>
-  <a class="stat" href="/pipeline#follow-ups"><div class="k">Follow-ups due</div><div class="v {{ 's-mid' if stats.follow_ups }}">{{ stats.follow_ups }}</div><div class="sub">applied {{ '%g' % FOLLOW_UP_DAYS }}+ days ago, no reply</div></a>
-  <a class="stat" href="/?sort=salary&salary=1"><div class="k">Median salary seen</div><div class="v">{{ stats.median_salary | monthly | replace('≈ ', '') or '–' }}</div><div class="sub">{{ stats.salary_n }} postings, last 60 days</div></a>
-</div>
-
 {% set run = running.get(current.id) %}
 {% set age_choices = [3, 7, 14, 30, 60, 90] %}
-<div class="card search-card">
-  <div class="page-head" style="margin-bottom:4px">
-    <h1>Find jobs</h1>
-    <a class="btn secondary" href="/add" title="Paste a link or a posting you found elsewhere">+ Add a job by link or text</a>
-  </div>
-  <div class="row saved-row">
-    <span class="muted">Saved searches</span>
-    <div class="tabs small">
-      {% for s in searches %}<a class="{{ 'on' if s.id == current.id }}" href="/?search={{ s.id }}" title="{{ 'Runs every %g h' % s.every_hours if s.auto else 'Runs only when you start it' }}">{{ s.name }}{% if s.auto %} ⏱{% endif %}{% if running.get(s.id) %} …{% endif %}</a>{% endfor %}
-      <a class="{{ 'on' if not current.id }}" href="/?new=1">+ New search</a>
+{% set base = dict(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, q=q, where=where) %}
+
+<section class="hero">
+  <div class="hero-main">
+    <div class="eyebrow">
+      <span class="dot {{ 'live' if run }}"></span>
+      {% if run %}Searching “{{ current.name }}” now…{% elif current.last_run %}“{{ current.name }}” ran {{ current.last_run | ago }} · {{ current.last_new }} new{% else %}Ready when you are{% endif %}
+    </div>
+    <h1>Find your next <span class="grad">opportunity</span></h1>
+    <p class="lead">{{ stats.new_week }} new jobs this week{% if unseen_total %}, <a href="/?unseen=1">{{ unseen_total }} you haven't seen yet</a>{% endif %}. Ranked against your skills and what you liked before.</p>
+    <form class="hero-search" method="get" action="/" role="search">
+      {% for k in ['status', 'only_last', 'unseen', 'salary'] %}{% if base[k] %}<input type="hidden" name="{{ k }}" value="{{ base[k] }}">{% endif %}{% endfor %}
+      {% if sort != 'score' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <label class="hs-field hs-q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" name="q" value="{{ q }}" placeholder="Title, company or skill" aria-label="Filter jobs"></label>
+      <label class="hs-field hs-where"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <select name="where" aria-label="Work mode">
+          {% for v, l in [('', 'Any work mode'), ('remote', 'Remote'), ('hybrid', 'Hybrid'), ('onsite', 'On-site')] %}<option value="{{ v }}" {% if where == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        </select></label>
+      <button type="submit">Search</button>
+    </form>
+    <div class="hero-actions">
+      {% if current.id %}
+      <form method="post" action="/searches/{{ current.id }}/run"><button class="glow" type="submit" {% if run %}disabled title="Already running"{% endif %}>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg> Find new jobs</button></form>
+      {% endif %}
+      <button class="secondary" type="button" data-open-settings>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg> Search settings</button>
+      <a class="btn secondary" href="/add">+ Add a job by link</a>
+    </div>
+    {% if run %}
+  <div class="running" data-task-id="{{ run.id }}">
+    <span class="spin"></span>
+    <div style="flex:1">
+      <strong>Searching “{{ current.name }}”…</strong> <span class="muted">started <span class="elapsed" data-since="{{ run.started or run.created }}"></span> ago · the list updates when it's done</span>
+      <div class="src-progress">{% for name, v in (run.progress.sources or {}).items() %}<span class="pill {{ '' if v is none else 'err' if v == 'error' else 'ok' }}">{{ name }}{% if v is none %} …{% elif v == 'error' %} ✗{% else %} ✓ {{ v }}{% endif %}</span>{% endfor %}</div>
     </div>
   </div>
+  {% endif %}
+  </div>
+  <div class="hero-stats">
+    <a class="hstat" href="/?sort=newest"><span class="k">New this week</span><span class="v">{{ stats.new_week }}</span><span class="sub">jobs found</span></a>
+    <a class="hstat" href="/pipeline"><span class="k">Applications</span><span class="v">{{ stats.applications }}</span><span class="sub">{{ stats.applied_week }} this week</span></a>
+    <a class="hstat" href="/pipeline"><span class="k">Response rate</span><span class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</span><span class="sub">{{ stats.response.responded }} of {{ stats.response.n }} answered</span></a>
+    <a class="hstat {{ 'warn' if stats.follow_ups }}" href="/pipeline#follow-ups"><span class="k">Follow-ups due</span><span class="v">{{ stats.follow_ups }}</span><span class="sub">no reply after {{ '%g' % FOLLOW_UP_DAYS }}+ days</span></a>
+    <a class="hstat wide" href="/?sort=salary&salary=1"><span class="k">Median salary seen</span><span class="v">{{ stats.median_salary | monthly | replace('≈ ', '') or '–' }}</span><span class="sub">{{ stats.salary_n }} postings, last 60 days</span></a>
+  </div>
+</section>
+{% if not run %}{% for e in current.last_errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
+<div class="jobs-layout">
+  <aside class="filters">
+    <div class="fcard">
+      <div class="fhead"><h3>Filters</h3>{% if q or where or salary or only_last %}<a href="{{ query(status=status, unseen=unseen, sort=sort) }}">Clear all</a>{% endif %}</div>
+      <div class="fgroup">
+        <h4>Work mode</h4>
+        {% for v, l in [('', 'Any'), ('remote', 'Remote'), ('hybrid', 'Hybrid'), ('onsite', 'On-site')] %}
+        <a class="fopt {{ 'on' if where == v }}" href="{{ query(**dict(base, where=v)) }}"><span class="radio"></span>{{ l }}</a>
+        {% endfor %}
+      </div>
+      <div class="fgroup">
+        <h4>Narrow down</h4>
+        <a class="fopt {{ 'on' if salary }}" href="{{ query(**dict(base, salary=0 if salary else 1)) }}"><span class="box"></span>States a salary</a>
+        {% if current.last_job_ids %}<a class="fopt {{ 'on' if only_last }}" href="{{ query(**dict(base, only_last=0 if only_last else 1)) }}"><span class="box"></span>From the last search only</a>{% endif %}
+      </div>
+      <div class="fgroup">
+        <h4>Saved searches</h4>
+        {% for s in searches %}
+        <a class="fsearch {{ 'on' if s.id == current.id }}" href="/?search={{ s.id }}" title="{{ 'Runs every %g h' % s.every_hours if s.auto else 'Runs only when you start it' }}">
+          <span class="nm">{{ s.name }}</span>
+          <span class="meta">{% if running.get(s.id) %}<span class="spin"></span>{% elif s.auto %}every {{ '%g' % s.every_hours }} h{% else %}manual{% endif %}</span>
+        </a>
+        {% endfor %}
+        <a class="fsearch add" href="/?new=1">+ New search</a>
+      </div>
+      {% if roles %}
+      <div class="fgroup">
+        <h4>Role profiles</h4>
+        <div class="fchips">{% for r in roles %}<a class="pill {{ 'on' if chosen_role and chosen_role.id == r.id }}" href="/?role={{ r.id }}{% if current.id %}&search={{ current.id }}{% endif %}" title="Fill the search settings from this role">{{ r.name }}</a>{% endfor %}</div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="promo">
+      <div class="promo-ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0 0 0-2.9-.1z"/><path d="m12 15-3-3a22 22 0 0 1 2-4A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.6-3 2-4c1.6-1.1 5 0 5 0M12 15v5s3-.6 4-2c1.1-1.6 0-5 0-5"/></svg></div>
+      <strong>Improve your CV for this market</strong>
+      <p>Ask Claude what's missing for the jobs you're seeing, then fix it in the editor.</p>
+      <a class="btn" href="/chat">Ask Claude →</a>
+    </div>
+  </aside>
+
+  <section class="results">
+    <div class="rtabs">
+      <a href="{{ query(sort=sort, q=q, where=where) }}" class="{{ 'on' if not status and not unseen }}">All saved</a>
+      <a href="{{ query(unseen=1, sort=sort, q=q, where=where) }}" class="{{ 'on' if unseen }}">Not seen{% if unseen_total %} <span class="tb">{{ unseen_total }}</span>{% endif %}</a>
+      <a href="{{ query(status='liked', sort=sort, q=q, where=where) }}" class="{{ 'on' if status == 'liked' }}">Liked</a>
+      <a href="/pipeline">Applied →</a>
+      <a href="{{ query(status='hidden', sort=sort, q=q, where=where) }}" class="{{ 'on' if status == 'hidden' }}">Hidden</a>
+      <a href="{{ query(status='closed', sort=sort, q=q, where=where) }}" class="{{ 'on' if status == 'closed' }}" title="Postings that look closed or expired">Closed{% if closed_total %} <span class="tb">{{ closed_total }}</span>{% endif %}</a>
+    </div>
+
+    <div class="rbar">
+      {% set unrated = rows | selectattr('fit', 'none') | list | length %}
+      <div class="rcount"><strong>{{ rows | length }}</strong> job{{ '' if rows | length == 1 else 's' }}{% if unrated %}<span class="muted"> · {{ unrated }} not rated by Claude</span>{% endif %}</div>
+      {% if q %}<a class="fchip" href="{{ query(**dict(base, q='')) }}">“{{ q }}” ✕</a>{% endif %}
+      {% if where %}<a class="fchip" href="{{ query(**dict(base, where='')) }}">{{ where }} ✕</a>{% endif %}
+      <span class="spacer"></span>
+      <label class="sort-sel">Sort by
+        <select onchange="location.href = this.value" aria-label="Sort by">
+          {% for key, label in [("match", "Best for you"), ("fit", "Claude fit"), ("score", "Keyword match"), ("newest", "Newly found"), ("posted", "Posted date"), ("salary", "Salary"), ("title", "Job title"), ("company", "Company")] %}
+          <option value="{{ query(**dict(base, sort=key)) }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="seg-icons" role="group" aria-label="Density">
+        <button type="button" class="secondary icon" data-density="comfortable" title="Cards with details"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></button>
+        <button type="button" class="secondary icon" data-density="compact" title="One line per job"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+      <details class="hide-menu actions-menu">
+        <summary class="btn secondary">Actions ▾</summary>
+        <div class="menu">
+          {% if unrated and not rating_tasks %}
+          <form method="post" action="/rate">
+            {% for k, v in [("status", status), ("only_last", only_last), ("unseen", unseen), ("salary", salary)] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+            <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+            <button type="submit">✦ Rate {{ [unrated, prefs.rate_top] | min }} with Claude</button>
+          </form>
+          {% endif %}
+          {% if unseen_total %}
+          <form method="post" action="/seen"><input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}"><button type="submit">✓ Mark all as seen</button></form>
+          {% endif %}
+          {% if not check_tasks %}<form method="post" action="/check/open"><button type="submit" title="Closed postings move to the Closed tab">⟳ Check they're still open</button></form>{% endif %}
+          <a href="/export.csv{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">⤓ Export CSV</a>
+          <a href="/export.xlsx{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">⤓ Export XLSX</a>
+        </div>
+      </details>
+    </div>
+    {% for t in check_tasks %}{{ m.running(t) }}{% endfor %}
+    {% for t in rating_tasks %}{{ m.running(t) }}{% endfor %}
+
+    {% if not rows %}
+    <div class="empty">
+      <div class="empty-ico"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+      <strong>{% if q or where %}No jobs match these filters{% elif unseen %}Nothing new since you last looked{% elif status == 'closed' %}No closed postings{% else %}No jobs yet{% endif %}</strong>
+      <p class="muted">{% if q or where %}Try fewer words or another work mode.{% else %}Run a search to fill this list.{% endif %}</p>
+    </div>
+    {% else %}
+    <div class="job-list" id="job-list">
+    {% for r in rows %}{% set j = r.job %}{% set seen_co = companies_seen.get(' '.join(j.company.lower().split())) %}
+      <article class="jcard {{ 'unseen' if not r.seen }}">
+        <div class="jlogo" style="--h:{{ j.company | hue }}" aria-hidden="true">{{ j.company | initials }}</div>
+        <div class="jmain">
+          <div class="jtitle">
+            <a href="/job/{{ j.id }}" class="stretched">{{ j.title }}</a>
+            {% if not r.seen %}<span class="pill new">NEW</span>{% endif %}
+            {% if r.status != 'new' %}{{ m.stage_pill(r.status) }}{% endif %}
+            {% if r.closed_at %}<span class="pill closed-pill" title="{{ r.closed_reason }}">closed</span>{% endif %}
+          </div>
+          <div class="jmeta">
+            <span class="co">{{ j.company }}</span>
+            {% if j.location %}<span class="sep">•</span><span>{{ j.location | truncate(48) }}</span>{% endif %}
+            {% if j.remote %}<span class="mode m-remote">Remote</span>{% elif 'hybrid' in j.tags %}<span class="mode m-hybrid">Hybrid</span>{% endif %}
+            <span class="sep">•</span><span class="src">{{ j.source }}</span>
+            {% if seen_co %}<span class="pill company-note" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
+          </div>
+          <div class="jdetail">
+            {% if r.fit_data and (r.fit_data.strong or r.fit_data.missing) %}
+            <div class="jtags">
+              {% for x in r.fit_data.strong %}<span class="tag yes">✓ {{ x }}</span>{% endfor %}
+              {% for x in r.fit_data.missing %}<span class="tag gap">✗ {{ x }}</span>{% endfor %}
+            </div>
+            {% elif r.fit_data and r.fit_data.verdict %}<div class="jverdict">{{ r.fit_data.verdict }}</div>{% endif %}
+            {% if r.taste_data %}<div title="Learned from what you hid and liked">{{ m.taste_chips(r.taste_data) }}</div>{% endif %}
+            {% if r.status == 'hidden' and r.feedback and r.feedback in hide_reasons %}<span class="pill">hidden: {{ hide_reasons[r.feedback].split(' (')[0] | lower }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="jside">
+          <div class="jsal">{% if j.salary %}{{ j.salary }}{% if r.salary_month %}<small>{{ r.salary_month | monthly }}</small>{% endif %}{% else %}<span class="muted">No salary given</span>{% endif %}</div>
+          <div class="jscores">
+            {% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% else %}<span class="fitb f-lo" title="Not rated by Claude yet">–</span>{% endif %}
+            <span class="kw {{ 's-hi' if r.score >= 60 else 's-mid' if r.score >= 30 else 's-lo' }}" title="Keyword match: how many of your skills it mentions"><span class="ring" style="--v:{{ r.score }}"><b>{{ r.score }}</b></span></span>
+          </div>
+          <div class="jwhen muted">{% if j.posted_at %}posted {{ j.posted_at[:10] }} · {% endif %}found {{ r.first_seen | ago }}</div>
+        </div>
+        <div class="jact">
+          <form method="post" action="/job/{{ j.id }}/status">
+            <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+            <button class="secondary icon like {{ 'on' if r.status == 'liked' }}" name="status" value="liked" title="Like" aria-label="Like"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg></button>
+          </form>
+          {{ m.hide_menu(j.id, hide_reasons, request.url.path ~ '?' ~ request.url.query) }}
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<div class="lower">
+{% if learned.hidden or learned.liked or blocked %}
+<div class="card" id="feedback">
+  <div class="section-title"><h2>What your feedback taught</h2>
+    <span class="muted">From {{ learned.hidden }} hidden and {{ learned.liked }} liked/applied jobs · used by the “for you” sort and Claude's ratings</span></div>
+  {% if learned.reasons %}<div class="row muted">Hidden because: {% for label, n in learned.reasons %}<span class="pill">{{ label.split(' (')[0] }} · {{ n }}</span>{% endfor %}</div>{% endif %}
+  <div class="two" style="margin-top:8px">
+    <div><h3>You tend to avoid</h3>{% if learned.dislikes %}{% for x in learned.dislikes %}<span class="taste down">↓ {{ x }}</span>{% endfor %}{% else %}<p class="muted">Nothing clear yet - pick a reason when you hide a job.</p>{% endif %}</div>
+    <div><h3>You tend to like</h3>{% if learned.likes %}{% for x in learned.likes %}<span class="taste up">↑ {{ x }}</span>{% endfor %}{% else %}<p class="muted">Nothing clear yet - like jobs or move them into the pipeline.</p>{% endif %}</div>
+  </div>
+  {% for tip in feedback_tips %}
+  <div class="tile idea row" style="margin-top:10px;justify-content:space-between">
+    <span>💡 {{ tip.text }}</span>
+    <span class="row">
+      <form method="post" action="/feedback/apply" style="display:inline">
+        <input type="hidden" name="kind" value="{{ tip.kind }}"><input type="hidden" name="value" value="{{ tip.value }}"><input type="hidden" name="suggestion_id" value="{{ tip.id }}">
+        <button type="submit">Apply to “{{ current.name }}”</button>
+      </form>
+      <form method="post" action="/feedback/dismiss" style="display:inline"><input type="hidden" name="suggestion_id" value="{{ tip.id }}"><button class="secondary" type="submit">No thanks</button></form>
+    </span>
+  </div>
+  {% endfor %}
+  {% if blocked %}
+  <div class="row muted" style="margin-top:10px">Blocked companies (never shown):
+    {% for c in blocked %}<form method="post" action="/feedback/unblock" style="display:inline"><input type="hidden" name="company" value="{{ c }}"><button class="secondary" type="submit" title="Unblock {{ c }} and show its jobs again" style="padding:3px 10px">{{ c }} ✕</button></form>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card" id="auto">
+  <div class="section-title"><h2>Schedules & Claude rating</h2></div>
+  <table class="fit">
+    <tr><th>Search</th><th>Schedule</th><th>Last run</th><th>Next</th><th></th></tr>
+    {% for s in searches %}
+    <tr>
+      <td><a href="/?search={{ s.id }}"><strong>{{ s.name }}</strong></a></td>
+      <td>{% if s.auto %}every {{ '%g' % s.every_hours }} h{% if s.notify %} · notifies{% endif %}{% else %}<span class="muted">off</span>{% endif %}</td>
+      <td>{% if running.get(s.id) %}<span class="pill new">running…</span>{% else %}{{ s.last_run | ago }}{% if s.last_run %} · {{ s.last_new }} new{% endif %}{% endif %}</td>
+      <td class="muted">{{ next_runs.get(s.id, '–') }}</td>
+      <td><form method="post" action="/searches/{{ s.id }}/run"><button class="secondary" type="submit" {% if running.get(s.id) %}disabled{% endif %}>Run now</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <form method="post" action="/prefs" class="row" style="margin-top:12px">
+    <label class="check"><input type="checkbox" name="rate_after_search" value="true" {% if prefs.rate_after_search %}checked{% endif %}> After each search, Claude rates the top</label>
+    <input type="number" name="rate_top" min="1" max="500" value="{{ prefs.rate_top }}" style="width:80px;padding:6px 10px" aria-label="number of jobs">
+    <span>new jobs for fit (1-10)</span>
+    <label class="check"><input type="checkbox" name="pack_after_search" value="true" {% if prefs.pack_after_search %}checked{% endif %}> and makes a full application pack for up to</label>
+    <input type="number" name="pack_max" min="1" max="20" value="{{ prefs.pack_max }}" style="width:70px;padding:6px 10px" aria-label="packs per search">
+    <span>jobs with keyword score ≥</span>
+    <input type="number" name="pack_min_score" min="0" max="100" value="{{ prefs.pack_min_score }}" style="width:70px;padding:6px 10px" aria-label="minimum keyword score">
+    <label class="check"><input type="checkbox" name="check_open" value="true" {% if prefs.check_open %}checked{% endif %}> and checks that saved jobs you haven't applied to are still open</label>
+    <button class="secondary" type="submit">Save</button>
+  </form>
+  {% for t in rating_tasks %}{{ m.running(t) }}{% endfor %}
+  {% for t in pack_tasks %}{{ m.running(t) }}{% endfor %}
+  {% if packs %}
+  <h3 style="margin:14px 0 6px">Ready application packs</h3>
+  <table class="fit">
+    <tr><th>Job</th><th>Fit</th><th>Made</th><th>Files</th></tr>
+    {% for p in packs %}
+    <tr>
+      <td><a href="/job/{{ p.job.id }}"><strong>{{ p.job.title }}</strong></a> · {{ p.job.company }}</td>
+      <td>{{ p.fit }}/10</td>
+      <td class="muted">{{ p.made_at | ago }}</td>
+      <td><a href="/cv/{{ p.cv_id }}">CV</a> · <a href="/letter/{{ p.letter_id }}">letter</a> · <a href="/prep/{{ p.job.id }}">prep</a> · <span class="muted">{{ p.dir }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <p class="muted" style="margin:6px 0 0">Schedules run while the app is open; for runs while it is closed, see the README (cron). Ratings use your Claude plan; each batch of 5 jobs is one call. A pack is about 5 calls: fit check, GitHub review with project ideas, tailored CV, cover letter and interview prep, saved together in data/packs/.</p>
+</div>
+</div>
+
+<dialog class="settings" id="search-settings" {% if settings_open %}data-open{% endif %}>
+  <div class="dlg-head">
+    <div><h2>Search settings</h2><span class="muted">{{ 'New search' if not current.id else '“' ~ current.name ~ '”' }} · what to look for, where, and when to run</span></div>
+    <button class="secondary icon" type="button" data-close-settings aria-label="Close">✕</button>
+  </div>
+  <div class="dlg-body search-card">
   <datalist id="dl-countries">{% for code, name in suggest.countries %}<option value="{{ code }}">{{ name }}</option>{% endfor %}</datalist>
   <datalist id="dl-skills">{% for s in suggest.skills %}<option value="{{ s }}">{% endfor %}</datalist>
   <datalist id="dl-roles">{% for s in suggest.roles %}<option value="{{ s }}">{% endfor %}</datalist>
@@ -175,24 +433,9 @@
       </div>
     </div>
   </form>
+  </div>
+</dialog>
 
-  {% if run %}
-  <div class="running" data-task-id="{{ run.id }}">
-    <span class="spin"></span>
-    <div style="flex:1">
-      <strong>Searching “{{ current.name }}”…</strong> <span class="muted">started <span class="elapsed" data-since="{{ run.started or run.created }}"></span> ago · the list updates when it's done</span>
-      <div class="src-progress">{% for name, v in (run.progress.sources or {}).items() %}<span class="pill {{ '' if v is none else 'err' if v == 'error' else 'ok' }}">{{ name }}{% if v is none %} …{% elif v == 'error' %} ✗{% else %} ✓ {{ v }}{% endif %}</span>{% endfor %}</div>
-    </div>
-  </div>
-  {% elif current.last_run %}
-  <div class="muted" style="margin-top:10px">
-    Last run {{ current.last_run | ago }}: {{ current.last_found }} matching, <strong>{{ current.last_new }} new</strong> ({{ current.last_seconds }}s)
-    {% if current.last_counts %}<details style="display:inline"><summary style="display:inline;cursor:pointer">per source</summary>
-      <div class="src-progress">{% for k, v in current.last_counts.items() %}<span class="pill ok">{{ k }} ✓ {{ v }}</span>{% endfor %}</div></details>{% endif %}
-  </div>
-  {% for e in current.last_errors %}<div class="err" style="margin-top:8px">{{ e }}</div>{% endfor %}
-  {% endif %}
-</div>
 <style>
   .saved-row { margin-bottom:6px; }
   .search-summary { margin:12px 0 4px; padding:10px 14px; border-radius:var(--radius-sm); background:var(--accent-soft); color:var(--accent-soft-ink); font-size:14px; line-height:1.5; }
@@ -263,206 +506,185 @@
   })();
 </script>
 
-<div class="card">
-  <div class="row" style="justify-content:space-between;margin-bottom:14px;gap:12px">
-    <div class="tabs">
-      <a href="/" class="{{ 'on' if not status and not only_last and not unseen and not salary }}">All saved</a>
-      <a href="/?unseen=1" class="{{ 'on' if unseen }}">Not seen yet{% if unseen_total %} ({{ unseen_total }}){% endif %}</a>
-      {% if current.last_job_ids %}<a href="/?only_last=1" class="{{ 'on' if only_last }}">Last search</a>{% endif %}
-      <a href="/?salary=1" class="{{ 'on' if salary and not status }}">With salary</a>
-      <a href="/?status=liked" class="{{ 'on' if status == 'liked' }}">Liked</a>
-      <a href="/pipeline">Applied →</a>
-      <a href="/?status=hidden" class="{{ 'on' if status == 'hidden' }}">Hidden</a>
-      <a href="/?status=closed" class="{{ 'on' if status == 'closed' }}" title="Postings that look closed or expired">Closed{% if closed_total %} ({{ closed_total }}){% endif %}</a>
-    </div>
-    <div class="row muted">
-      Sort
-      <div class="tabs small">
-      {% for key, label in [("match", "for you"), ("fit", "Claude fit"), ("score", "keywords"), ("title", "job title"), ("newest", "newly found"), ("posted", "posted"), ("salary", "salary"), ("company", "company")] %}
-        <a href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key) }}" class="{{ 'on' if sort == key }}">{{ label }}</a>
-      {% endfor %}
-      </div>
-    </div>
-  </div>
-  <div class="row muted" style="margin:-4px 0 12px">
-    {% set unrated = rows | selectattr('fit', 'none') | list | length %}
-    <span>{{ rows | length }} jobs{% if unrated %} · {{ unrated }} not rated by Claude yet{% endif %}</span>
-    {% if unrated and not rating_tasks %}
-    <form method="post" action="/rate" style="display:inline">
-      {% for k, v in [("status", status), ("only_last", only_last), ("unseen", unseen), ("salary", salary)] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-      <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-      <button class="secondary" type="submit">Rate {{ [unrated, prefs.rate_top] | min }} with Claude</button>
-    </form>
-    {% endif %}
-    <span style="flex:1"></span>
-    <div class="tabs small" role="group" aria-label="Row density">
-      <a href="#" data-density="comfortable" title="Show fit notes and what your feedback taught on every row">Comfortable</a>
-      <a href="#" data-density="compact" title="One line per job">Compact</a>
-    </div>
-    {% if unseen_total %}
-    <form method="post" action="/seen" style="display:inline">
-      <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-      <button class="secondary" type="submit">Mark all as seen</button>
-    </form>
-    {% endif %}
-    {% if check_tasks %}{% for t in check_tasks %}{{ m.running(t) }}{% endfor %}
-    {% else %}<form method="post" action="/check/open" style="display:inline"><button class="secondary" type="submit" title="Checks the jobs you haven't applied to yet against their job boards; closed ones move to the Closed tab">Check they're still open</button></form>{% endif %}
-    <a class="btn secondary" href="/export.csv{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">Export CSV</a>
-    <a class="btn secondary" href="/export.xlsx{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">Export XLSX</a>
-  </div>
-  {% if not rows %}
-    <p class="muted">{% if unseen %}Nothing new since you last looked.{% elif status == 'closed' %}No closed postings found.{% else %}No jobs yet - run a search.{% endif %}</p>
-  {% else %}
-  <div class="table-wrap">
-  <table class="jobs" id="jobs-table">
-    <thead><tr>
-      {% for key, label in [("fit", "Fit"), ("score", "Keywords"), ("title", "Job"), ("salary", "Salary")] %}
-      {% set on = sort == key %}
-      <th aria-sort="{{ ('ascending' if dir == 'asc' else 'descending') if on else 'none' }}">
-        <a class="th-sort {{ 'on' if on }}" href="{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=key, dir=('asc' if dir == 'desc' else 'desc') if on else '') }}"
-           title="Sort by {{ label | lower }}{{ ' (click again to reverse)' if on }}">{{ label }} <span class="arrow">{{ ('▲' if dir == 'asc' else '▼') if on else '↕' }}</span></a>
-      </th>
-      {% endfor %}
-      <th>Location</th><th>Source</th><th></th>
-    </tr></thead>
-    <tbody>
-    {% for r in rows %}{% set j = r.job %}{% set seen_co = companies_seen.get(' '.join(j.company.lower().split())) %}
-    <tr class="{{ 'unseen' if not r.seen }}">
-      <td>{% if r.fit is not none %}{{ m.fit_badge(r.fit, r.fit_data) }}{% else %}<span class="muted" title="Not rated by Claude yet">–</span>{% endif %}</td>
-      <td class="score {{ 's-hi' if r.score >= 60 else 's-mid' if r.score >= 30 else 's-lo' }}"><span class="ring" style="--v:{{ r.score }}"><b>{{ r.score }}</b></span></td>
-      <td class="job-cell" title="{{ j.title }} · {{ j.company }}">
-        {% if not r.seen %}<span class="pill new">NEW</span>{% endif %}
-        <a href="/job/{{ j.id }}"><strong>{{ j.title }}</strong></a><br class="detail">
-        <span class="muted"><span class="compact-only"> · </span>{{ j.company }}<span class="detail">{% if j.posted_at %} · posted {{ j.posted_at[:10] }}{% endif %} · found {{ r.first_seen | ago }}</span></span>
-        {% if r.status != 'new' %}{{ m.stage_pill(r.status) }}{% endif %}
-        {% if r.closed_at %}<span class="pill closed-pill" title="{{ r.closed_reason }}">closed</span>{% endif %}
-        {% if seen_co %}<span class="pill company-note detail" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
-        {% if r.fit_data and (r.fit_data.strong or r.fit_data.missing) %}
-        <div class="fitline detail">{% if r.fit_data.strong %}<span class="yes">✓ {{ r.fit_data.strong | join(', ') }}</span>{% endif %}{% if r.fit_data.strong and r.fit_data.missing %} · {% endif %}{% if r.fit_data.missing %}<span class="gap">✗ {{ r.fit_data.missing | join(', ') }}</span>{% endif %}</div>
-        {% elif r.fit_data and r.fit_data.verdict %}<div class="fitline muted detail">{{ r.fit_data.verdict }}</div>{% endif %}
-        {% if r.taste_data %}<div class="detail" title="Learned from what you hid and liked">{{ m.taste_chips(r.taste_data) }}</div>{% endif %}
-        {% if r.status == 'hidden' and r.feedback and r.feedback in hide_reasons %}<span class="pill">hidden: {{ hide_reasons[r.feedback].split(' (')[0] | lower }}</span>{% endif %}
-      </td>
-      <td class="salary">{% if j.salary %}{{ j.salary }}{% if r.salary_month %}<div class="muted detail" style="font-weight:500">{{ r.salary_month | monthly }}</div>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
-      <td class="loc-cell">{{ j.location | truncate(60) }}{% if j.remote %} <span class="pill detail">remote</span>{% endif %}{% if 'hybrid' in j.tags %} <span class="pill detail">hybrid</span>{% endif %}</td>
-      <td><span class="pill">{{ j.source }}</span></td>
-      <td style="white-space:nowrap">
-        <form method="post" action="/job/{{ j.id }}/status" style="display:inline">
-          <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-          <button class="secondary icon like" name="status" value="liked" title="Like" aria-label="Like">♥</button>
-        </form>
-        {{ m.hide_menu(j.id, hide_reasons, request.url.path ~ '?' ~ request.url.query) }}
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  {% endif %}
-</div>
-
-{% if learned.hidden or learned.liked or blocked %}
-<div class="card" id="feedback">
-  <div class="section-title"><h2>What your feedback taught</h2>
-    <span class="muted">From {{ learned.hidden }} hidden and {{ learned.liked }} liked/applied jobs · used by the “for you” sort and Claude's ratings</span></div>
-  {% if learned.reasons %}<div class="row muted">Hidden because: {% for label, n in learned.reasons %}<span class="pill">{{ label.split(' (')[0] }} · {{ n }}</span>{% endfor %}</div>{% endif %}
-  <div class="two" style="margin-top:8px">
-    <div><h3>You tend to avoid</h3>{% if learned.dislikes %}{% for x in learned.dislikes %}<span class="taste down">↓ {{ x }}</span>{% endfor %}{% else %}<p class="muted">Nothing clear yet - pick a reason when you hide a job.</p>{% endif %}</div>
-    <div><h3>You tend to like</h3>{% if learned.likes %}{% for x in learned.likes %}<span class="taste up">↑ {{ x }}</span>{% endfor %}{% else %}<p class="muted">Nothing clear yet - like jobs or move them into the pipeline.</p>{% endif %}</div>
-  </div>
-  {% for tip in feedback_tips %}
-  <div class="tile idea row" style="margin-top:10px;justify-content:space-between">
-    <span>💡 {{ tip.text }}</span>
-    <span class="row">
-      <form method="post" action="/feedback/apply" style="display:inline">
-        <input type="hidden" name="kind" value="{{ tip.kind }}"><input type="hidden" name="value" value="{{ tip.value }}"><input type="hidden" name="suggestion_id" value="{{ tip.id }}">
-        <button type="submit">Apply to “{{ current.name }}”</button>
-      </form>
-      <form method="post" action="/feedback/dismiss" style="display:inline"><input type="hidden" name="suggestion_id" value="{{ tip.id }}"><button class="secondary" type="submit">No thanks</button></form>
-    </span>
-  </div>
-  {% endfor %}
-  {% if blocked %}
-  <div class="row muted" style="margin-top:10px">Blocked companies (never shown):
-    {% for c in blocked %}<form method="post" action="/feedback/unblock" style="display:inline"><input type="hidden" name="company" value="{{ c }}"><button class="secondary" type="submit" title="Unblock {{ c }} and show its jobs again" style="padding:3px 10px">{{ c }} ✕</button></form>{% endfor %}
-  </div>
-  {% endif %}
-</div>
-{% endif %}
-
-<div class="card" id="auto">
-  <div class="section-title"><h2>Schedules & Claude rating</h2></div>
-  <table class="fit">
-    <tr><th>Search</th><th>Schedule</th><th>Last run</th><th>Next</th><th></th></tr>
-    {% for s in searches %}
-    <tr>
-      <td><a href="/?search={{ s.id }}"><strong>{{ s.name }}</strong></a></td>
-      <td>{% if s.auto %}every {{ '%g' % s.every_hours }} h{% if s.notify %} · notifies{% endif %}{% else %}<span class="muted">off</span>{% endif %}</td>
-      <td>{% if running.get(s.id) %}<span class="pill new">running…</span>{% else %}{{ s.last_run | ago }}{% if s.last_run %} · {{ s.last_new }} new{% endif %}{% endif %}</td>
-      <td class="muted">{{ next_runs.get(s.id, '–') }}</td>
-      <td><form method="post" action="/searches/{{ s.id }}/run"><button class="secondary" type="submit" {% if running.get(s.id) %}disabled{% endif %}>Run now</button></form></td>
-    </tr>
-    {% endfor %}
-  </table>
-  <form method="post" action="/prefs" class="row" style="margin-top:12px">
-    <label class="check"><input type="checkbox" name="rate_after_search" value="true" {% if prefs.rate_after_search %}checked{% endif %}> After each search, Claude rates the top</label>
-    <input type="number" name="rate_top" min="1" max="500" value="{{ prefs.rate_top }}" style="width:80px;padding:6px 10px" aria-label="number of jobs">
-    <span>new jobs for fit (1-10)</span>
-    <label class="check"><input type="checkbox" name="pack_after_search" value="true" {% if prefs.pack_after_search %}checked{% endif %}> and makes a full application pack for up to</label>
-    <input type="number" name="pack_max" min="1" max="20" value="{{ prefs.pack_max }}" style="width:70px;padding:6px 10px" aria-label="packs per search">
-    <span>jobs with keyword score ≥</span>
-    <input type="number" name="pack_min_score" min="0" max="100" value="{{ prefs.pack_min_score }}" style="width:70px;padding:6px 10px" aria-label="minimum keyword score">
-    <label class="check"><input type="checkbox" name="check_open" value="true" {% if prefs.check_open %}checked{% endif %}> and checks that saved jobs you haven't applied to are still open</label>
-    <button class="secondary" type="submit">Save</button>
-  </form>
-  {% for t in rating_tasks %}{{ m.running(t) }}{% endfor %}
-  {% for t in pack_tasks %}{{ m.running(t) }}{% endfor %}
-  {% if packs %}
-  <h3 style="margin:14px 0 6px">Ready application packs</h3>
-  <table class="fit">
-    <tr><th>Job</th><th>Fit</th><th>Made</th><th>Files</th></tr>
-    {% for p in packs %}
-    <tr>
-      <td><a href="/job/{{ p.job.id }}"><strong>{{ p.job.title }}</strong></a> · {{ p.job.company }}</td>
-      <td>{{ p.fit }}/10</td>
-      <td class="muted">{{ p.made_at | ago }}</td>
-      <td><a href="/cv/{{ p.cv_id }}">CV</a> · <a href="/letter/{{ p.letter_id }}">letter</a> · <a href="/prep/{{ p.job.id }}">prep</a> · <span class="muted">{{ p.dir }}</span></td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-  <p class="muted" style="margin:6px 0 0">Schedules run while the app is open; for runs while it is closed, see the README (cron). Ratings use your Claude plan; each batch of 5 jobs is one call. A pack is about 5 calls: fit check, GitHub review with project ideas, tailored CV, cover letter and interview prep, saved together in data/packs/.</p>
-</div>
-
 <style>
-  .compact-only { display:none; }
+  /* hero */
+  .hero { display:grid; grid-template-columns:minmax(0, 1.6fr) minmax(280px, 1fr); gap:28px; align-items:center; padding:34px 36px; margin-bottom:22px;
+    border-radius:22px; background:var(--hero); border:1px solid var(--hero-line); position:relative; overflow:hidden; }
+  .hero h1 { font-size:clamp(28px, 3.4vw, 42px); line-height:1.08; letter-spacing:-.035em; font-weight:800; margin:10px 0 10px; }
+  .hero .grad { background:linear-gradient(90deg, #6d5efc, #a78bfa 55%, #38bdf8); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .hero .lead { color:var(--muted); font-size:15.5px; margin:0 0 20px; max-width:620px; }
+  .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--accent-soft-ink); background:color-mix(in srgb, var(--card) 70%, transparent);
+    border:1px solid var(--hero-line); padding:4px 12px; border-radius:999px; }
+  .eyebrow .dot { width:7px; height:7px; border-radius:50%; background:var(--good); }
+  .eyebrow .dot.live { background:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); animation:pulse 1.4s infinite; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 7px transparent; } }
+  .hero-search { display:flex; gap:0; align-items:stretch; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px; box-shadow:var(--shadow-lg); max-width:720px; }
+  .hs-field { display:flex; align-items:center; gap:8px; margin:0; padding:0 12px; color:var(--muted); font-weight:400; font-size:14px; }
+  .hs-field svg { width:17px; height:17px; flex:none; }
+  .hs-q { flex:1; }
+  .hs-where { border-left:1px solid var(--line); }
+  .hero-search input[type=search], .hero-search select { border:0; background:transparent; box-shadow:none !important; padding:10px 2px; font-size:14.5px; color:var(--ink); }
+  .hero-search select { width:auto; cursor:pointer; }
+  .hero-search button { padding:10px 22px; border-radius:10px; }
+  .hero-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .hero-actions form { margin:0; }
+  button.glow { box-shadow:0 10px 24px -10px var(--accent); }
+  .hero .running { margin-top:14px; background:color-mix(in srgb, var(--card) 70%, transparent); }
+  .hero-stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .hstat { display:flex; flex-direction:column; gap:2px; padding:14px 16px; border-radius:14px; color:inherit;
+    background:color-mix(in srgb, var(--card) 78%, transparent); border:1px solid var(--hero-line); backdrop-filter:blur(8px); transition:transform .12s, border-color .12s; }
+  .hstat:hover { text-decoration:none; transform:translateY(-1px); border-color:var(--accent); }
+  .hstat.wide { grid-column:1 / -1; }
+  .hstat .k { font-size:12px; color:var(--muted); font-weight:550; }
+  .hstat .v { font-size:24px; font-weight:750; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .hstat .sub { font-size:11.5px; color:var(--muted); }
+  .hstat.warn .v { color:var(--warn); }
+  @media (max-width:1100px) { .hero { grid-template-columns:1fr; } .hero-stats { grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); } .hstat.wide { grid-column:auto; } }
+  @media (max-width:640px) { .hero { padding:22px 18px; border-radius:16px; } .hero-search { flex-wrap:wrap; } .hs-where { border-left:0; border-top:1px solid var(--line); flex:1; } .hero-search button { width:100%; } }
+
+  /* layout */
+  .jobs-layout { display:grid; grid-template-columns:270px minmax(0, 1fr); gap:22px; align-items:start; }
+  @media (max-width:1000px) { .jobs-layout { grid-template-columns:1fr; } .filters { position:static !important; } }
+  .filters { position:sticky; top:calc(var(--head-h, 57px) + 16px); display:flex; flex-direction:column; gap:14px; }
+  .fcard { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+  .fhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .fhead h3 { margin:0; font-size:16px; } .fhead a { font-size:12.5px; }
+  .fgroup { border-top:1px solid var(--line); padding:12px 0 6px; } .fgroup:first-of-type { border-top:0; }
+  .fgroup h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:650; }
+  .fopt { display:flex; align-items:center; gap:10px; padding:6px 6px; border-radius:8px; color:var(--ink); font-size:14px; }
+  .fopt:hover { background:var(--chip); text-decoration:none; }
+  .fopt .radio, .fopt .box { width:16px; height:16px; border:1.6px solid var(--line-strong); flex:none; display:grid; place-items:center; }
+  .fopt .radio { border-radius:50%; } .fopt .box { border-radius:5px; }
+  .fopt.on .radio { border-color:var(--accent); box-shadow:inset 0 0 0 3.5px var(--card); background:var(--accent); }
+  .fopt.on .box { border-color:var(--accent); background:var(--accent); }
+  .fopt.on .box::after { content:"✓"; color:#fff; font-size:11px; font-weight:800; }
+  .fsearch { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; color:var(--ink); font-size:14px; }
+  .fsearch:hover { background:var(--chip); text-decoration:none; }
+  .fsearch.on { background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:600; }
+  .fsearch .meta { font-size:11.5px; color:var(--muted); white-space:nowrap; }
+  .fsearch .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fsearch.add { color:var(--accent); font-weight:550; }
+  .fchips { display:flex; flex-wrap:wrap; }
+  .promo { border-radius:var(--radius); padding:18px; background:var(--hero); border:1px solid var(--hero-line); text-align:center; }
+  .promo-ico { width:44px; height:44px; border-radius:12px; margin:0 auto 10px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg, #6d5efc, #a78bfa); box-shadow:0 10px 20px -10px #6d5efc; }
+  .promo strong { display:block; font-size:15px; margin-bottom:4px; }
+  .promo p { font-size:13px; color:var(--muted); margin:0 0 12px; }
+
+  /* results */
+  .rtabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:12px; overflow-x:auto; scrollbar-width:none; }
+  .rtabs a { padding:10px 14px; color:var(--muted); font-weight:550; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; display:inline-flex; gap:6px; align-items:center; }
+  .rtabs a:hover { color:var(--ink); text-decoration:none; }
+  .rtabs a.on { color:var(--ink); font-weight:650; border-bottom-color:var(--accent); }
+  .rtabs .tb { font-size:11.5px; font-weight:650; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .rbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .rcount { font-size:15px; }
+  .fchip { font-size:12.5px; padding:3px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:550; }
+  .fchip:hover { text-decoration:none; filter:brightness(.97); }
+  .rbar .spacer { flex:1; }
+  .sort-sel { display:flex; align-items:center; gap:8px; margin:0; font-size:13px; color:var(--muted); font-weight:500; }
+  .sort-sel select { width:auto; padding:7px 30px 7px 12px; font-size:13.5px; font-weight:550; }
+  .seg-icons { display:flex; gap:4px; }
+  .seg-icons button.on { background:var(--accent-soft); color:var(--accent-soft-ink); border-color:var(--accent); }
+  .actions-menu > summary.btn { padding:7px 12px; font-size:13.5px; }
+  .actions-menu .menu form { margin:0; }
+  .actions-menu .menu a { padding:7px 12px; font-size:13.5px; color:var(--ink); font-weight:500; }
+  .actions-menu .menu a:hover { background:var(--chip); text-decoration:none; }
+
+  .job-list { display:flex; flex-direction:column; gap:10px; }
+  .jcard { position:relative; display:grid; grid-template-columns:52px minmax(0, 1fr) auto auto; gap:16px; align-items:start; padding:16px 18px;
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); transition:border-color .12s, box-shadow .12s, transform .12s; }
+  .jcard:hover { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow:var(--shadow-lg); }
+  .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent), var(--shadow); }
+  .jlogo { width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-weight:800; font-size:17px; letter-spacing:-.02em;
+    color:hsl(var(--h) 70% 42%); background:hsl(var(--h) 85% 95%); border:1px solid hsl(var(--h) 60% 88%); }
+  :root[data-theme="dark"] .jlogo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jlogo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); } }
+  .jtitle { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; }
+  .jtitle a { font-size:16px; font-weight:700; color:var(--ink); letter-spacing:-.01em; }
+  .jtitle .pill { margin:0; }
+  a.stretched::after { content:""; position:absolute; inset:0; border-radius:inherit; }
+  .jmeta { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; color:var(--muted); font-size:13.5px; margin-top:3px; }
+  .jmeta .co { color:var(--ink); font-weight:550; }
+  .jmeta .sep { opacity:.5; }
+  .jmeta .src { font-size:12px; }
+  .jmeta .pill { margin:0; }
+  .mode { font-size:12px; font-weight:600; padding:1px 9px; border-radius:999px; display:inline-flex; align-items:center; gap:5px; }
+  .mode::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .m-remote { background:var(--good-soft); color:var(--good); } .m-hybrid { background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .jdetail:empty { display:none; }
+  .jtags { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
+  .tag { font-size:12px; font-weight:550; padding:2px 9px; border-radius:7px; background:var(--chip); color:var(--ink); }
+  .tag.yes { background:var(--good-soft); color:var(--good); } .tag.gap { background:var(--bad-soft); color:var(--bad); }
+  .jverdict { font-size:13px; color:var(--muted); margin-top:7px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:760px; }
+  .jside { display:flex; flex-direction:column; align-items:flex-end; gap:6px; text-align:right; min-width:150px; }
+  .jsal { font-weight:700; font-size:14.5px; color:var(--ink); white-space:nowrap; }
+  .jsal small { display:block; font-weight:500; font-size:12px; color:var(--good); }
+  .jsal .muted { font-weight:500; font-size:12.5px; }
+  .jscores { display:flex; align-items:center; gap:8px; }
+  .kw .ring { display:inline-grid; place-items:center; width:36px; height:36px; border-radius:50%; font-size:11.5px; font-weight:700;
+    background:conic-gradient(currentColor calc(var(--v) * 1%), var(--line) 0); position:relative; }
+  .kw .ring::before { content:""; position:absolute; inset:3.5px; border-radius:50%; background:var(--card); }
+  .kw .ring b { position:relative; }
+  .jwhen { font-size:12px; white-space:nowrap; }
+  .jact { display:flex; flex-direction:column; gap:6px; position:relative; z-index:2; }
+  .jact form { margin:0; }
+  .jact button.icon, .jact summary.icon { width:34px; height:34px; border-radius:10px; }
+  button.like.on { color:#e11d48; border-color:#e11d48; }
+  .empty { text-align:center; padding:48px 20px; background:var(--card); border:1px dashed var(--line-strong); border-radius:var(--radius); }
+  .empty-ico { width:56px; height:56px; border-radius:16px; margin:0 auto 12px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); }
+  .empty strong { display:block; font-size:16px; margin-bottom:4px; }
+  @media (max-width:760px) {
+    .jcard { grid-template-columns:44px minmax(0, 1fr) auto; }
+    .jlogo { width:44px; height:44px; font-size:15px; }
+    .jside { grid-column:2 / -1; align-items:flex-start; text-align:left; flex-direction:row; flex-wrap:wrap; align-items:center; min-width:0; }
+    .jact { grid-row:1; grid-column:3; flex-direction:row; }
+  }
+  /* compact: one line per job */
+  .job-list.compact { gap:0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); }
+  .job-list.compact .jcard { align-items:center; border:0; border-bottom:1px solid var(--line); border-radius:0; box-shadow:none; padding:9px 14px; grid-template-columns:34px minmax(0, 1fr) auto auto; gap:12px; }
+  .job-list.compact .jcard:last-child { border-bottom:0; }
+  .job-list.compact .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent); }
+  .job-list.compact .jlogo { width:34px; height:34px; border-radius:9px; font-size:12px; }
+  .job-list.compact .jdetail, .job-list.compact .jwhen, .job-list.compact .jsal small { display:none; }
+  .job-list.compact .jtitle a { font-size:14.5px; }
+  .job-list.compact .jmeta { margin-top:0; font-size:12.5px; }
+  .job-list.compact .jside { flex-direction:row; align-items:center; min-width:0; gap:12px; }
+  .job-list.compact .kw .ring { width:30px; height:30px; font-size:10.5px; }
+  .job-list.compact .jact { flex-direction:row; }
+  .job-list.compact .jact button.icon, .job-list.compact .jact summary.icon { width:30px; height:30px; }
   .pill.closed-pill { background:var(--bad-soft); color:var(--bad); }
-  table.jobs.compact td { padding:6px 10px; vertical-align:middle; }
-  table.jobs.compact .detail { display:none; }
-  table.jobs.compact .compact-only { display:inline; }
-  table.jobs.compact td.score span.ring { width:30px; height:30px; font-size:11px; }
-  table.jobs.compact td.score span.ring::before { inset:3px; }
-  table.jobs.compact .pill { margin-bottom:0; }
-  table.jobs.compact button.icon { width:28px; height:28px; }
-  table.jobs.compact td.job-cell { width:50%; max-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  table.jobs.compact td.loc-cell { max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .lower { margin-top:26px; display:grid; gap:0; }
+
+  /* search settings dialog */
+  dialog.settings { width:min(980px, calc(100vw - 32px)); max-height:calc(100vh - 48px); padding:0; border:1px solid var(--line); border-radius:20px; background:var(--card); color:var(--ink); box-shadow:0 30px 80px -20px rgba(0,0,0,.5); }
+  dialog.settings::backdrop { background:rgba(8,8,20,.5); backdrop-filter:blur(3px); }
+  dialog.settings[open] { display:flex; flex-direction:column; }
+  .dlg-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:20px 24px 14px; border-bottom:1px solid var(--line); }
+  .dlg-head h2 { margin:0 0 2px; font-size:19px; }
+  .dlg-body { padding:4px 24px 22px; overflow-y:auto; }
 </style>
 <script>
   (() => {
-    const table = document.getElementById("jobs-table");
-    const links = document.querySelectorAll("[data-density]");
+    const list = document.getElementById("job-list");
+    const buttons = document.querySelectorAll("[data-density]");
     let density = "comfortable";
     try { density = localStorage.getItem("jobs-density") || density; } catch (e) {}
     function apply(d) {
-      if (table) table.classList.toggle("compact", d === "compact");
-      links.forEach(a => a.classList.toggle("on", a.dataset.density === d));
+      if (list) list.classList.toggle("compact", d === "compact");
+      buttons.forEach(b => b.classList.toggle("on", b.dataset.density === d));
     }
-    links.forEach(a => a.addEventListener("click", e => {
-      e.preventDefault();
-      apply(a.dataset.density);
-      try { localStorage.setItem("jobs-density", a.dataset.density); } catch (e) {}
+    buttons.forEach(b => b.addEventListener("click", () => {
+      apply(b.dataset.density);
+      try { localStorage.setItem("jobs-density", b.dataset.density); } catch (e) {}
     }));
     apply(density);
+
+    const dlg = document.getElementById("search-settings");
+    document.querySelectorAll("[data-open-settings]").forEach(b => b.addEventListener("click", () => dlg.showModal()));
+    dlg.querySelector("[data-close-settings]").addEventListener("click", () => dlg.close());
+    dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+    if (dlg.hasAttribute("data-open")) dlg.showModal();
   })();
 </script>
 {% endblock %}

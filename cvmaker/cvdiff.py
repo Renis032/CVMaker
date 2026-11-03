@@ -9,6 +9,7 @@ from difflib import SequenceMatcher
 
 from markupsafe import Markup, escape
 
+from . import claims, cvcheck
 from .models import CVContent, Profile
 
 # Below this similarity a bullet counts as new rather than reworded.
@@ -95,7 +96,7 @@ def _numbers(text: str) -> set[str]:
     return set(re.findall(r"\d+(?:[.,]\d+)?\s?%?\+?", text.replace(" ", " ")))
 
 
-def diff(profile: Profile, cv: CVContent) -> dict:
+def diff(profile: Profile, cv: CVContent, job=None) -> dict:
     base = CVContent.model_validate(profile.model_dump(include=set(CVContent.model_fields)))
     experience = _sections(base.experience, cv.experience, lambda r: _key(r.title, r.company), lambda r: r.bullets)
     projects = _sections(base.projects, cv.projects, lambda p: _key(p.name), lambda p: p.bullets)
@@ -132,5 +133,8 @@ def diff(profile: Profile, cv: CVContent) -> dict:
         "soft_removed": [s for s in base.soft_skills if s not in cv.soft_skills],
         "unsupported_skills": unsupported_skills,
         "unsupported_numbers": unsupported_numbers,
+        # Technologies named anywhere in the CV (not only the skills list) that the profile and GitHub don't show.
+        "unsupported_tech": [f for f in claims.unsupported(cvcheck.cv_text(cv), profile, job=job)
+                             if f["term"].lower() not in {x.lower() for x in unsupported_skills}],
         "counts": counts,
     }

@@ -80,6 +80,20 @@ Requirements: Python 3.12 (installed with `uv`) and Google Chrome. Chrome loads 
     - **Practice** (`/practice/<job>`): answer a question from your prep, a new one from Claude, or one you were asked. You get a 1-10 grade, what worked, what to fix, a stronger answer built from your own facts, and the likely follow-up question.
     - **Debriefs:** after each interview, note the round, interviewers, questions and how it went. Claude says what to improve, what the next round will dig into, suggests new stories for the bank, and drafts a thank-you note. Each debrief is added to the job's timeline.
 19. **Offer review** (job page → Offer): paste or upload (PDF) an offer or contract. Claude lists the terms, flags clauses red/amber/green with what to ask, notes what is missing, compares the pay with salaries the app has seen for similar titles, suggests what to negotiate (with wording), and drafts a reply. It's a careful second read, not legal advice.
+20. **Skill check** (no AI): every technology a tailored CV, cover letter, outreach draft, thank-you note or offer reply mentions must be in your profile (skills, experience, projects, interview facts) or your GitHub repos (language, topics, README, files such as `Dockerfile` or `pom.xml`). Anything else is flagged with the sentence it's in, on the CV's *Changes* tab, the letter page and under each draft. Saying you haven't used something ("I have not yet worked with Angular") counts as honest. Naming the job's title or company isn't a claim. If a flagged skill is true, **It's true, add to my skills** adds it to your profile so it stops being flagged.
+21. **Chat** (*Chat* in the top bar, or *Ask Claude* on a job page): ask Claude anything about your CV, your job search or one job. For a job it also sees the posting, your stage and notes, the fit check, and the latest CV and letter made for it. Ask it to change your profile (your original CV) and it suggests the change, showing each line that would be added or removed. Nothing is saved until you click **Apply to my profile**, and **Undo** puts it back. If you edited your profile in the meantime, an older suggestion is refused rather than overwriting your edits. You can attach files (PDF, Word, images, text: a CV, a posting, an offer, a screenshot) with the clip button, by dragging them in, or by pasting a screenshot. Claude reads them, and earlier attachments stay readable later in the same chat. Each message is one Claude call on your plan.
+22. **CV editor** (*CV editor* in the sidebar, or *Open in CV editor* on a tailored CV; it opens inside CVMaker's own page and follows its light/dark theme): edit your CV on the page and keep several versions of it (for example Sofia / Plovdiv, experience first / projects first). It works like Canva:
+    - **Click anything** on the page (a name, a job role, a bullet, a section, the sidebar, the page) and the bar above the page changes it: font, size, colour, bold / italic / underline / uppercase, alignment, letter and line spacing, background, padding, corners, border, transparency. A change applies to all elements of that kind (all job roles) or, with *Only this one*, to just that one. The path at the bottom left selects the element's parents. Right-click or the toolbar copies and pastes a style; *Reset* goes back to the template's look.
+    - **Left rail:** *Design* (templates, colour palettes, font pairs), *Elements* (shapes, lines, icons), *Text* (text boxes), *Uploads* (your images; click to place one, or use one as your photo), *Layout* (sidebar left / right / none, name across the full width, photo position, heading and bullet styles, contact icons, page colour, text size and spacing, base colours), *Versions*, *Layers*.
+    - **Free elements** (text boxes, shapes, lines, icons, images) go anywhere: drag to move (they snap to the page centre and edges, the sidebar and each other; Alt turns snapping off), handles to resize, ⟳ to rotate, double-click a text box to type. Arrow keys nudge (Shift for 5 mm), `Ctrl+D` duplicates, `Del` deletes, `Ctrl+C`/`Ctrl+V` copy and paste, `Ctrl+]`/`Ctrl+[` change the layer. *Position* puts an element behind the CV text, aligns it to the page or sets exact mm values; *Lock* stops it moving. *Hide* hides one in the current version only.
+    - **Box size:** select any element and drag the handles on its right and bottom edge (or use *Size* in the toolbar; *Auto* undoes it). Dragging the sidebar's inner edge changes the sidebar width.
+    - Sections can move between the main column and the sidebar (select a section → ⇄ Other column), per version. Undo / redo (`Ctrl+Z` / `Ctrl+Shift+Z`) cover everything; zoom is at the bottom right.
+    - The text is your profile, so editing it here changes the profile, and a change made elsewhere (My profile, the chat) shows up here. Each version picks what to show (hide a section, job, project, skill group or a single bullet) and can keep **its own wording** for a field while the profile keeps its text. Fields with their own wording are underlined while editing.
+    - The design (layout, element styles, free elements) is shared by all versions and tailored CVs and is saved in `editor.json`; the text stays in your profile.
+    - Every CV PDF the app makes is drawn by the editor, so tailored CVs share your style. A tailored CV opened in the editor is edited on its own: changes there don't touch your profile, and its PDF is redrawn when you next open or download it.
+    - *Export this PDF* / *Export all* write your versions to `data/output/versions/` (per person).
+    - *Import my CVEditor versions* brings in the separate CVEditor project once (versions, style, photo, logos) and keeps each version looking as it did. Your profile is backed up first.
+    - The editor is a small React app in `editor/`, built into `cvmaker/static/editor/`, so running the app doesn't need Node. After changing it, run `npm install && npm run build` in `editor/`. `npm run dev` gives hot reload on :5179 against the running app.
 
 ## Job sources
 
@@ -120,9 +134,14 @@ cvmaker/
   posting.py     plain-text job posting -> readable HTML (headings, bullets, paragraphs)
   cvdiff.py      tailored CV vs base CV: bullet/word diff, facts not found in the profile
   assistant.py   Claude prompts: CV import, interview, fit check, tailoring, CV rating, cover letter, interview prep
+  editor.py      CV editor glue: versions/style (editor.json), profile <-> editor content, item ids, PDF printing via the editor's page, CVEditor import
+  editor_routes.py /editor pages and API
+  chat.py        the chat: context for Claude, proposed profile changes (apply/undo, readable diff), reply formatting
+  chat_routes.py /chat pages
+  claims.py      skill check: technologies in outgoing documents that the profile and GitHub don't back
   cvcheck.py     measured CV checks: job keyword coverage, PDF text layer (ATS)
   llm.py         Claude calls with structured output: Claude Code (subscription) or API
-  render.py      CV HTML template -> PDF via headless Chrome
-  templates/cv.html   the CV design
+  render.py      CV -> PDF via headless Chrome (drawn by the CV editor's page); cover letters
+  static/editor/ the built CV editor (source in editor/)
 data/            profile.json, photo.png, searches.json, prefs.json, feedback.json, SQLite DB, generated CVs (git-ignored)
 ```

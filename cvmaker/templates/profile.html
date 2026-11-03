@@ -3,6 +3,32 @@
 {% import "_macros.html" as m %}
 {% block content %}
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if profile %}
+<div class="card" id="editor">
+  <div class="section-title">
+    <h2>CV editor</h2>
+    <a class="btn" href="/editor">Open the CV editor</a>
+  </div>
+  <p class="muted">Edit your CV on the page and keep several versions of it (for example Sofia / Plovdiv, experience first / projects first).
+    The text is this profile, so a change there is a change here. Each version picks what to show and can keep its own wording. The editor's style is used for every CV CVMaker makes, tailored ones included.</p>
+  {% if editor_versions %}<p class="muted" style="margin:0">Versions: {{ editor_versions | join(' · ') }}</p>{% endif %}
+  {% if import_report %}
+  <div class="tile" style="margin-top:12px"><strong>Imported from CVEditor</strong>
+    <ul class="tight">{% for line in import_report %}<li>{{ line }}</li>{% endfor %}</ul>
+    <form method="post" action="/editor/import-report/dismiss"><button class="secondary" type="submit">OK</button></form>
+  </div>
+  {% elif can_import and imported_at %}
+  <form method="post" action="/editor/import" data-slow style="margin-top:8px" onsubmit="return confirm('Import the CVEditor project again? This replaces your editor versions and style with the CVEditor ones (your profile is backed up first).')">
+    <span class="muted">Imported from CVEditor {{ imported_at | ago }}.</span> <button class="secondary" type="submit">Import again</button></form>
+  {% elif can_import %}
+  <div class="tile idea" style="margin-top:12px">
+    <strong>Bring in your CVEditor project?</strong> <span class="muted">Found {{ cveditor_path }}. Imports its versions, style, photo and logos.
+      Your versions will look as they do now: bullets and skills only the CVEditor had are added to your profile, profile items it didn't show are hidden in those versions, and where its wording differs, the version keeps that wording. Nothing in your profile is deleted, and a backup is saved first.</span>
+    <form method="post" action="/editor/import" data-slow style="margin-top:8px" onsubmit="return confirm('Import your CVEditor versions?{{ ' This replaces the versions already in the editor.' if editor_versions }}')"><button type="submit">Import my CVEditor versions</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 <div class="two">
   <div class="card">
     <h2>Import my CV</h2>

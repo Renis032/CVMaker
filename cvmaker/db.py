@@ -70,6 +70,24 @@ CREATE TABLE IF NOT EXISTS practice (
     feedback TEXT NOT NULL DEFAULT '',
     score INTEGER
 );
+CREATE TABLE IF NOT EXISTS chat_threads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    job_id TEXT NOT NULL DEFAULT '',
+    created REAL NOT NULL,
+    updated REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created REAL NOT NULL,
+    changes TEXT NOT NULL DEFAULT '[]',
+    proposal TEXT NOT NULL DEFAULT '',
+    base TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS debriefs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id TEXT NOT NULL,
@@ -100,6 +118,7 @@ MIGRATIONS = [
     ("jobs", "closed_at", "ALTER TABLE jobs ADD COLUMN closed_at REAL NOT NULL DEFAULT 0"),
     ("jobs", "closed_reason", "ALTER TABLE jobs ADD COLUMN closed_reason TEXT NOT NULL DEFAULT ''"),
     ("jobs", "checked_at", "ALTER TABLE jobs ADD COLUMN checked_at REAL NOT NULL DEFAULT 0"),
+    ("chat_messages", "files", "ALTER TABLE chat_messages ADD COLUMN files TEXT NOT NULL DEFAULT '[]'"),
     ("cvs", "layout", "ALTER TABLE cvs ADD COLUMN layout TEXT NOT NULL DEFAULT '{}'"),
     ("cvs", "pages", "ALTER TABLE cvs ADD COLUMN pages INTEGER NOT NULL DEFAULT 0"),
 ]
@@ -894,3 +913,80 @@ def find_by_url(url: str) -> str | None:
     with connect() as c:
         rows = c.execute("SELECT id, json_extract(data, '$.url') AS u FROM jobs WHERE u != ''").fetchall()
     return next((r["id"] for r in rows if r["u"].split("?")[0].rstrip("/").lower() == key), None)
+
+
+# --- chat ------------------------------------------------------------------------------------------------------
+
+
+def chat_thread_add(title: str, job_id: str) -> int:
+    now = time.time()
+    with connect() as c:
+        return c.execute(
+            "INSERT INTO chat_threads (title, job_id, created, updated) VALUES (?, ?, ?, ?)", (title, job_id, now, now)
+        ).lastrowid
+
+
+def chat_thread_get(thread_id: int) -> dict | None:
+    with connect() as c:
+        r = c.execute("SELECT * FROM chat_threads WHERE id = ?", (thread_id,)).fetchone()
+    return dict(r) if r else None
+
+
+def chat_threads(limit: int = 50) -> list[dict]:
+    with connect() as c:
+        rows = c.execute(
+            "SELECT t.*, (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id = t.id) AS n "
+            "FROM chat_threads t ORDER BY updated DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def chat_thread_update(thread_id: int, **fields) -> None:
+    fields.setdefault("updated", time.time())
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    with connect() as c:
+        c.execute(f"UPDATE chat_threads SET {sets} WHERE id = ?", (*fields.values(), thread_id))
+
+
+def chat_thread_delete(thread_id: int) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM chat_messages WHERE thread_id = ?", (thread_id,))
+        c.execute("DELETE FROM chat_threads WHERE id = ?", (thread_id,))
+
+
+def _chat_msg(r) -> dict:
+    return {**dict(r), "changes": json.loads(r["changes"] or "[]"), "files": json.loads(r["files"] or "[]")}
+
+
+def chat_add(thread_id: int, role: str, text: str, changes: list[str] | None = None, proposal: str = "",
+             base: str = "", state: str = "") -> int:
+    with connect() as c:
+        mid = c.execute(
+            "INSERT INTO chat_messages (thread_id, role, text, created, changes, proposal, base, state) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (thread_id, role, text, time.time(), json.dumps(changes or []), proposal, base, state),
+        ).lastrowid
+    chat_thread_update(thread_id)
+    return mid
+
+
+def chat_messages(thread_id: int) -> list[dict]:
+    with connect() as c:
+        rows = c.execute("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY id", (thread_id,)).fetchall()
+    return [_chat_msg(r) for r in rows]
+
+
+def chat_message(message_id: int) -> dict | None:
+    with connect() as c:
+        r = c.execute("SELECT * FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+    return _chat_msg(r) if r else None
+
+
+def chat_set_files(message_id: int, files: list[dict]) -> None:
+    with connect() as c:
+        c.execute("UPDATE chat_messages SET files = ? WHERE id = ?", (json.dumps(files), message_id))
+
+
+def chat_set_state(message_id: int, state: str) -> None:
+    with connect() as c:
+        c.execute("UPDATE chat_messages SET state = ? WHERE id = ?", (state, message_id))

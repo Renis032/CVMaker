@@ -36,3 +36,26 @@
 {% macro taste_chips(items) -%}
 {% for t in items %}<span class="taste {{ 'up' if t.startswith('↑') else 'down' }}">{{ t }}</span>{% endfor %}
 {%- endmacro %}
+
+{# Skill check (claims.py): technologies a document names that your profile and GitHub don't show. #}
+{% macro skill_findings(findings, back, compact=False) -%}
+{% set real = findings | rejectattr('honest') | list %}
+{% set honest = findings | selectattr('honest') | list %}
+{% if real or honest %}
+<div class="skill-check {{ 'compact' if compact }}">
+  {% for f in real %}
+  <div class="sc-row bad">
+    <div><strong>{{ f.term }}</strong> <span class="muted">is not in your profile or GitHub</span>
+      <div class="sc-sent">“{{ f.sentence }}”</div></div>
+    <form method="post" action="/claims/add-skill"><input type="hidden" name="term" value="{{ f.term }}"><input type="hidden" name="back" value="{{ back }}">
+      <button class="secondary" type="submit" title="Only if it's true: adds “{{ f.term }}” to your profile's skills">It's true, add to my skills</button></form>
+  </div>
+  {% endfor %}
+  {% for f in honest %}
+  <div class="sc-row ok"><div><strong>{{ f.term }}</strong> <span class="muted">mentioned as something you haven't used, which is fine</span>
+    <div class="sc-sent">“{{ f.sentence }}”</div></div></div>
+  {% endfor %}
+</div>
+{% elif not compact %}<div class="skill-check"><div class="sc-row ok"><span>✓ Every technology mentioned is in your profile or GitHub.</span></div></div>
+{% endif %}
+{%- endmacro %}
