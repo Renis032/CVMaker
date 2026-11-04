@@ -6,29 +6,63 @@ Finds software developer jobs in the countries you choose, plus fully remote job
 
 The screenshots use a made-up demo profile ("Alex Morgan") and fictional companies.
 
-**Jobs**: dashboard strip, saved-search tabs, Claude fit and keyword scores, salary converted to € per month, and what your feedback taught ("↑ Sofia", "↓ junior roles").
+**Jobs**: the app shell (sidebar, quick search, notifications, person menu, light/dark toggle), the dashboard (new jobs, applications, response rate, follow-ups, median salary), company logos, Claude fit and keyword scores, salary converted to € per month, and what your feedback taught ("↑ Sofia").
 
 ![Jobs list](docs/screenshots/jobs.png)
 
-**Job page, Fit & gaps**: Claude's full fit check, with what helps you, what counts against you, and a plan to close the gaps.
+**Dark theme**: every page, the CV editor included, follows the system theme or the toggle in the top bar.
+
+![Jobs list, dark theme](docs/screenshots/jobs-dark.png)
+
+**Job page**: the posting with headings and bullets recovered, a **Next step** box, your progress, and tabs for fit, CV & letter, application, outreach, interview, offer and GitHub.
+
+![Job page](docs/screenshots/job.png)
+
+**Fit & gaps**: Claude's full fit check, with what helps you, what counts against you, and how to close each gap.
 
 ![Fit check on a job page](docs/screenshots/job-fit.png)
 
-**Tailored CV**: one-page preview, layout controls, the requirements you match and those your profile doesn't show.
+**Tailored CV**: one-page preview drawn by the CV editor, layout controls, the requirements you match and those your profile doesn't show.
 
 ![Tailored CV](docs/screenshots/cv.png)
 
-**Pipeline**: applications from To apply to Offer, Rejected or Ghosted, with response rates and follow-ups due.
+**CV editor**: click anything on the page and the toolbar changes it (font, size, colour, spacing, box size, ✦ Rewrite with Claude); templates, elements, text, uploads, layout, versions, layers and history on the left.
+
+![CV editor](docs/screenshots/editor.png)
+
+![CV editor, dark theme](docs/screenshots/editor-dark.png)
+
+**Pipeline**: applications from To apply to Offer, Rejected or Ghosted, with response rates (with and without a tailored CV) and follow-ups due.
 
 ![Application pipeline](docs/screenshots/pipeline.png)
 
-**Insights, Your gaps**: the gaps from all your fit checks grouped and ranked by how many jobs they affect.
+**Notifications**: new jobs, follow-ups due, closed postings and finished background tasks.
+
+![Notifications](docs/screenshots/notifications.png)
+
+**Insights, Your gaps**: the gaps from all your fit checks grouped and ranked by how many jobs they affect, plus the skills your jobs ask for that your profile never mentions.
 
 ![Insights: your gaps](docs/screenshots/insights-gaps.png)
 
 **Insights, Market**: most requested skills (and whether you have them), salaries by seniority and place, and postings per week.
 
 ![Insights: market](docs/screenshots/insights-market.png)
+
+**Chat**: ask Claude about your CV or a job; profile changes are shown line by line and only saved when you apply them.
+
+![Chat](docs/screenshots/chat.png)
+
+**Story bank**: STAR+R stories for interviews, drafted from your profile, with the details only you can add marked.
+
+![Story bank](docs/screenshots/stories.png)
+
+**Add a job by link or text**, then check your fit, tailor a CV or make a full application pack.
+
+![Add a job](docs/screenshots/add-job.png)
+
+**History & backup**: restore points before profile and editor changes, and a one-zip backup of everything.
+
+![History and backup](docs/screenshots/backup.png)
 
 ## Setup
 
