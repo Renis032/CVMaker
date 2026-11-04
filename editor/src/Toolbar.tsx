@@ -1,5 +1,6 @@
 // The bar above the page: controls for whatever is selected, like Canva's top toolbar.
 import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { PARENT_KIND, asSection, caps } from './items';
 import type { CvData, ElemStyle, FreeEl, SectionKey, Variant } from './types';
 import { DEFAULT_COLORS, FONTS, KINDS, documentColors, elemStyle, fontLabel, styleKey, toHex } from './design';
 import { columns, uid } from './model';
@@ -266,8 +267,8 @@ export function freeOps(update: Update, setSel: (s: Sel) => void) {
 }
 
 /** Moves a section within its column or to the other column (per version). */
-export function moveSection(v: Variant, key: SectionKey, how: 'up' | 'down' | 'other', layout: CvData['design']['layout']) {
-  const cols = columns(v, layout.sidebar === 'none' ? { ...layout, sidebar: 'right' } : layout);
+export function moveSection(v: Variant, key: SectionKey, how: 'up' | 'down' | 'other', layout: CvData['design']['layout'], content?: CvData['content']) {
+  const cols = columns(v, layout.sidebar === 'none' ? { ...layout, sidebar: 'right' } : layout, content);
   const inMain = cols.main.includes(key);
   const list = inMain ? cols.main : cols.side;
   const i = list.indexOf(key);
@@ -296,9 +297,11 @@ interface Props {
   /** Change all elements of the selected kind, or only the selected one. */
   scope: 'all' | 'one';
   setScope: (s: 'all' | 'one') => void;
+  itemAction: (what: 'remove' | 'copy' | 'new' | 'up' | 'down' | 'hide', k: string, i?: string) => void;
+  parentOf: (s: Sel) => Sel;
 }
 
-export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scope, setScope }: Props) {
+export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scope, setScope, itemAction, parentOf }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [, force] = useState(0);
   const selKey = sel ? (sel.type === 'el' ? `${sel.k}#${sel.i ?? ''}` : sel.id) : '';
@@ -325,6 +328,56 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
   const hidden = new Set(variant.hidden);
   const toggleHide = (id: string) => setV((v) => void (v.hidden = hidden.has(id) ? v.hidden.filter((h) => h !== id) : [...v.hidden, id]));
   const ops = freeOps(update, setSel);
+
+  /** Add below / duplicate / move / delete for a selected item; inside an item's text, a way up to the item. */
+  const itemButtons = (k0: string, i0?: string) => {
+    const [k, i] = asSection(k0, i0);
+    const can = caps(data, k, i);
+    const parentK = PARENT_KIND[k];
+    const up = parentK && k !== 'jobLogo' ? parentOf({ type: 'el', k, i }) : null;
+    const delLabel = k === 'header' ? 'Clear name & title' : can.clear ? 'Clear' : can.builtinSection ? 'Remove section' : k === 'sideCol' ? 'Remove sidebar' : k === 'photo' ? 'Delete photo' : k === 'jobLogo' ? 'Delete logo' : 'Delete';
+    const delTitle = can.clear
+      ? 'Empty this text (Del)'
+      : can.builtinSection
+        ? 'Take this section off the page in every version; its text stays in your profile (Del)'
+        : `Delete the ${can.name} (Del)`;
+    if (!up && !can.item && !can.remove) return null;
+    return (
+      <span className="tb-items">
+        {up && (
+          <Btn title="Select the whole item, to move, copy or delete it (Esc)" onClick={() => setSel(up)}>
+            ⬑ Whole {caps(data, parentK, i).name}
+          </Btn>
+        )}
+        {k === 'job' && data.content.experience.find((j) => j.id === i)?.logo === 'none' && (
+          <Btn title="Bring back this job's logo spot" onClick={() => update((d) => void (d.content.experience.find((j) => j.id === i)!.logo = ''))}>
+            + Logo
+          </Btn>
+        )}
+        {can.addBelow && (
+          <Btn title={`Add a new ${can.name} below (Ctrl+Enter)`} onClick={() => itemAction('new', k, i)}>
+            + {cap(can.name)}
+          </Btn>
+        )}
+        {can.duplicate && (
+          <Btn title="Duplicate (Ctrl+D)" onClick={() => itemAction('copy', k, i)}>
+            Duplicate
+          </Btn>
+        )}
+        {can.move && (
+          <>
+            <Btn title="Move up (Alt+↑)" onClick={() => itemAction('up', k, i)}>↑</Btn>
+            <Btn title="Move down (Alt+↓)" onClick={() => itemAction('down', k, i)}>↓</Btn>
+          </>
+        )}
+        {can.remove && (
+          <Btn className="danger" title={delTitle} onClick={() => itemAction('remove', k, i)}>
+            {delLabel}
+          </Btn>
+        )}
+      </span>
+    );
+  };
 
   const pop = (id: string, title: string, label: ReactNode, children: ReactNode, wide?: boolean) => (
     <Pop id={id} open={open} setOpen={setOpen} title={title} label={label} wide={wide}>
@@ -451,7 +504,7 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
         if (Object.keys(next).length) d.design.elements[key] = next;
         else delete d.design.elements[key];
       });
-    const hideId = sel.k === 'section' ? sel.i : ['job', 'project', 'skill', 'bullet'].includes(sel.k) ? sel.i : undefined;
+    const hideId = sel.k === 'section' ? sel.i : ['job', 'project', 'skill', 'bullet', 'entry'].includes(sel.k) ? sel.i : undefined;
     const section = sel.k === 'section' ? (sel.i as SectionKey) : undefined;
     const pickImage = () => document.querySelector<HTMLInputElement>(`input[data-pick=${JSON.stringify(`${sel.k}${sel.i ? `#${sel.i}` : ''}`)}]`)?.click();
 
@@ -529,8 +582,8 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
               true,
             )}
             {opacityPop(stored.opacity ?? 1, (opacity) => set({ opacity }))}
-            <Btn title="Replace the image" onClick={pickImage}>
-              Replace
+            <Btn className={node?.classList.contains('img-placeholder') ? 'primary-btn' : ''} title={node?.classList.contains('img-placeholder') ? 'Choose an image (or double-click the spot)' : 'Replace the image (or double-click it)'} onClick={pickImage}>
+              {node?.classList.contains('img-placeholder') ? (sel.k === 'photo' ? '+ Add photo' : '+ Add logo') : 'Replace'}
             </Btn>
           </>
         )}
@@ -547,20 +600,21 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
         )}
         {section && (
           <>
-            <Btn title="Move the section up" onClick={() => setV((v) => moveSection(v, section, 'up', data.design.layout))}>↑</Btn>
-            <Btn title="Move the section down" onClick={() => setV((v) => moveSection(v, section, 'down', data.design.layout))}>↓</Btn>
+            <Btn title="Move the section up" onClick={() => setV((v) => moveSection(v, section, 'up', data.design.layout, data.content))}>↑</Btn>
+            <Btn title="Move the section down" onClick={() => setV((v) => moveSection(v, section, 'down', data.design.layout, data.content))}>↓</Btn>
             {data.design.layout.sidebar !== 'none' && (
-              <Btn title="Move the section to the other column" onClick={() => setV((v) => moveSection(v, section, 'other', data.design.layout))}>
+              <Btn title="Move the section to the other column" onClick={() => setV((v) => moveSection(v, section, 'other', data.design.layout, data.content))}>
                 ⇄ Other column
               </Btn>
             )}
           </>
         )}
         {hideId && (
-          <Btn title="Hide in this version (it stays in your profile)" onClick={() => toggleHide(hideId)}>
+          <Btn title="Hide in this version (it stays in your profile) · H" onClick={() => toggleHide(hideId)}>
             Hide
           </Btn>
         )}
+        {itemButtons(sel.k, sel.i)}
         {pop(
           'more',
           'Copy, paste or reset the style',
@@ -742,3 +796,5 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
   }
   return <div className="toolbar">{body}</div>;
 }
+
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);

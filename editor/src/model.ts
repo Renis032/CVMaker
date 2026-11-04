@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { MainSection, PageLayout, SectionKey, SideSection, Style, Variant } from './types';
+import type { Content, MainSection, PageLayout, SectionKey, SideSection, Style, Variant } from './types';
 
 export const MAIN_SECTIONS: MainSection[] = ['summary', 'experience', 'projects'];
 export const SIDE_SECTIONS: SideSection[] = ['contact', 'skills', 'softSkills', 'languages', 'interests', 'education'];
@@ -27,15 +27,24 @@ export function orderedKeys<K extends string>(all: K[], order: K[]): K[] {
   return [...new Set([...seen, ...all])];
 }
 
+export const customKey = (id: string): SectionKey => `x:${id}`;
+
+/** The heading shown for a section: a custom section's own title, else the (renamable) built-in heading. */
+export function sectionTitle(c: Content, key: SectionKey): string {
+  if (key.startsWith('x:')) return c.custom.find((s) => customKey(s.id) === key)?.title || 'Section';
+  return c.headings[key as keyof Content['headings']] ?? key;
+}
+
 /** The sections of each column, top to bottom. Any section can sit in either column; a section in neither goes to
- *  its usual column. Without a sidebar everything is in the main column. */
-export function columns(v: Variant, layout?: PageLayout): { main: SectionKey[]; side: SectionKey[] } {
-  const all: SectionKey[] = [...MAIN_SECTIONS, ...SIDE_SECTIONS];
+ *  its usual column (custom sections: the main column). Without a sidebar everything is in the main column. */
+export function columns(v: Variant, layout?: PageLayout, content?: Pick<Content, 'custom'>): { main: SectionKey[]; side: SectionKey[] } {
+  const custom = (content?.custom ?? []).map((s) => customKey(s.id));
+  const all: SectionKey[] = [...MAIN_SECTIONS, ...SIDE_SECTIONS, ...custom];
   const seen = new Set<SectionKey>();
   const take = (keys: SectionKey[]) => keys.filter((k) => all.includes(k) && !seen.has(k) && seen.add(k));
   const main = take(v.mainOrder ?? []);
   const side = take(v.sideOrder ?? []);
-  for (const k of MAIN_SECTIONS) if (!seen.has(k)) main.push(k);
+  for (const k of [...MAIN_SECTIONS, ...custom]) if (!seen.has(k)) main.push(k);
   for (const k of SIDE_SECTIONS) if (!seen.has(k)) side.push(k);
   return layout?.sidebar === 'none' ? { main: [...main, ...side], side: [] } : { main, side };
 }

@@ -77,6 +77,18 @@
 .project-tech { color: var(--muted); }
 .project .bullets { margin-top: 1.2mm !important; }
 
+/* Custom sections (certifications, awards, volunteering...) */
+.entry { margin-bottom: calc(var(--item-gap) * 0.7); }
+.entry-head { display: flex; align-items: flex-start; gap: 2mm; }
+.entry-titles { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.entry-title { font-weight: 700; }
+.entry-subtitle { color: var(--accent); }
+.side .entry-subtitle { color: var(--side-label); }
+.entry-dates { color: var(--muted); font-size: 0.95em; white-space: nowrap; }
+.side .entry-head { flex-direction: column; gap: 0; }
+.side .entry-dates { color: inherit; opacity: 0.8; }
+.entry .bullets { margin-top: 0.4mm !important; }
+
 /* Sidebar */
 .photo-wrap { display: flex; justify-content: center; margin: 0 0 calc(var(--gap) * 1.6); }
 .photo-wrap:empty { display: none; }

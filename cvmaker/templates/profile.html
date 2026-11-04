@@ -10,7 +10,7 @@
   <div class="ph-main">
     <span class="eyebrow-s">My profile{% if person.id != 'me' %} · {{ person.name }}{% endif %}</span>
     <h1>{{ profile.name if profile and profile.name else 'Set up your profile' }}</h1>
-    <p class="muted">{{ profile.headline if profile and profile.headline else 'Import your CV to get started: Claude reads it into a profile that every tailored CV comes from.' }}</p>
+    <p class="muted">{{ profile.headline if profile and profile.headline else 'Import your CV, or start a blank one for the kind of job you want. Every tailored CV comes from this profile.' }}</p>
     {% if profile %}
     <div class="ph-stats">
       <span><strong>{{ profile.experience | length }}</strong> job{{ 's' if profile.experience | length != 1 }}</span>
@@ -35,6 +35,16 @@
   {% if profile %}<a href="#advanced" data-tab="advanced">Advanced</a>{% endif %}
 </nav>
 
+<style>
+  .starters { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:10px; margin-top:12px; }
+  .starter { display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; padding:12px 14px;
+    background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:12px; font-weight:400; box-shadow:none; }
+  .starter:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .starter strong { font-size:14px; }
+  .starter span { font-size:12px; color:var(--muted); line-height:1.4; white-space:normal; }
+  .starter, .starter strong { white-space:normal; height:auto; }
+  .debug-card { border-color:color-mix(in srgb, var(--bad) 35%, var(--line)); }
+</style>
 <section class="tab-panel" data-tab="cv">
 {% if profile %}
 <div class="card" id="editor">
@@ -42,7 +52,7 @@
     <h2>CV editor</h2>
     <a class="btn" href="/editor">Open the CV editor</a>
   </div>
-  <p class="muted">Edit your CV on the page and keep several versions of it (for example Sofia / Plovdiv, experience first / projects first).
+  <p class="muted">Edit your CV on the page and keep several versions of it (for example one per city, or experience first / projects first).
     The text is this profile, so a change there is a change here. Each version picks what to show and can keep its own wording. The editor's style is used for every CV CVMaker makes, tailored ones included.</p>
   {% if editor_versions %}<p class="muted" style="margin:0">Versions: {{ editor_versions | join(' · ') }}</p>{% endif %}
   {% if import_report %}
@@ -61,14 +71,31 @@
   </div>
   {% endif %}
 </div>
+{% else %}
+<div class="card" id="start">
+  <h2>Start your CV</h2>
+  <p class="muted">Import the CV you have (<a href="#import">below</a>; any layout works: Claude maps its sections and keeps the
+    ones CVMaker has no field for, such as certifications or volunteering, under their own headings). Or start a blank CV:
+    pick the kind of job it's for and you get the sections and skill groups that kind of CV needs, all empty and labelled,
+    to fill in on the page. Nothing is written for you, and you can rename, add or remove any of it later.</p>
+  <form method="post" action="/editor/start" class="starters">
+    {% for key, name, labels in starters %}
+    <button type="submit" name="starter" value="{{ key }}" class="starter">
+      <strong>{{ name }}</strong>
+      <span>{{ labels | join(' · ') }}</span>
+    </button>
+    {% endfor %}
+  </form>
+</div>
 {% endif %}
 <div class="two">
-  <div class="card">
+  <div class="card" id="import">
     <h2>Import my CV</h2>
-    <p class="muted">Upload your CV as a PDF. Claude reads it into your profile; this replaces the current profile.</p>
+    <p class="muted">Upload your CV as a PDF, Word file, text or a photo of it. Claude reads it into your profile{{ "; this replaces the current profile" if profile }}.
+      Sections without a matching field (certifications, awards, volunteering, publications…) are kept with their own headings.</p>
     {% if importing %}{{ m.running(importing[0], "Claude is reading your CV") }}{% else %}
     <form method="post" action="/profile/import" enctype="multipart/form-data" data-slow class="row">
-      <input type="file" name="cv" accept="application/pdf" required aria-label="CV PDF">
+      <input type="file" name="cv" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp" required aria-label="CV file">
       <button type="submit">Import</button>
     </form>{% endif %}
   </div>
@@ -76,9 +103,14 @@
     <h2>Photo</h2>
     <p class="muted">{{ "A photo is set and appears on your CVs." if has_photo else "No photo yet." }}</p>
     <form method="post" action="/profile/photo" enctype="multipart/form-data" class="row">
-      <input type="file" name="photo" accept="image/png,image/jpeg" required>
-      <button class="secondary" type="submit">Upload</button>
+      <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" required>
+      <button class="secondary" type="submit">{{ "Replace" if has_photo else "Upload" }}</button>
     </form>
+    {% if has_photo %}
+    <form method="post" action="/profile/photo/remove" style="margin-top:8px" onsubmit="return confirm('Remove your photo from your profile and CVs?')">
+      <button class="danger" type="submit">Remove photo</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 
@@ -200,6 +232,17 @@
 
 {% if profile %}
 <section class="tab-panel" data-tab="advanced">
+<div class="card debug-card">
+  <div class="section-title">
+    <h2>Debug: clear my profile</h2>
+    <form method="post" action="/profile/clear" onsubmit="return confirm('Clear your whole profile?\n\nRemoves your CV text, photo, CV editor versions, design and uploaded images, and your story bank. Jobs, applications, made CVs and letters, searches and role profiles stay.\n\nA backup zip of everything is saved first, so you can restore it from History & backup.')">
+      <button class="danger" type="submit">Clear my profile</button>
+    </form>
+  </div>
+  <p class="muted" style="margin:0">Starts you over as a new user (import a CV or pick a blank one by kind of job), for testing.
+    Removes the CV text, photo, CV editor versions, design and uploads, and the story bank. Jobs, applications, made CVs
+    and letters, searches and role profiles stay. A backup zip of everything is saved first (History &amp; backup → restore).</p>
+</div>
 <div class="two">
   <div class="card">
     <h2>Edit profile (JSON)</h2>

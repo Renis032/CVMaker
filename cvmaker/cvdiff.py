@@ -108,6 +108,7 @@ def diff(profile: Profile, cv: CVContent, job=None) -> dict:
     profile_text = _plain(profile.model_dump_json()).lower()
     unsupported_skills = [v for k, v in new_skills.items() if k not in old_skills and k not in profile_text]
     cv_texts = [cv.headline, cv.summary] + [b for r in cv.experience for b in r.bullets] + [b for p in cv.projects for b in p.bullets]
+    cv_texts += [b for sec in cv.sections for e in sec.entries for b in e.bullets]
     profile_numbers = {n.replace(" ", "").rstrip("+%") for n in _numbers(profile_text)}
     unsupported_numbers = []
     for text in cv_texts:

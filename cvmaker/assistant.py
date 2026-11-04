@@ -1,6 +1,7 @@
 """Everything that asks Claude about the candidate: CV import, interview, fit check, tailoring."""
 
 import json
+from pathlib import Path
 
 from . import llm, settings
 from .models import (
@@ -48,14 +49,32 @@ def save_profile(profile: Profile) -> None:
     settings.PROFILE_PATH.write_text(profile.model_dump_json(indent=2))
 
 
-def import_cv(pdf_bytes: bytes) -> Profile:
-    system = f"""You turn a CV into a structured candidate profile.
+IMPORT_TYPES = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
+
+
+def import_cv(data: bytes, filename: str = "cv.pdf") -> Profile:
+    """A CV in any layout (PDF, Word, text or a picture of it) as a profile. Sections the profile has no field for
+    are kept as custom sections with the CV's own headings, so nothing is lost."""
+    system = f"""You turn a CV into a structured candidate profile. CVs come in every layout and language; map what is there, don't expect a particular template.
 Copy every fact faithfully: contact details, roles, dates, bullet points, projects, skills, education, soft skills, interests, languages.
-Keep the candidate's own wording for bullets. Use empty strings or empty lists for anything the CV does not contain.
+Keep the candidate's own wording for bullets, and the CV's language. Use empty strings or empty lists for anything the CV does not contain.
+- experience: paid work, internships and freelance roles. start/end as written ("03/2021", "2021", "Present").
+- contact.other: contact lines that are not email, phone, LinkedIn, GitHub or location (website, portfolio, address, date of birth, nationality, driving licence...), as written.
+- skills: group as the CV does; if it has one flat list, group them sensibly (e.g. "Languages", "Frameworks", "Tools").
+- sections: every other section of the CV (certifications, awards, volunteering, publications, courses, conferences, references, hobbies with detail, military service...). Keep its heading as written. One entry per item: title (the certificate, award, role or paper), subtitle (issuer, organisation, publisher), dates, and bullets for any description. Don't duplicate what already went into another field.
 skill_details: one entry per technical skill with level/years/evidence only where the CV supports it, otherwise empty strings.
 extra_facts and preferences: empty lists (they are filled later by an interview).
 {TRUTH_RULES}"""
-    return llm.ask(system, "Extract the profile from this CV.", Profile, pdf=pdf_bytes)
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf":
+        return llm.ask(system, "Extract the profile from this CV.", Profile, pdf=data)
+    if suffix == ".docx":
+        from .chat import docx_text
+
+        data, filename = docx_text(data).encode(), Path(filename).stem + ".txt"
+    elif suffix not in IMPORT_TYPES:
+        raise ValueError(f"Can't read {suffix or 'this file type'}: use a PDF, Word (.docx), text file or a picture of the CV.")
+    return llm.ask(system, "Extract the profile from the attached CV.", Profile, files=[(filename, data)])
 
 
 def interview_questions(profile: Profile, job: Job | None) -> InterviewQuestions:
@@ -171,7 +190,7 @@ def shorten_cv(cv: CVContent, job: Job | None, overflow: float, instructions: st
     percent = max(8, min(60, round(overflow * 100) + 5))
     target = f"Job it is tailored for:\n{_job_text(job)}" if job else "It is a general CV (no specific job)."
     system = f"""You shorten a CV so it fits on one A4 page. It currently overflows: about {percent}% of the content has to go.
-- Remove the least relevant material for the target first: weakest bullets, least relevant projects, extra soft skills and interests, redundant skills.
+- Remove the least relevant material for the target first: weakest bullets, least relevant projects, extra soft skills and interests, redundant skills, custom sections (certifications, awards...) that don't help for the target.
 - Tighten long bullets and the summary. Keep at least 2 bullets per role, keep every role and every education entry.
 - Never add anything. Never change facts, numbers, dates, names or qualifiers. Keep **bold** markers on the phrases that stay.
 {TRUTH_RULES}"""
@@ -218,6 +237,8 @@ How to tailor:
 - projects: order by relevance, drop clearly irrelevant ones if space is tight.
 - skills: group and order so the job's required technologies that the candidate has appear first; omit irrelevant tools if the list is long. Never omit a technology, practice or skill the posting mentions when the profile shows it (e.g. Docker, CI/CD, a database, concurrency, testing) - those are the keywords screeners look for.
 - keep soft_skills, interests, languages and education accurate; trim soft_skills to the ones that matter for the job.
+- sections (certifications, awards, volunteering...): keep the ones that help for this job with their headings and facts unchanged; drop the irrelevant ones if space is tight.
+- contact: copy it unchanged, including contact.other.
 - in bullets, wrap the 1-3 most important phrases in **double asterisks** so they render bold.
 Then report: match_score (0-100, honest), matched_requirements, missing_requirements (job requirements the profile does not show), changes_made (what you changed and why, short), questions_to_strengthen (questions to ask the candidate whose answers could close the gaps truthfully).
 {TRUTH_RULES}"""

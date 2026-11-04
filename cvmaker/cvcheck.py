@@ -30,6 +30,9 @@ def cv_text(cv: CVContent) -> str:
         parts += [p.name, p.tech, *p.bullets]
     parts += [f"{e.degree} {e.school}" for e in cv.education]
     parts += cv.soft_skills + cv.languages + cv.interests
+    for sec in cv.sections:
+        for e in sec.entries:
+            parts += [e.title, e.subtitle, *e.bullets]
     return re.sub(r"\*\*", "", "\n".join(parts))
 
 

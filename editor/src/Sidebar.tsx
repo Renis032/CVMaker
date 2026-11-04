@@ -4,9 +4,11 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { CvData, FreeEl, PageLayout, Style, Variant } from './types';
-import { FONTS, FONT_SETS, PALETTES, TEMPLATES, applyFontSet, applyTemplate, documentColors, fontLabel } from './design';
+import { FONTS, FONT_SETS, PALETTES, TEMPLATES, applyFontSet, applyTemplate, documentColors, fontLabel, templateFrom, type Template } from './design';
 import { ICONS, iconSvg } from './icons';
 import { API } from './model';
+import { ContentPanel } from './Content';
+import { photoBack } from './items';
 import { Dropdown } from './ui';
 import { newFree } from './Free';
 import { ColorPicker, Slider, type Sel } from './Toolbar';
@@ -14,13 +16,25 @@ import { VersionsPanel } from './Panels';
 
 type Update = (fn: (d: CvData) => void) => void;
 
-export type Tab = 'design' | 'elements' | 'text' | 'uploads' | 'layout' | 'versions' | 'layers' | 'job' | 'history';
+export type Tab = 'content' | 'insert' | 'design' | 'layout' | 'versions' | 'layers' | 'job' | 'history';
+
+/** Older saved tabs (before Elements, Text and Uploads became Insert). */
+export function normalTab(t: string | null): Tab | null {
+  if (t === 'elements' || t === 'text' || t === 'uploads') return 'insert';
+  return (['content', 'insert', 'design', 'layout', 'versions', 'layers', 'job', 'history'] as string[]).includes(t ?? '') ? (t as Tab) : null;
+}
+
+/** The rail, in groups: what is on the CV, how it looks, and managing versions and changes. */
+const GROUPS: [string, Tab[]][] = [
+  ['Add', ['content', 'insert']],
+  ['Look', ['design', 'layout']],
+  ['Manage', ['versions', 'layers', 'job', 'history']],
+];
 
 const TABS: [Tab, string, string][] = [
+  ['content', 'Content', '<path d="M4 6h16M4 12h10M4 18h13"/><circle cx="19" cy="17" r="3"/><path d="M19 15.5v3M17.5 17h3"/>'],
+  ['insert', 'Insert', '<circle cx="7" cy="7" r="4"/><rect x="13" y="3" width="8" height="8" rx="1"/><path d="M7 13l5 8H2z"/><path d="M14 17h7M17.5 13.5v7"/>'],
   ['design', 'Design', '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'],
-  ['elements', 'Elements', '<circle cx="7" cy="7" r="4"/><rect x="13" y="3" width="8" height="8" rx="1"/><path d="M7 13l5 8H2z"/><path d="M14 17h7"/>'],
-  ['text', 'Text', '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>'],
-  ['uploads', 'Uploads', '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'],
   ['layout', 'Layout', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M3 9h12"/>'],
   ['versions', 'Versions', '<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>'],
   ['layers', 'Layers', '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 12 12 17 22 12"/>'],
@@ -38,6 +52,7 @@ interface Props {
   upload: (f: File) => Promise<string>;
   tab: Tab | null;
   setTab: (t: Tab | null) => void;
+  itemAction: (what: 'remove' | 'copy' | 'new' | 'up' | 'down' | 'hide', k: string, i?: string) => void;
 }
 
 export function Sidebar(props: Props) {
@@ -45,22 +60,41 @@ export function Sidebar(props: Props) {
   return (
     <>
       <nav className="rail">
-        {TABS.filter(([id]) => id !== 'job' || props.data.job).map(([id, label, icon]) => (
-          <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(tab === id ? null : id)} title={label}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: icon }} />
-            <span>{label}</span>
-          </button>
+        {GROUPS.map(([group, ids]) => (
+          <div key={group} className="rail-group">
+            <span className="rail-cap">{group}</span>
+            {TABS.filter(([id]) => ids.includes(id) && (id !== 'job' || props.data.job)).map(([id, label, icon]) => (
+              <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(tab === id ? null : id)} title={TAB_HINTS[id]}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: icon }} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       {tab && (
-        <aside className="drawer">
+        <aside className="drawer" key={tab}>
           <button className="drawer-close" title="Close" onClick={() => setTab(null)}>
             ‹
           </button>
+          {tab === 'content' && <ContentPanel data={props.data} variant={props.variant} update={props.update} setSel={props.setSel} upload={props.upload} itemAction={props.itemAction} />}
+          {tab === 'insert' && (
+            <>
+              <nav className="insert-nav">
+                {[['ins-parts', 'CV parts'], ['ins-text', 'Text'], ['ins-shapes', 'Shapes'], ['ins-icons', 'Icons'], ['ins-images', 'Images']].map(([id, l]) => (
+                  <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })}>
+                    {l}
+                  </button>
+                ))}
+              </nav>
+              <div id="ins-parts"><PartsTab {...props} /></div>
+              <p className="hint insert-hint">Below: free objects you place anywhere on the page, on top of (or behind) your CV's text.</p>
+              <div id="ins-text"><TextTab {...props} /></div>
+              <ElementsTab {...props} />
+              <div id="ins-images"><UploadsTab {...props} /></div>
+            </>
+          )}
           {tab === 'design' && <DesignTab {...props} />}
-          {tab === 'elements' && <ElementsTab {...props} />}
-          {tab === 'text' && <TextTab {...props} />}
-          {tab === 'uploads' && <UploadsTab {...props} />}
           {tab === 'layout' && <LayoutTab {...props} />}
           {tab === 'versions' && <VersionsPanel data={props.data} variant={props.variant} update={props.update} select={props.select} />}
           {tab === 'layers' && <LayersTab {...props} />}
@@ -72,6 +106,17 @@ export function Sidebar(props: Props) {
   );
 }
 
+const TAB_HINTS: Record<Tab, string> = {
+  content: 'Content: sections and their items, the photo, new sections',
+  insert: 'Insert: text boxes, shapes, lines, icons and images placed anywhere',
+  design: 'Design: templates, your templates, colour palettes, font sets',
+  layout: 'Layout: page arrangement, text size and spacing, colours',
+  versions: 'Versions: your CV versions, their names and own wording',
+  layers: 'Layers: order of the objects on the page',
+  job: 'Job match: what the job asks for and whether this CV shows it',
+  history: 'History: restore an earlier state of your CV',
+};
+
 function add(props: Props, el: FreeEl) {
   props.update((d) => void d.design.free.push(el));
   props.setSel({ type: 'free', id: el.id });
@@ -79,13 +124,18 @@ function add(props: Props, el: FreeEl) {
 
 // --- Design: templates, colour palettes, font sets ----------------------------------------------------------------------
 
-function TemplateCard({ t, onClick }: { t: (typeof TEMPLATES)[number]; onClick: () => void }) {
+function TemplateCard({ t, onClick, onDelete }: { t: Template; onClick: () => void; onDelete?: () => void }) {
   const c = t.colors;
   const L = t.layout;
   const side = L.sidebar ?? 'right';
   const headerBg = t.elements?.header?.bg;
   return (
     <button className="tpl" onClick={onClick} title={`Use the "${t.name}" design`}>
+      {onDelete && (
+        <span className="tpl-del" role="button" title="Delete this template" onClick={(e) => (e.stopPropagation(), onDelete())}>
+          ×
+        </span>
+      )}
       <div className="tpl-page" style={{ flexDirection: side === 'left' ? 'row-reverse' : 'row', fontFamily: t.font }}>
         {L.header === 'full' && <div className="tpl-banner" style={{ background: headerBg }} />}
         <div className="tpl-main">
@@ -114,8 +164,38 @@ function TemplateCard({ t, onClick }: { t: (typeof TEMPLATES)[number]; onClick: 
 }
 
 function DesignTab({ data, update }: Props) {
+  const saved = data.design.saved ?? [];
+  const saveCurrent = () => {
+    const name = prompt('Name for this template:', `My template ${saved.length + 1}`)?.trim();
+    if (!name) return;
+    update((d) => {
+      const list = (d.design.saved ?? []).filter((t) => t.name !== name);
+      d.design.saved = [...list, templateFrom(d, name)];
+    });
+  };
   return (
     <div className="panel">
+      <h3>My templates</h3>
+      <p className="hint">
+        Start from any template below, change colours, fonts, spacing and element styles until it looks right, then save it here to
+        reuse it (also on a new version or a tailored CV).
+      </p>
+      {saved.length > 0 && (
+        <div className="tpl-grid">
+          {saved.map((t) => (
+            <TemplateCard
+              key={t.name}
+              t={t}
+              onClick={() => update((d) => applyTemplate(d, t))}
+              onDelete={() => confirm(`Delete the template “${t.name}”?`) && update((d) => void (d.design.saved = (d.design.saved ?? []).filter((x) => x.name !== t.name)))}
+            />
+          ))}
+        </div>
+      )}
+      <button className="primary save-tpl" onClick={saveCurrent}>
+        Save the current design as a template
+      </button>
+
       <h3>Templates</h3>
       <p className="hint">Changes the layout, colours and fonts. Your text stays as it is. Ctrl+Z undoes it.</p>
       <div className="tpl-grid">
@@ -164,7 +244,7 @@ function ElementsTab(props: Props) {
   ];
   return (
     <div className="panel">
-      <h3>Shapes and lines</h3>
+      <h3 id="ins-shapes">Shapes and lines</h3>
       <div className="el-grid">
         {shapes.map(([label, make, prev]) => (
           <button key={label} className="el-tile" title={`Add: ${label}`} onClick={() => add(props, make())}>
@@ -173,13 +253,75 @@ function ElementsTab(props: Props) {
           </button>
         ))}
       </div>
-      <h3>Icons</h3>
+      <h3 id="ins-icons">Icons</h3>
       <div className="icon-grid big">
         {Object.keys(ICONS).map((name) => (
           <button key={name} title={name} style={{ color: accent }} onClick={() => add(props, newFree('icon', { icon: name, fill: accent }))} dangerouslySetInnerHTML={{ __html: iconSvg(name) }} />
         ))}
       </div>
       <p className="hint">Drag to move, corners to resize, ⟳ to rotate. Arrow keys nudge (Shift for more). Hold Alt while dragging to stop snapping.</p>
+    </div>
+  );
+}
+
+// --- CV parts: the photo and anything taken off the page -----------------------------------------------------------------
+
+const PART_ICON = {
+  photo: '<circle cx="12" cy="9" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+  section: '<path d="M4 6h16M4 11h10M4 16h13"/>',
+  sidebar: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>',
+  logo: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12h6M12 9v6"/>',
+};
+
+/** Parts of the CV itself (not free objects): put back the photo, a section, the sidebar or logo spots you deleted. */
+function PartsTab({ data, variant, update, setSel }: Props) {
+  const L = data.design.layout;
+  const c = data.content;
+  const vi = data.variants.findIndex((v) => v.id === variant.id);
+  const photoOn = L.photo !== 'none';
+  const removed = (['summary', 'experience', 'projects', 'contact', 'skills', 'softSkills', 'languages', 'interests', 'education'] as const).filter((k) => variant.hidden.includes(k));
+  const noLogo = c.experience.filter((j) => j.logo === 'none');
+  const select = (k: string, i?: string) => requestAnimationFrame(() => {
+    setSel({ type: 'el', k, i });
+    document.querySelector(`.canvas .page [data-k="${k}"]${i ? `[data-i="${i}"]` : ''}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+  const tile = (key: string, label: string, icon: string, run: () => void, title: string, done = false) => (
+    <button key={key} className={`el-tile part ${done ? 'done' : ''}`} title={title} onClick={run}>
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: icon }} />
+      <span>{label}</span>
+    </button>
+  );
+  return (
+    <div className="panel">
+      <h3>CV parts</h3>
+      <p className="hint">Parts of your CV itself. Click one to put it on the page (or select it there), then fill it in. Anything you delete shows up here to bring back.</p>
+      <div className="el-grid">
+        {tile(
+          'photo',
+          photoOn ? (c.photo ? 'Profile photo (on the page)' : 'Profile photo (spot on the page)') : 'Profile photo',
+          PART_ICON.photo,
+          () => {
+            if (!photoOn) update((d) => photoBack(d));
+            select('photo');
+          },
+          photoOn ? 'Select the photo on the page (then “+ Add photo” or “Replace” in the toolbar)' : 'Put the photo spot back on the page, then choose an image with “+ Add photo” in the toolbar',
+          photoOn,
+        )}
+        {L.sidebar === 'none' &&
+          tile('sidebar', 'Sidebar', PART_ICON.sidebar, () => update((d) => void (d.design.layout.sidebar = 'right')), 'Bring back the sidebar (Layout → Sidebar chooses left or right)')}
+        {removed.map((k) =>
+          tile(k, c.headings[k] || k, PART_ICON.section, () => {
+            update((d) => void (d.variants[vi].hidden = d.variants[vi].hidden.filter((x) => x !== k)));
+            select('section', k);
+          }, 'Put this section back on the page in this version'),
+        )}
+        {noLogo.length > 0 &&
+          tile('logos', `Logo spots (${noLogo.length} job${noLogo.length > 1 ? 's' : ''})`, PART_ICON.logo, () => {
+            update((d) => d.content.experience.forEach((j) => void (j.logo === 'none' && (j.logo = ''))));
+            select('jobLogo', noLogo[0].id);
+          }, 'Bring back the company logo spots you deleted')}
+      </div>
+      <p className="hint">Sections and their items (jobs, skill groups, your own sections…) are added in <strong>Content</strong>, or with the “+” buttons on the page.</p>
     </div>
   );
 }
@@ -214,6 +356,8 @@ function TextTab(props: Props) {
 function UploadsTab(props: Props) {
   const [files, setFiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [err, setErr] = useState('');
   const load = () =>
     fetch(`${API}uploads`)
       .then((r) => r.json())
@@ -245,7 +389,9 @@ function UploadsTab(props: Props) {
             e.target.value = '';
             setBusy(true);
             try {
-              for (const f of list) place(await props.upload(f));
+              let last = '';
+              for (const f of list) last = await props.upload(f);
+              if (last) setPicked(last); // uploaded to your images; you choose what to do with it
             } finally {
               setBusy(false);
               load();
@@ -253,15 +399,37 @@ function UploadsTab(props: Props) {
           }}
         />
       </label>
-      <p className="hint">Click an image to add it to the page.</p>
+      <p className="hint">Click an image to select it, then choose what to do with it.</p>
+      {picked && (
+        <div className="upload-actions">
+          <button className="primary" onClick={() => place(picked)}>Add to page</button>
+          <button onClick={() => props.update((d) => {
+            d.content.photo = picked;
+            if (d.design.layout.photo === 'none') photoBack(d);
+          })}>Use as photo</button>
+          <button
+            className="danger"
+            onClick={async () => {
+              if (!confirm('Delete this image from your images?')) return;
+              const res = await fetch(`${API}uploads?path=${encodeURIComponent(picked)}`, { method: 'DELETE' });
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok) return setErr(body.error || 'Could not delete it');
+              setErr('');
+              setPicked(null);
+              load();
+            }}
+          >
+            Delete
+          </button>
+          <button className="ghost" onClick={() => setPicked(null)}>Cancel</button>
+        </div>
+      )}
+      {err && <p className="hint err">{err}</p>}
       <div className="uploads">
         {files.map((src) => (
-          <div key={src} className="upload">
-            <img src={src} alt="" onClick={() => place(src)} title="Add to the page" />
-            <button title="Use as your photo" onClick={() => props.update((d) => void (d.content.photo = src))}>
-              Use as photo
-            </button>
-          </div>
+          <button key={src} className={`upload ${picked === src ? 'on' : ''}`} onClick={() => setPicked(picked === src ? null : src)} title="Select">
+            <img src={src} alt="" />
+          </button>
         ))}
       </div>
     </div>

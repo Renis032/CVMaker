@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
@@ -44,8 +44,18 @@ def editor_page(request: Request, cv: str = ""):
     if not (editor.STATIC / "index.html").exists():
         return page(request, "error.html", message="The CV editor is not built yet: run `npm install && npm run build` in the editor/ folder.")
     if not cv and not assistant.load_profile():
-        return page(request, "error.html", message="Set up your profile first (My profile → Import my CV); the editor edits it.")
+        return _back("/profile#start")  # pick a job category (or import a CV) first
     return page(request, "editor.html", query=f"?cv={quote(cv)}" if cv else "")
+
+
+@router.post("/editor/start")
+def editor_start(request: Request, starter: str = Form("developer")):
+    """A new CV for a job category: its labels and sections, nothing written for you."""
+    try:
+        editor.start_blank(starter)
+    except ValueError as e:
+        return page(request, "error.html", message=str(e))
+    return _back("/editor")
 
 
 @router.get("/editor/app", response_class=HTMLResponse)
@@ -84,9 +94,7 @@ def editor_data(cv: str = ""):
             doc["job"] = {"title": job.title, "company": job.company, "url": f"/job/{job.id}",
                           "keywords": cvcheck.job_keywords(job, profile)}
         return doc
-    if not assistant.load_profile():
-        return _error("Set up your profile first (My profile → Import my CV).")
-    return editor.profile_document()
+    return editor.profile_document()  # without a profile yet: a blank, labelled CV to fill in
 
 
 @router.post("/editor/api/data")
@@ -123,6 +131,19 @@ def editor_uploads():
     return {"files": editor.list_uploads()}
 
 
+@router.delete("/editor/api/uploads")
+def editor_upload_delete(path: str = ""):
+    """Delete an image from your images, unless the CV still uses it (as the photo, a logo or on the page)."""
+    name = Path(path).name
+    file = editor.uploads_dir() / name
+    if not name or not file.is_file():
+        return _error("Not found", 404)
+    if f"/editor/uploads/{name}" in json.dumps(editor.load_layout()):
+        return _error("This image is still used on your CV (photo, a logo or on the page). Remove it there first.", 409)
+    file.unlink()
+    return {"ok": True}
+
+
 @router.get("/editor/uploads/{name}")
 def editor_uploaded(name: str):
     found = editor.image_bytes(f"/editor/uploads/{Path(name).name}")
@@ -155,7 +176,7 @@ async def editor_export(request: Request, cv: str = ""):
         _, _, pdf_path = db.get_cv(cv_id)
         _, pages = db.cv_layout(cv_id)
         return {"dir": str(Path(pdf_path).parent), "files": [Path(pdf_path).name], "pages": pages}
-    profile = assistant.load_profile()
+    profile = assistant.load_profile() or editor.blank_profile()
     layout = editor.load_layout()
     ids = body.get("ids") or [v["id"] for v in layout["variants"]]
     files, pages = [], 0

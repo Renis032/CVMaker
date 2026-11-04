@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -14,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from pydantic import ValidationError
 
-from . import assistant, auto, claims, companies, cvcheck, cvdiff, db, editor, github, insights, pack, people, render, roles, settings, taste, tasks
+from . import assistant, auto, categories, claims, companies, cvcheck, cvdiff, db, editor, github, insights, pack, people, render, roles, settings, taste, tasks
 from .auto import SavedSearch, load_criteria
 from .countries import COUNTRY_TERMS, country_name
 from .llm import LLMError
@@ -287,6 +288,7 @@ def index(
         company_sources=list(COMPANY_SOURCES),
         boards=[(name, info["label"], board_has_key(name), info["key"]) for name, info in BOARD_INFO.items()],
         seniority_levels=SENIORITY_LEVELS,
+        job_categories=categories.CATEGORIES,
         suggest=_suggestions(),
         closed_total=db.closed_count(),
         check_tasks=db.task_active("check"),
@@ -306,6 +308,7 @@ def search(
     search_id: str = Form(""),
     name: str = Form(""),
     action: str = Form("run"),
+    categories_picked: list[str] = Form([], alias="categories"),
     role_keywords: str = Form(""),
     skill_keywords: str = Form(""),
     exclude: str = Form(""),
@@ -328,6 +331,7 @@ def search(
     if where:  # the "Remote jobs" choice: not wanted / also include / remote only
         include_remote, remote_only = where in ("both", "remote"), where == "remote"
     criteria = Criteria(
+        categories=[c for c in categories_picked if c in categories.CATEGORIES],
         role_keywords=_split(role_keywords),
         skill_keywords=_split(skill_keywords),
         exclude=_split(exclude),
@@ -989,7 +993,7 @@ def cv_rate(cv_id: int, baseline: str = Form("profile")):
         refresh_cv_pdf(cv_id)
         _, tailored, pdf_path = db.get_cv(cv_id)
         full = ensure_description(job) if job else None
-        extra = (role.key_skills + role.skill_keywords) if role else load_criteria().skill_keywords
+        extra = (role.key_skills + role.skill_keywords) if role else categories.expand(load_criteria()).skill_keywords
         progress.set(step="measuring keywords and the PDF text")
         base_cv, base_pdf, label = _baseline(owner_id, baseline, profile)
         keywords = cvcheck.job_keywords(full, profile, extra)
@@ -1061,6 +1065,7 @@ def profile_page(request: Request, error: str = "", backup_error: str = "", rest
         backup_error=backup_error,
         backup_report=db.cache_get("backup:report", 1),
         restored=restored,
+        starters=[(k, v["name"], v["skills"] + v.get("sections", [])) for k, v in editor.STARTERS.items()],
     )
 
 
@@ -1072,11 +1077,13 @@ def profile_preview():
 
 @app.post("/profile/import")
 async def profile_import(cv: UploadFile = File(...)):
-    data = await cv.read()
+    data, name = await cv.read(), cv.filename or "cv.pdf"
+    if Path(name).suffix.lower() not in assistant.IMPORT_TYPES:
+        return _back("/profile?error=" + quote("Use a PDF, Word (.docx), text file or a picture of your CV."))
 
     def run(progress):
         progress.set(step="Claude is reading your CV")
-        assistant.save_profile(assistant.import_cv(data))
+        assistant.save_profile(assistant.import_cv(data, name))
         return "/profile"
 
     tasks.submit("import", f"Import CV · {cv.filename}", run, subject="import", url="/profile")
@@ -1087,6 +1094,17 @@ async def profile_import(cv: UploadFile = File(...)):
 async def profile_photo(photo: UploadFile = File(...)):
     settings.PHOTO_PATH.write_bytes(await photo.read())
     editor.use_profile_photo()
+    return _back("/profile")
+
+
+@app.post("/profile/photo/remove")
+def profile_photo_remove():
+    """No photo on any CV: the profile photo is deleted and the editor shows none."""
+    settings.PHOTO_PATH.unlink(missing_ok=True)
+    if editor.exists():
+        layout = editor.load_layout()
+        layout["photo"] = editor.NO_PHOTO
+        editor.save_layout(layout)
     return _back("/profile")
 
 

@@ -111,7 +111,11 @@ export function Field({ id, value, onChange, rich = false, as: Tag = 'span', cla
 
 export function focusField(id: string) {
   const el = document.querySelector<HTMLElement>(`[data-edit-id="${CSS.escape(id)}"]`);
-  if (!el) return;
+  if (el) editField(el);
+}
+
+/** Start typing in a field, with the caret at the end. */
+export function editField(el: HTMLElement) {
   el.focus();
   const range = document.createRange();
   range.selectNodeContents(el);

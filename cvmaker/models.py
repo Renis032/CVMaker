@@ -29,10 +29,10 @@ class Job(BaseModel):
 
 
 class Criteria(BaseModel):
-    role_keywords: list[str] = Field(
-        default_factory=lambda: ["developer", "engineer", "programmer"]
-    )
-    skill_keywords: list[str] = Field(default_factory=lambda: ["java", "c++", "spring"])
+    # Kinds of job picked (categories.py); they add their title words, skills and board phrases when a search runs.
+    categories: list[str] = Field(default_factory=list)
+    role_keywords: list[str] = Field(default_factory=list)
+    skill_keywords: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=lambda: ["sales", "manager", "director"])
     countries: list[str] = Field(default_factory=lambda: ["BG"])
     include_remote: bool = True
@@ -46,6 +46,8 @@ class Criteria(BaseModel):
     must_mention: list[str] = Field(default_factory=list)
     salary_only: bool = False
     min_score: int = 0
+    # Filled in from the categories when a search runs (phrases the job boards are searched for); not saved.
+    queries: list[str] = Field(default_factory=list, exclude=True)
 
 
 class RoleProfile(BaseModel):
@@ -64,6 +66,8 @@ class Contact(BaseModel):
     linkedin: str
     github: str
     location: str
+    # Anything else the CV lists as contact: website, portfolio, address, date of birth, nationality...
+    other: list[str] = Field(default_factory=list)
 
 
 class SkillGroup(BaseModel):
@@ -93,6 +97,20 @@ class Education(BaseModel):
     years: str
 
 
+class CustomEntry(BaseModel):
+    title: str
+    subtitle: str  # issuer, organisation, publisher, place...
+    dates: str
+    bullets: list[str]
+
+
+class CustomSection(BaseModel):
+    """A section the fixed ones don't cover: certifications, awards, volunteering, publications, courses,
+    references... Kept with the CV's own heading."""
+    title: str
+    entries: list[CustomEntry]
+
+
 class CVContent(BaseModel):
     name: str
     headline: str
@@ -105,6 +123,7 @@ class CVContent(BaseModel):
     soft_skills: list[str]
     languages: list[str]
     interests: list[str]
+    sections: list[CustomSection] = Field(default_factory=list)
 
 
 class SkillDetail(BaseModel):

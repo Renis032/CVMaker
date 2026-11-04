@@ -13,7 +13,7 @@ export const DEFAULT_LAYOUT: PageLayout = {
 };
 
 export function withDefaults(d: Partial<Design> | undefined): Design {
-  return { layout: { ...DEFAULT_LAYOUT, ...(d?.layout ?? {}) }, elements: { ...(d?.elements ?? {}) }, free: [...(d?.free ?? [])] };
+  return { layout: { ...DEFAULT_LAYOUT, ...(d?.layout ?? {}) }, elements: { ...(d?.elements ?? {}) }, free: [...(d?.free ?? [])], saved: [...(d?.saved ?? [])] };
 }
 
 // --- element kinds ------------------------------------------------------------------------------------------------
@@ -56,6 +56,10 @@ export const KINDS: Record<string, Kind> = {
   edu: { label: 'Education entry', plural: 'education entries', cat: 'box' },
   eduDegree: { label: 'Degree', plural: 'degrees', cat: 'text' },
   eduSchool: { label: 'School', plural: 'schools', cat: 'text' },
+  entry: { label: 'Entry', plural: 'entries', cat: 'box' },
+  entryTitle: { label: 'Entry title', plural: 'entry titles', cat: 'text' },
+  entrySubtitle: { label: 'Entry subtitle', plural: 'entry subtitles', cat: 'text' },
+  entryDates: { label: 'Entry date', plural: 'entry dates', cat: 'text' },
 };
 
 const HEADINGS = new Set(['heading', 'sideHeading']);
@@ -196,6 +200,19 @@ export interface Template {
   headFont?: string;
   layout: Partial<PageLayout>;
   elements?: Record<string, ElemStyle>;
+  /** Text size and spacing (templates you saved keep yours). */
+  spacing?: Partial<Pick<Style, SpacingKey>>;
+}
+
+type SpacingKey = 'fontSize' | 'lineHeight' | 'sectionGap' | 'itemGap' | 'sidebarWidth' | 'photoSize';
+const SPACING_KEYS: SpacingKey[] = ['fontSize', 'lineHeight', 'sectionGap', 'itemGap', 'sidebarWidth', 'photoSize'];
+const COLOR_KEYS = ['nameColor', 'accent', 'heading', 'text', 'muted', 'sidebarBg', 'sidebarText', 'sidebarLabel'] as const;
+
+/** The current design as a template of your own: colours, fonts, layout, element styles, text size and spacing. */
+export function templateFrom(d: CvData, name: string): Template {
+  const colors = Object.fromEntries(COLOR_KEYS.map((k) => [k, d.style[k]])) as ColorSet;
+  const spacing = Object.fromEntries(SPACING_KEYS.map((k) => [k, d.style[k]])) as Template['spacing'];
+  return { name, colors, font: d.style.font, layout: { ...d.design.layout }, elements: structuredClone(d.design.elements), spacing };
 }
 
 const NAVY: ColorSet = {
@@ -238,6 +255,67 @@ export const TEMPLATES: Template[] = [
     font: "'Montserrat', sans-serif",
     layout: { headingStyle: 'side', bullet: '▸', contactIcons: true },
   },
+  {
+    name: 'ATS-friendly, plain',
+    colors: { nameColor: '#000000', accent: '#1f2937', heading: '#000000', text: '#111111', muted: '#4b5563', sidebarBg: '#ffffff', sidebarText: '#111111', sidebarLabel: '#000000' },
+    font: FONTS[0][1],
+    layout: { sidebar: 'none', photo: 'none', headingStyle: 'underline', bullet: '•' },
+    elements: { heading: { upper: true, letterSpacing: 0.06 }, jobCompany: { size: 1.1 }, jobRole: { size: 1.15 } },
+  },
+  {
+    name: 'Classic serif',
+    colors: { nameColor: '#1c1917', accent: '#44403c', heading: '#1c1917', text: '#1c1917', muted: '#57534e', sidebarBg: '#ffffff', sidebarText: '#1c1917', sidebarLabel: '#1c1917' },
+    font: "'Libre Baskerville', serif",
+    layout: { sidebar: 'none', photo: 'none', headingStyle: 'underline', bullet: '–' },
+    elements: { name: { align: 'center' }, title: { align: 'center' }, heading: { upper: true, letterSpacing: 0.1, size: 1.05 } },
+  },
+  {
+    name: 'Violet, sidebar left',
+    colors: { nameColor: '#4c1d95', accent: '#7c3aed', heading: '#4c1d95', text: '#1f2937', muted: '#6b7280', sidebarBg: '#3b0764', sidebarText: '#faf5ff', sidebarLabel: '#d8b4fe' },
+    font: "'Poppins', sans-serif",
+    layout: { sidebar: 'left', headingStyle: 'bar', bullet: '•', contactIcons: true },
+  },
+  {
+    name: 'Forest banner',
+    colors: { nameColor: '#ffffff', accent: '#15803d', heading: '#14532d', text: '#1f2937', muted: '#6b7280', sidebarBg: '#f0fdf4', sidebarText: '#14532d', sidebarLabel: '#15803d' },
+    font: "'Raleway', sans-serif",
+    layout: { header: 'full', photo: 'header', headingStyle: 'plain', contactIcons: true },
+    elements: { header: { bg: '#14532d', padding: 6 }, title: { color: '#bbf7d0' } },
+  },
+  {
+    name: 'Slate, light sidebar',
+    colors: { nameColor: '#0f172a', accent: '#0284c7', heading: '#0f172a', text: '#1e293b', muted: '#64748b', sidebarBg: '#f1f5f9', sidebarText: '#0f172a', sidebarLabel: '#0369a1' },
+    font: "'IBM Plex Sans', sans-serif",
+    layout: { headingStyle: 'side', contactIcons: true },
+  },
+  {
+    name: 'Coral, modern',
+    colors: { nameColor: '#ffffff', accent: '#e8590c', heading: '#c2410c', text: '#292524', muted: '#78716c', sidebarBg: '#fff7ed', sidebarText: '#292524', sidebarLabel: '#c2410c' },
+    font: "'Nunito', sans-serif",
+    layout: { sidebar: 'left', header: 'full', photo: 'header', headingStyle: 'plain', bullet: '▸', contactIcons: true },
+    elements: { header: { bg: '#f97316', padding: 6 }, title: { color: '#ffedd5' } },
+  },
+  {
+    name: 'Executive',
+    colors: { nameColor: '#0c2340', accent: '#8a6d3b', heading: '#0c2340', text: '#1f2937', muted: '#6b7280', sidebarBg: '#f5f3ef', sidebarText: '#1f2937', sidebarLabel: '#8a6d3b' },
+    font: "'EB Garamond', serif",
+    headFont: "'Playfair Display', serif",
+    layout: { photo: 'header', headingStyle: 'underline', bullet: '•' },
+  },
+  {
+    name: 'Ocean, compact',
+    colors: { nameColor: '#164e63', accent: '#0e7490', heading: '#164e63', text: '#1f2937', muted: '#64748b', sidebarBg: '#164e63', sidebarText: '#ecfeff', sidebarLabel: '#67e8f9' },
+    font: "'Work Sans', sans-serif",
+    layout: { headingStyle: 'bar', bullet: '–', contactIcons: true },
+    spacing: { fontSize: 8.6, sectionGap: 4, itemGap: 2.5 },
+  },
+  {
+    name: 'Mono, technical',
+    colors: { nameColor: '#111827', accent: '#2563eb', heading: '#111827', text: '#1f2937', muted: '#6b7280', sidebarBg: '#f9fafb', sidebarText: '#111827', sidebarLabel: '#2563eb' },
+    font: "'Fira Sans', sans-serif",
+    headFont: "'Oswald', sans-serif",
+    layout: { sidebar: 'right', headingStyle: 'side', bullet: '▸', contactIcons: true, photo: 'none' },
+  },
 ];
 
 export const PALETTES: [string, ColorSet][] = [
@@ -277,7 +355,7 @@ export function applyFontSet(d: CvData, head: string, body: string) {
 }
 
 export function applyTemplate(d: CvData, t: Template) {
-  Object.assign(d.style, t.colors, { font: t.font });
+  Object.assign(d.style, t.colors, { font: t.font }, t.spacing ?? {});
   d.design.layout = { ...DEFAULT_LAYOUT, ...t.layout };
   d.design.elements = structuredClone(t.elements ?? {});
   if (t.headFont) applyFontSet(d, t.headFont, t.font);

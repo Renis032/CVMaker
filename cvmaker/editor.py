@@ -24,7 +24,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from . import assistant, settings
-from .models import CVContent, Education, Experience, Profile, Project, SkillGroup
+from .models import (Contact, CustomEntry, CustomSection, CVContent, Education, Experience, Profile, Project,
+                     SkillGroup)
 
 STATIC = Path(__file__).parent / "static" / "editor"
 CVEDITOR_DATA = Path.home() / "Personal" / "Projects" / "CVEditor" / "data" / "cv.json"
@@ -213,6 +214,22 @@ def _contact_kind(line: str) -> str:
     return "text:" + t
 
 
+def _contact_lines(cv: CVContent, kinds: list[str]) -> list[str]:
+    """The contact lines in the CV's order: the fixed fields, then the other lines (website, address...)."""
+    other = list(cv.contact.other)
+    lines = []
+    for kind in kinds:
+        if kind == "other":
+            value = other.pop(0) if other else ""
+        else:
+            value = _contact_value(cv, kind)
+            if kind.startswith("text:") and value in other:  # an older free line that now lives in contact.other
+                other.remove(value)
+        if value:
+            lines.append(value)
+    return lines + other
+
+
 def to_content(cv: CVContent, layout: dict, reg: dict) -> tuple[dict, dict]:
     """The editor's view of a CV (profile or tailored) plus the updated id registry."""
     used: set[str] = set()
@@ -237,14 +254,34 @@ def to_content(cv: CVContent, layout: dict, reg: dict) -> tuple[dict, dict]:
               for sid, g in zip(ids("skills", [g.category for g in cv.skills], "skill"), cv.skills)]
     education = [{"id": eid, "degree": e.degree, "school": e.school}
                  for eid, e in zip(ids("edu", [e.school or e.degree for e in cv.education], "edu"), cv.education)]
+    custom = []
+    for sid, sec in zip(ids("sections", [x.title for x in cv.sections], "sec"), cv.sections):
+        entries = []
+        for eid, e in zip(ids(f"e:{sid}", [e.title or e.subtitle for e in sec.entries], "ent"), sec.entries):
+            bids = ids(f"b:{eid}", e.bullets, "b", readable=False)
+            entries.append({"id": eid, "title": e.title, "subtitle": e.subtitle, "dates": e.dates,
+                            "bullets": [{"id": i, "text": t} for i, t in zip(bids, e.bullets)]})
+        custom.append({"id": sid, "title": sec.title, "entries": entries})
+    contact = _contact_lines(cv, layout["contact"])
+    if not contact and is_blank(cv):
+        contact = ["", "", ""]  # a blank CV shows empty, labelled contact lines to fill in
     content = {
-        "name": cv.name, "title": cv.headline, "photo": layout["photo"] or (photo_url() if settings.PHOTO_PATH.exists() else ""),
-        "summary": cv.summary, "contact": [v for v in (_contact_value(cv, k) for k in layout["contact"]) if v],
+        "name": cv.name, "title": cv.headline, "photo": _photo(layout),
+        "summary": cv.summary, "contact": contact, "custom": custom,
         "headings": layout["headings"], "projectsLink": layout["projectsLink"], "experience": jobs,
         "projects": projects, "skills": skills, "softSkills": list(cv.soft_skills), "languages": list(cv.languages),
         "interests": list(cv.interests), "education": education,
     }
     return content, new_reg
+
+
+NO_PHOTO = "none"  # layout["photo"] when the photo was removed in the editor (the profile photo is not used either)
+
+
+def _photo(layout: dict) -> str:
+    if layout["photo"] == NO_PHOTO:
+        return ""
+    return layout["photo"] or (photo_url() if settings.PHOTO_PATH.exists() else "")
 
 
 def use_profile_photo() -> None:
@@ -302,18 +339,36 @@ def from_content(content: dict, base: CVContent, layout: dict, reg: dict) -> tup
     new_reg["edu"] = {e["id"]: e["school"] or e["degree"] for e in content["education"]}
     cv.education = education
 
+    sections = []
+    for sec in content.get("custom", []):
+        entries = []
+        for e in sec["entries"]:
+            bullets = [b["text"] for b in e["bullets"] if b["text"].strip()]
+            if not (e["title"].strip() or e["subtitle"].strip() or e["dates"].strip() or bullets):
+                continue
+            entries.append(CustomEntry(title=e["title"], subtitle=e["subtitle"], dates=e["dates"], bullets=bullets))
+            new_reg[f"b:{e['id']}"] = {b["id"]: b["text"] for b in e["bullets"] if b["text"].strip()}
+        new_reg[f"e:{sec['id']}"] = {e["id"]: e["title"] or e["subtitle"] for e in sec["entries"]}
+        sections.append(CustomSection(title=sec["title"], entries=entries))
+    new_reg["sections"] = {sec["id"]: sec["title"] for sec in content.get("custom", [])}
+    cv.sections = sections
+
     cv.name, cv.headline, cv.summary = content["name"], content["title"], content["summary"]
     cv.soft_skills = [x for x in content["softSkills"] if x.strip()]
     cv.languages = [x for x in content.get("languages", []) if x.strip()]
     cv.interests = [x for x in content["interests"] if x.strip()]
-    kinds = []
+    kinds, other = [], []
     for line in content["contact"]:
         if not line.strip():
             continue
         kind = _contact_kind(line)
-        if not kind.startswith("text:"):
+        if kind.startswith("text:"):
+            other.append(line.strip())
+            kind = "other"
+        else:
             setattr(cv.contact, kind, line.strip())  # a line removed from the CV keeps its value in the profile
         kinds.append(kind)
+    cv.contact.other = other
     return cv, new_reg, kinds
 
 
@@ -328,26 +383,83 @@ def default_cv_variant(layout: dict, label: str) -> dict:
     """The version a tailored CV starts from: your first version's order, sections and location (items differ, so
     hidden items and own wording don't carry over)."""
     first = layout["variants"][0]
-    item_ids = re.compile(r"^(job|proj|skill|edu|b)-")
+    item_ids = re.compile(r"^(job|proj|skill|edu|sec|ent|b)-|^x:")
     return {**copy.deepcopy(first), "id": "tailored", "name": label, "overrides": {}, "projectOrder": [],
             "hidden": [h for h in first["hidden"] if not item_ids.match(h)]}
 
 
+def _starters() -> dict[str, dict]:
+    """Job categories for a new CV (categories.py). Picking one only sets the structure: skill group labels, extra
+    sections and headings. Nothing is written for the person; every field stays empty until they fill it in."""
+    from .categories import CATEGORIES
+
+    out = {k: {"name": c["name"], "skills": c["cv_skills"], "sections": c.get("cv_sections", []),
+               "headings": c.get("cv_headings", {})} for k, c in CATEGORIES.items()}
+    out["other"] = {"name": "Other / not in the list", "skills": ["Skills"], "sections": [], "headings": {"projects": "Projects"}}
+    return out
+
+
+STARTERS = _starters()
+
+
+def blank_profile(starter: str = "developer") -> Profile:
+    """A CV with nothing filled in yet, laid out for a job category: one empty job, education entry and list item,
+    and the category's skill groups and sections with their labels. The editor shows what goes in each empty field;
+    empty fields and sections never print."""
+    from . import people
+
+    s = STARTERS.get(starter, STARTERS["developer"])
+    name = people.current_person().name if not people.is_default() else ""
+    return Profile(
+        name=name, headline="", summary="",
+        contact=Contact(email="", phone="", linkedin="", github="", location=""),
+        skills=[SkillGroup(category=label, items=[]) for label in s["skills"]],
+        experience=[Experience(title="", company="", start="", end="", location="", bullets=["", ""])],
+        projects=[], education=[Education(degree="", school="", years="")],
+        soft_skills=[""], languages=[""], interests=[""],
+        sections=[CustomSection(title=t, entries=[CustomEntry(title="", subtitle="", dates="", bullets=[])])
+                  for t in s.get("sections", [])],
+        skill_details=[], extra_facts=[], preferences=[],
+    )
+
+
+def start_blank(starter: str) -> None:
+    """Create a new, empty profile for a job category (only when the person has none yet)."""
+    if assistant.load_profile():
+        raise ValueError("You already have a profile; open the CV editor to change it.")
+    layout = load_layout()
+    headings = {**DEFAULT_HEADINGS, **STARTERS.get(starter, {}).get("headings", {})}
+    if not exists() or layout["headings"] == DEFAULT_HEADINGS:
+        layout["headings"] = headings
+    layout["contact"] = ["email", "phone", "linkedin"]
+    save_layout(layout)
+    assistant.save_profile(blank_profile(starter))
+
+
+def is_blank(cv: CVContent) -> bool:
+    return not (cv.headline or cv.summary or any(e.title or e.company or any(e.bullets) for e in cv.experience)
+                or cv.contact.email or cv.contact.phone or cv.contact.linkedin or cv.contact.other)
+
+
 def profile_document() -> dict:
     profile = assistant.load_profile()
+    blank = profile is None
+    profile = profile or blank_profile()
     layout = load_layout()
     content, reg = to_content(profile, layout, layout["ids"])
-    if reg != layout["ids"]:
+    if reg != layout["ids"] and not blank:
         layout["ids"] = reg
         save_layout(layout)
-    return {"mode": "profile", "label": "Your CV (profile)", "back": "/profile", "rev": revision(profile),
+    label = "Your CV (new: fill it in)" if blank else "Your CV (profile)"
+    return {"mode": "profile", "label": label, "back": "/profile", "rev": revision(profile),
             "content": content, "variants": layout["variants"], "style": layout["style"], "design": layout["design"],
             "fontPt": None}
 
 
 def save_profile_document(data: dict) -> str:
-    """Save what the editor sent: content into the profile, the rest into editor.json. Returns the new revision."""
-    profile = assistant.load_profile()
+    """Save what the editor sent: content into the profile, the rest into editor.json. Returns the new revision.
+    The first save of a blank CV creates the profile."""
+    profile = assistant.load_profile() or blank_profile()
     if data.get("rev") and data["rev"] != revision(profile):
         raise Conflict("Your profile was changed somewhere else (My profile, the chat…). Reload the editor to get the new version.")
     # One restore point covering both files, taken before either is written.
@@ -370,7 +482,7 @@ def _keep_layout(layout: dict, data: dict, reg: dict, kinds: list[str]) -> None:
     layout["contact"] = kinds
     layout["headings"] = {**DEFAULT_HEADINGS, **c["headings"]}
     layout["projectsLink"] = c["projectsLink"]
-    layout["photo"] = "" if c["photo"].startswith("/editor/api/photo") else c["photo"]
+    layout["photo"] = NO_PHOTO if not c["photo"] else "" if c["photo"].startswith("/editor/api/photo") else c["photo"]
     layout["logos"] = {**layout["logos"], **{j["id"]: j["logo"] for j in c["experience"]}}
 
 
@@ -462,6 +574,7 @@ def _inline_images(content: dict) -> dict:
 def _inline_design(design: dict, hidden: list[str]) -> dict:
     """The design with the images of free elements inlined (and the ones this version hides left out)."""
     design = copy.deepcopy(design)
+    design.pop("saved", None)  # your saved templates: not needed to draw the page
     design["free"] = [f for f in design.get("free", []) if f.get("id") not in hidden]
     for f in design["free"]:
         if f.get("type") == "image":
@@ -497,7 +610,7 @@ def print_html(cv: CVContent, variant: dict | None = None, font_pt: float | None
     data = {"mode": "print", "content": _inline_images(content), "variants": [variant], "style": style, "design": design}
     js, css = _bundle()
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    font_link = fonts_link(style, layout["design"])
+    font_link = fonts_link(style, design)
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{_esc(cv.name)} - CV</title>{font_link}'
             f"<style>{css}</style></head><body><div id=\"root\"></div>"
             f"<script>window.__CV_PRINT__ = {payload};</script>"

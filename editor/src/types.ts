@@ -35,9 +35,27 @@ export interface Education {
   school: string;
 }
 
+/** An entry of a custom section: a certificate, award, volunteer role, paper... */
+export interface CustomEntry {
+  id: string;
+  title: string;
+  subtitle: string;
+  dates: string;
+  bullets: Bullet[];
+}
+
+/** A section the fixed ones don't cover (Certifications, Awards, Volunteering...), with its own heading. */
+export interface CustomSection {
+  id: string;
+  title: string;
+  entries: CustomEntry[];
+}
+
 export type MainSection = 'summary' | 'experience' | 'projects';
 export type SideSection = 'contact' | 'skills' | 'softSkills' | 'languages' | 'interests' | 'education';
-export type SectionKey = MainSection | SideSection;
+export type BuiltinSection = MainSection | SideSection;
+/** Built-in sections by name; custom sections as "x:<id>". */
+export type SectionKey = BuiltinSection | `x:${string}`;
 
 export interface Content {
   name: string;
@@ -45,7 +63,7 @@ export interface Content {
   photo: string;
   summary: Rich;
   contact: string[];
-  headings: Record<SectionKey, string>;
+  headings: Record<BuiltinSection, string>;
   projectsLink: string;
   experience: Experience[];
   projects: Project[];
@@ -54,6 +72,7 @@ export interface Content {
   languages: string[];
   interests: string[];
   education: Education[];
+  custom: CustomSection[];
 }
 
 /** One CV version: shares all content, overrides order/visibility and a few fields. */
@@ -171,6 +190,8 @@ export interface PageLayout {
   /** The name and title at the top of the main column, or across the whole page. */
   header: 'main' | 'full';
   photo: 'side' | 'header' | 'none';
+  /** Where the photo was before it was deleted (it comes back there). */
+  photoWas?: 'side' | 'header';
   headingStyle: 'underline' | 'plain' | 'bar' | 'side';
   bullet: string; // 'default' or the character to use
   contactIcons: boolean;
@@ -182,4 +203,6 @@ export interface Design {
   /** Keys: a kind ("jobRole") for all of them, or "kind#id" ("jobRole#job-ab12") for one. */
   elements: Record<string, ElemStyle>;
   free: FreeEl[];
+  /** Designs you saved as your own templates (Design tab). */
+  saved?: import('./design').Template[];
 }

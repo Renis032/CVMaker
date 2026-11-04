@@ -303,16 +303,26 @@
         </div>
         {% endif %}
       </div>
-      <div class="grid">
+      <label>Kind of job <span class="muted">(pick one or more)</span></label>
+      <div class="cat-picks">
+        {% for key, c in job_categories.items() %}
+        <label class="cat-pick" title="Titles: {{ c.titles | join(', ') }}{% if c.skills %} · Skills: {{ c.skills | join(', ') }}{% endif %}">
+          <input type="checkbox" name="categories" value="{{ key }}" data-name="{{ c.name }}" {{ 'checked' if key in criteria.categories }}>
+          <span>{{ c.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="hint">Each kind brings its usual job titles and skills, and the job boards are searched for it (hover one to see what it adds). Add your own words below, or leave the kinds empty and type everything yourself.</div>
+      <div class="grid" style="margin-top:12px">
         <div>
-          <label>Job title contains any of</label>
+          <label>Job title also contains any of</label>
           <input type="text" name="role_keywords" data-chips data-list="dl-roles" placeholder="e.g. developer" value="{{ criteria.role_keywords | join(', ') }}">
-          <div class="hint">A job is kept only if its title has at least one of these. Leave empty to keep every title.</div>
+          <div class="hint">A job is kept only if its title has one of these or one of the picked kinds' titles. With nothing here and no kind picked, every title is kept.</div>
         </div>
         <div>
           <label>Your skills</label>
           <input type="text" name="skill_keywords" data-chips data-list="dl-skills" placeholder="e.g. java" value="{{ criteria.skill_keywords | join(', ') }}">
-          <div class="hint">Jobs that mention more of these rank higher. Remote job boards are searched for them.</div>
+          <div class="hint">Jobs that mention more of these (and the picked kinds' skills) rank higher.</div>
         </div>
       </div>
     </section>
@@ -443,6 +453,13 @@
   .search-card .step { border-top:1px solid var(--line); margin-top:16px; padding-top:12px; }
   .search-card .step-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 16px; }
   .search-card .step h3 { margin:0; font-size:15px; }
+  .cat-picks { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 4px; }
+  .cat-pick { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid var(--line); border-radius:999px;
+    background:var(--card); cursor:pointer; font-size:13px; font-weight:550; margin:0; user-select:none; }
+  .cat-pick input { position:absolute; opacity:0; pointer-events:none; }
+  .cat-pick:hover { border-color:var(--accent); }
+  .cat-pick:has(input:checked) { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .cat-pick:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
   .search-card .num { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--chip); color:var(--muted); font-size:12px; font-weight:700; margin-right:4px; }
   .search-card .quick-fill { font-size:12.5px; gap:4px; }
   .search-card .quick-fill .pill { margin:0; }
@@ -489,7 +506,10 @@
       if (where === "remote") place = "fully remote";
       else if (!countries.length) place = where === "both" ? "remote (no countries set)" : "nowhere yet - add a country";
       else place = "in " + words(countries) + (where === "both" ? ", plus fully remote" : "");
-      let s = "Finds " + (sen.length ? words(sen) + " " : "") + (titles.length ? words(q(titles)) + " jobs " : "jobs with any title ") + place;
+      const cats = [...form.querySelectorAll("input[name=categories]:checked")].map(c => c.dataset.name);
+      const what = cats.length ? words(cats) + (titles.length ? " (or titles with " + words(q(titles)) + ")" : "") + " jobs " :
+        titles.length ? words(q(titles)) + " jobs " : "jobs with any title ";
+      let s = "Finds " + (sen.length ? words(sen) + " " : "") + what + place;
       s += ", posted in the last " + age + " days";
       if (form.elements.salary_only.checked) s += ", with a salary";
       if (exclude.length) s += ", skipping " + words(q(exclude));

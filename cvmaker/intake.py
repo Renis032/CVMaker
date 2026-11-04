@@ -7,7 +7,7 @@ pages are not loaded - paste the posting text for those."""
 import hashlib
 import re
 
-from . import assistant, auto, checks, coach, db, pack
+from . import assistant, auto, categories, checks, coach, db, pack
 from .models import Job
 from .salary import find_salary
 from .search import score
@@ -80,7 +80,7 @@ def add(raw: str, progress=None) -> str:
         location=parsed.location, remote=parsed.remote, url=url, description=parsed.description or text,
         posted_at=parsed.posted_at, salary=parsed.salary or find_salary(parsed.description),
     )
-    criteria = auto.active_search().criteria
+    criteria = categories.expand(auto.active_search().criteria)
     db.upsert_jobs([job], {job.id: score(job, criteria, assistant.load_profile())})
     db.mark_seen([job.id])
     db.promote(job.id, "liked")

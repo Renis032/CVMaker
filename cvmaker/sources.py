@@ -19,6 +19,16 @@ from .salary import find_salary, format_salary
 from .web_fetch import fetch_html, html_to_text, http, page_links
 
 
+
+def search_terms(criteria: Criteria, limit: int, default: list[str] | None = None) -> list[str]:
+    """What to type into a job board's search: the picked job categories' phrases ("qa automation engineer") first,
+    then the skills."""
+    terms: list[str] = []
+    for t in [*criteria.queries, *criteria.skill_keywords]:
+        if t and t.lower() not in {x.lower() for x in terms}:
+            terms.append(t)
+    return terms[:limit] or (default if default is not None else ["developer"])
+
 def _iso_from_ms(ms) -> str:
     if not ms:
         return ""
@@ -269,7 +279,7 @@ def careerpage(company: dict, criteria: Criteria) -> list[Job]:
 def remotive(criteria: Criteria) -> list[Job]:
     jobs = {}
     with http() as c:
-        for kw in criteria.skill_keywords or [""]:
+        for kw in search_terms(criteria, 6, [""]):
             data = c.get(
                 "https://remotive.com/api/remote-jobs",
                 params={"category": "software-dev", "search": kw, "limit": 100},
@@ -374,7 +384,7 @@ def devbg(criteria: Criteria) -> list[Job]:
     """dev.bg, the main Bulgarian IT job board (keyword search, 20 jobs per page)."""
     jobs = {}
     with http() as c:
-        for kw in (criteria.skill_keywords or criteria.role_keywords or ["developer"])[:5]:
+        for kw in search_terms(criteria, 5, criteria.role_keywords[:5] or ["developer"]):
             for page in (1, 2, 3):
                 r = c.get("https://dev.bg/", params={"s": kw, "post_type": "job_listing", "_paged": page})
                 r.raise_for_status()
@@ -418,7 +428,7 @@ def himalayas(criteria: Criteria) -> list[Job]:
     """Himalayas: remote jobs, with the countries each job accepts and often a salary."""
     jobs = {}
     with http() as c:
-        for kw in (criteria.skill_keywords or ["developer"])[:4]:
+        for kw in search_terms(criteria, 4):
             for page in (1, 2):
                 data = c.get("https://himalayas.app/jobs/api/search", params={"q": kw, "page": page}).json()
                 for j in data.get("jobs", []):
@@ -448,7 +458,7 @@ def jobicy(criteria: Criteria) -> list[Job]:
     """Jobicy: remote jobs with region restrictions and often a salary."""
     jobs = {}
     with http() as c:
-        for kw in (criteria.skill_keywords or ["developer"])[:4]:
+        for kw in search_terms(criteria, 4):
             data = c.get("https://jobicy.com/api/v2/remote-jobs", params={"count": 50, "tag": kw}).json()
             for j in data.get("jobs", []):
                 jobs[j["id"]] = Job(
@@ -517,7 +527,7 @@ def adzuna(criteria: Criteria) -> list[Job]:
     jobs = {}
     with http() as c:
         for country in countries:
-            for kw in (criteria.skill_keywords or ["developer"])[:3]:
+            for kw in search_terms(criteria, 3):
                 r = c.get(
                     f"https://api.adzuna.com/v1/api/jobs/{country.lower()}/search/1",
                     params={
@@ -561,7 +571,7 @@ def jsearch(criteria: Criteria) -> list[Job]:
     if not settings.RAPIDAPI_KEY:
         raise RuntimeError("RAPIDAPI_KEY not set - LinkedIn/Indeed results need a JSearch key")
     headers = {"X-RapidAPI-Key": settings.RAPIDAPI_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
-    queries = [f"{s} developer" for s in criteria.skill_keywords[:3]] or ["software developer"]
+    queries = criteria.queries[:3] or [f"{s} developer" for s in criteria.skill_keywords[:3]] or ["software developer"]
     searches = [(q, country, False) for country in criteria.countries for q in queries]
     if criteria.include_remote:
         searches += [(queries[0], country, True) for country in criteria.countries]

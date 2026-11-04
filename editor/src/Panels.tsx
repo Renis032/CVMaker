@@ -2,7 +2,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { CvData, Variant } from './types';
-import { columns, newVariant, ordered } from './model';
+import { columns, newVariant, ordered, sectionTitle } from './model';
 import type { Update } from './CvPage';
 
 interface Row { id: string; label: string }
@@ -66,7 +66,7 @@ export function VersionsPanel({ data, variant, update, select }: {
     });
   const c = data.content;
   const tailored = data.mode === 'cv';
-  const cols = columns(variant, data.design.layout.sidebar === 'none' ? { ...data.design.layout, sidebar: 'right' } : data.design.layout);
+  const cols = columns(variant, data.design.layout.sidebar === 'none' ? { ...data.design.layout, sidebar: 'right' } : data.design.layout, c);
 
   return (
     <div className="panel">
@@ -159,52 +159,7 @@ export function VersionsPanel({ data, variant, update, select }: {
         </p>
       )}
 
-      <p className="hint">Select a section's box on the page to move it to the other column.</p>
-      <h4>Main column order</h4>
-      <SortableList
-        rows={cols.main.map((k) => ({ id: k, label: c.headings[k] }))}
-        hidden={hidden}
-        onReorder={(ids) => setV((v) => void (v.mainOrder = ids as Variant['mainOrder']))}
-        onToggle={toggle}
-      />
-
-      <h4>Project order</h4>
-      <SortableList
-        rows={ordered(c.projects, variant.projectOrder).map((p) => ({ id: p.id, label: p.title }))}
-        hidden={hidden}
-        onReorder={(ids) => setV((v) => void (v.projectOrder = ids))}
-        onToggle={toggle}
-      />
-
-      {c.experience.length > 1 || variant.hidden.some((h) => c.experience.some((j) => j.id === h)) ? (
-        <>
-          <h4>Jobs</h4>
-          <SortableList
-            rows={c.experience.map((j) => ({ id: j.id, label: `${j.role} · ${j.company}` }))}
-            hidden={hidden}
-            onReorder={(ids) => update((d) => void (d.content.experience = ordered(d.content.experience, ids)))}
-            onToggle={toggle}
-          />
-          <p className="hint">Job order is shared by all versions.</p>
-        </>
-      ) : null}
-
-      <h4>Sidebar order</h4>
-      <SortableList
-        rows={cols.side.map((k) => ({ id: k, label: c.headings[k] }))}
-        hidden={hidden}
-        onReorder={(ids) => setV((v) => void (v.sideOrder = ids as Variant['sideOrder']))}
-        onToggle={toggle}
-      />
-
-      <h4>Skill groups</h4>
-      <SortableList
-        rows={c.skills.map((s) => ({ id: s.id, label: s.label }))}
-        hidden={hidden}
-        onReorder={(ids) => update((d) => void (d.content.skills = ordered(d.content.skills, ids)))}
-        onToggle={toggle}
-      />
-      <p className="hint">Skill order is shared by all versions; showing or hiding is per version.</p>
+      <p className="hint">What this version shows, and in which order, is set in <strong>Content</strong> (Shown / Hidden, drag to reorder).</p>
     </div>
   );
 }

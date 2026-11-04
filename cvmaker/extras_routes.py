@@ -8,7 +8,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.datastructures import UploadFile as StarletteUpload
 
-from . import backup, db, history, logos
+import shutil
+
+from . import backup, db, history, logos, people, settings
 from .app import _back, page
 
 router = APIRouter()
@@ -109,3 +111,25 @@ def history_restore(snap_id: str):
     except ValueError as e:
         return _back("/profile?backup_error=" + quote(str(e)) + "#history")
     return _back("/profile?restored=1#history")
+
+
+# --- debug: start over -----------------------------------------------------------------------------------------
+
+# What "clear my profile" removes: the CV and what is built from it. Jobs, applications, made CVs/letters, searches,
+# role profiles and history stay. A backup zip of everything is written first.
+CLEAR_FILES = ["profile.json", "photo.png", "editor.json", "stories.json"]
+CLEAR_DIRS = ["editor_uploads"]
+
+
+@router.post("/profile/clear")
+def profile_clear():
+    history.snapshot("Before clearing my profile", force=True)
+    made = backup.make("before-clear")
+    root = settings.DATA_DIR
+    for name in CLEAR_FILES:
+        (root / name).unlink(missing_ok=True)
+    for name in CLEAR_DIRS:
+        shutil.rmtree(root / name, ignore_errors=True)
+    db.notification_add("task", f"Profile cleared{' for ' + people.current_person().name if not people.is_default() else ''}",
+                        f"A backup was saved first: {made.name} (My profile → History & backup to restore it).", "/profile#safety")
+    return _back("/profile#start")

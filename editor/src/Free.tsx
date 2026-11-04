@@ -17,7 +17,9 @@ export interface CanvasCtx {
   editing: string | null;
   guides: Guides | null;
   startDrag: (e: RPointerEvent, el: FreeEl, mode: Handle) => void;
-  select: (id: string) => void;
+  select: (id: string, shift?: boolean) => void;
+  /** Free elements in a multiple selection (dragged together). */
+  multi?: string[];
   startEdit: (id: string) => void;
   endEdit: () => void;
 }
@@ -128,10 +130,10 @@ function Item({ el, update }: { el: FreeEl; update: Update }) {
       onPointerDown={
         ctx.active && !editingThis
           ? (e) => {
-              if (e.button !== 0 || el.locked) {
+              if (e.button !== 0 || el.locked || e.shiftKey) {
                 e.stopPropagation();
                 blurFields();
-                ctx.select(el.id);
+                ctx.select(el.id, e.shiftKey);
                 return;
               }
               ctx.select(el.id);
