@@ -163,9 +163,14 @@ def make_pack(job_id: str, progress=None) -> str:
 def submit_pack(job_id: str) -> int:
     job, _ = db.get_job(job_id)
     return tasks.submit(
-        "pack", f"Application pack · {job.title} at {job.company}", lambda progress: make_pack(job_id, progress),
-        subject=f"pack:{job_id}", job_id=job_id, url=f"/job/{job_id}",
+        "pack", f"Application pack · {job.title} at {job.company}", "pack",
+        subject=f"pack:{job_id}", job_id=job_id, url=f"/job/{job_id}", args={"job_id": job_id},
     )
+
+
+@tasks.runner("pack")
+def _pack(progress, job_id: str) -> str:
+    return make_pack(job_id, progress)
 
 
 def run_packs(job_ids: list[str], min_score: int, limit: int, inline: bool = False) -> list[str]:

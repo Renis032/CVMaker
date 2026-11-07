@@ -779,14 +779,17 @@ def tasks_unseen_finished() -> list[dict]:
     return [_task(r) for r in rows]
 
 
-def tasks_interrupt_stale() -> None:
-    """Tasks left queued or running by a previous process never finish; say so."""
+def tasks_interrupt_stale(keep: set[int] | frozenset = frozenset()) -> None:
+    """Tasks left queued or running by a previous process never finish (unless they are still in the queue,
+    `keep`); say so."""
     with connect() as c:
-        c.execute(
-            "UPDATE tasks SET status = 'error', error = 'Interrupted - the app was restarted. Start it again.',"
-            " finished = ?, seen = 1 WHERE status IN ('queued', 'running')",
-            (time.time(),),
-        )
+        ids = [r["id"] for r in c.execute("SELECT id FROM tasks WHERE status IN ('queued', 'running')") if r["id"] not in keep]
+        for task_id in ids:
+            c.execute(
+                "UPDATE tasks SET status = 'error', error = 'Interrupted - the app was restarted. Start it again.',"
+                " finished = ?, seen = 1 WHERE id = ?",
+                (time.time(), task_id),
+            )
 
 
 # --- posting checks --------------------------------------------------------------------------------------
@@ -983,6 +986,22 @@ def chat_messages(thread_id: int) -> list[dict]:
     with connect() as c:
         rows = c.execute("SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY id", (thread_id,)).fetchall()
     return [_chat_msg(r) for r in rows]
+
+
+def chat_messages_page(thread_id: int, limit: int, before: int = 0, include: int = 0) -> tuple[list[dict], bool]:
+    """The newest `limit` messages (older than `before`, if given), oldest first, and whether earlier ones exist.
+    `include` is a message that must be on the page: the page then reaches back to it."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM chat_messages WHERE thread_id = ? AND (? = 0 OR id < ?) ORDER BY id DESC LIMIT ?",
+            (thread_id, before, before, limit + 1),
+        ).fetchall()
+        more = len(rows) > limit
+        rows = rows[:limit]
+        if include and rows and include < rows[-1]["id"]:
+            rows = c.execute("SELECT * FROM chat_messages WHERE thread_id = ? AND id >= ? ORDER BY id DESC", (thread_id, include)).fetchall()
+            more = c.execute("SELECT 1 FROM chat_messages WHERE thread_id = ? AND id < ? LIMIT 1", (thread_id, rows[-1]["id"])).fetchone() is not None
+    return [_chat_msg(r) for r in reversed(rows)], more
 
 
 def chat_message(message_id: int) -> dict | None:

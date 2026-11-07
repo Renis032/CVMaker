@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CvData, SectionKey } from './types';
 import { CvPage } from './CvPage';
-import { EditContext, editField, focusField } from './Editable';
+import { EditContext, editField, editFieldAt, focusField } from './Editable';
 import { API, docQuery, sectionTitle } from './model';
-import { withDefaults, elemStyle, styleKey, KINDS } from './design';
+import { withDefaults, elemStyle, styleKey, offsetKey, setOffset, KINDS } from './design';
 import { CanvasContext, blurFields, useFreeDrag, type CanvasCtx, type Guides } from './Free';
 import { Toolbar, freeOps, selectorFor, type Clip, type Sel } from './Toolbar';
 import { Sidebar, normalTab, type Tab } from './Sidebar';
@@ -90,8 +90,10 @@ export default function App() {
   const clip = useRef<Clip>({});
   const canvasRef = useRef<HTMLElement>(null);
   const hover = useRef<HTMLElement | null>(null);
-  /** Set on pointerdown: the click only selects a text field (no caret), like Canva. Read by mousedown. */
-  const selectOnly = useRef(false);
+  /** Set on pointerdown when the press may become a move (no caret, no text selection, no native image drag):
+   *  read by mousedown. A press without moving then selects, or edits text that was already selected. */
+  const takeOver = useRef(false);
+  const [moveLabel, setMoveLabel] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const past = useRef<CvData[]>([]);
   const future = useRef<CvData[]>([]);
@@ -363,6 +365,12 @@ export default function App() {
           const [dx, dy] = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
           const ids = new Set(multi.flatMap((t) => (t?.type === 'free' ? [t.id] : [])));
           update((x) => {
+            for (const t of multi) {
+              if (t?.type !== 'el' || t.k === 'page') continue;
+              const key = offsetKey(t.k, t.i);
+              const s0 = x.design.elements[key] ?? {};
+              setOffset(x.design.elements, key, (s0.dx ?? 0) + dx, (s0.dy ?? 0) + dy);
+            }
             for (const f of x.design.free) if (ids.has(f.id) && !f.locked) {
               f.x = Math.round((f.x + dx) * 100) / 100;
               f.y = Math.round((f.y + dy) * 100) / 100;
@@ -375,6 +383,18 @@ export default function App() {
       if (sel.type === 'el') {
         if (itemKey(e, sel.k, sel.i)) {
           e.preventDefault();
+          return;
+        }
+        // Arrows nudge it (Shift: 5 mm), like any object in Canva.
+        if (e.key.startsWith('Arrow') && !mod && !e.altKey && sel.k !== 'page') {
+          e.preventDefault();
+          const step = e.shiftKey ? 5 : 0.5;
+          const [mx, my] = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
+          const key = offsetKey(sel.k, sel.i);
+          update((x) => {
+            const s0 = x.design.elements[key] ?? {};
+            setOffset(x.design.elements, key, (s0.dx ?? 0) + mx, (s0.dy ?? 0) + my);
+          });
           return;
         }
         // Enter, F2 or just typing starts editing a selected text field (the typed key goes into it).
@@ -457,42 +477,71 @@ export default function App() {
     lsSet('cv.variant', id);
   };
 
-  /** Move several free elements together. */
-  const groupDrag = (e: React.PointerEvent, ids: string[]) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
+  /** Move things on the page, like in Canva: CV elements get an offset (the rest of the page stays where it is), free
+   *  elements their position. Several selected things move together. Near their own place, CV elements snap back
+   *  (Alt: no snapping). Returns nothing; `onClick` runs instead when the pointer is released without moving. */
+  const startMove = (e: React.PointerEvent, targets: Sel[], onClick?: () => void) => {
     const page = document.querySelector<HTMLElement>('.canvas .page');
     const d = dataRef.current;
     if (!page || !d) return;
     const mm = 210 / page.getBoundingClientRect().width;
-    const starts = new Map(d.design.free.filter((f) => ids.includes(f.id) && !f.locked).map((f) => [f.id, { x: f.x, y: f.y }]));
+    const els = targets.flatMap((t) => (t?.type === 'el' && t.k !== 'page' ? [{ key: offsetKey(t.k, t.i), ...pick0(d, t.k, t.i) }] : []));
+    const frees = new Map(d.design.free.filter((f) => targets.some((t) => t?.type === 'free' && t.id === f.id) && !f.locked).map((f) => [f.id, { x: f.x, y: f.y }]));
     const sx = e.clientX;
     const sy = e.clientY;
     let moved = false;
     const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      if (!moved) {
+        checkpoint();
+        blurFields();
+        window.getSelection()?.removeAllRanges();
+        document.body.classList.add('moving');
+      }
+      moved = true;
+      ev.preventDefault();
       const dx = (ev.clientX - sx) * mm;
       const dy = (ev.clientY - sy) * mm;
-      if (!moved && Math.hypot(dx, dy) < 1.5) return;
-      if (!moved) checkpoint();
-      moved = true;
+      const snap = (v: number) => (!ev.altKey && els.length === 1 && Math.abs(v) < 1.2 ? 0 : v);
       update((x) => {
+        for (const el of els) setOffset(x.design.elements, el.key, snap(el.dx + dx), snap(el.dy + dy));
         for (const f of x.design.free) {
-          const s0 = starts.get(f.id);
+          const s0 = frees.get(f.id);
           if (s0) {
             f.x = Math.round((s0.x + dx) * 100) / 100;
             f.y = Math.round((s0.y + dy) * 100) / 100;
           }
         }
       });
+      if (els.length === 1) {
+        const ox = snap(els[0].dx + dx);
+        const oy = snap(els[0].dy + dy);
+        setMoveLabel({ x: ev.clientX, y: ev.clientY, text: ox || oy ? `${ox >= 0 ? '+' : ''}${ox.toFixed(1)} · ${oy >= 0 ? '+' : ''}${oy.toFixed(1)} mm` : 'In its place' });
+      }
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('moving');
+      setMoveLabel(null);
+      takeOver.current = false;
       if (moved) checkpoint();
+      else onClick?.();
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+  };
+  const pick0 = (d: CvData, k: string, i?: string) => {
+    const s0 = d.design.elements[offsetKey(k, i)] ?? {};
+    return { dx: s0.dx ?? 0, dy: s0.dy ?? 0 };
+  };
+
+  /** Move several free elements together (and any CV elements selected with them). */
+  const groupDrag = (e: React.PointerEvent, ids: string[]) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    startMove(e, multi.length ? multi : ids.map((id) => ({ type: 'free' as const, id })));
   };
 
   // Outline everything in a multiple selection.
@@ -512,7 +561,7 @@ export default function App() {
     guides,
     startDrag: (e, el, mode) => {
       const ids = multi.flatMap((t) => (t?.type === 'free' ? [t.id] : []));
-      if (mode === 'move' && ids.length > 1 && ids.includes(el.id)) groupDrag(e, ids);
+      if (mode === 'move' && multi.length > 1 && ids.includes(el.id)) groupDrag(e, ids);
       else startDrag(e, el, mode);
     },
     select: (id, shift) => {
@@ -661,23 +710,49 @@ export default function App() {
 
   const onPagePointerDown = (e: React.PointerEvent) => {
     const t = e.target as HTMLElement;
-    if (t.closest('.free, .selection, .tools, .add-btn, .reveal')) return;
+    if (t.closest('.free, .selection, .tools, .add-btn, .reveal, .section-after')) return;
     if (editing) setEditing(null);
     if (e.shiftKey) {
       e.preventDefault();
       toggleMulti(pickItem(t));
       return;
     }
-    setMulti([]);
-    const next = pick(t);
-    // A text field you aren't typing in yet: the first click selects it (Del deletes it), a second click or
-    // typing starts editing.
     const field = t.closest<HTMLElement>('.editable');
-    selectOnly.current = !!field && document.activeElement !== field && !sameSel(sel, next);
-    if (selectOnly.current) blurFields();
-    setSel(next);
-    // Blank spots (not text, images or buttons) start a selection box when dragged.
-    if (!t.closest('.editable, img, button, a')) startMarquee(e);
+    if (field && document.activeElement === field) return; // typing: the caret and text selection work as usual
+    const next = pick(t);
+    if (e.button !== 0) {
+      setMulti([]);
+      setSel(next);
+      return;
+    }
+    const wasSelected = sameSel(sel, next);
+    // Empty page, or a column you haven't selected: a selection box when dragged.
+    const background = !next || next.type !== 'el' || next.k === 'page' || ((next.k === 'mainCol' || next.k === 'sideCol') && !wasSelected);
+    if (background) {
+      blurFields();
+      setMulti([]);
+      setSel(next);
+      if (!t.closest('.editable, img, button, a')) startMarquee(e);
+      return;
+    }
+    // Pressing inside what is selected drags the selection (a whole job, a section, several things); a click
+    // without moving then goes one level in (job -> its title), or starts typing in text that was selected.
+    const nodeOf = (x: Sel) => (x?.type === 'el' ? document.querySelector<HTMLElement>(selectorFor(x.k, x.i)) : null);
+    const inMulti = multi.length > 1 && multi.some((m) => nodeOf(m)?.contains(t));
+    const selNode = nodeOf(sel);
+    const inSelection = !wasSelected && sel?.type === 'el' && sel.k !== 'page' && !!selNode?.contains(t);
+    takeOver.current = true;
+    blurFields();
+    if (!inMulti) setMulti([]);
+    if (!inMulti && !inSelection) setSel(next);
+    const targets = inMulti ? multi : inSelection ? [sel] : [next];
+    startMove(e, targets, () => {
+      if (inMulti) {
+        setMulti([]);
+        setSel(next);
+      } else if (inSelection) setSel(next);
+      else if (wasSelected && field) editFieldAt(field, e.clientX, e.clientY);
+    });
   };
 
   const onPageOver = (e: React.PointerEvent) => {
@@ -717,6 +792,8 @@ export default function App() {
     if (can.duplicate) out.push(['Duplicate  (Ctrl+D)', () => itemAction('copy', k, i)]);
     if (can.move) out.push(['Move up  (Alt+↑)', () => itemAction('up', k, i)], ['Move down  (Alt+↓)', () => itemAction('down', k, i)]);
     if (i && ['job', 'project', 'skill', 'bullet', 'entry', 'section'].includes(k)) out.push(['Hide in this version  (H)', () => itemAction('hide', k, i)]);
+    const off = data.design.elements[offsetKey(k0, i0)];
+    if (off?.dx || off?.dy) out.push(['Put back in its place', () => { checkpoint(); update((d) => setOffset(d.design.elements, offsetKey(k0, i0), 0, 0)); }]);
     if (can.remove) {
       const label = can.clear ? 'Clear this text' : can.builtinSection ? 'Remove the section from the page' : k === 'sideCol' ? 'Remove the sidebar' : k === 'photo' ? 'Remove the photo' : 'Delete';
       out.push([`${label}  (Del)`, () => itemAction('remove', k, i)]);
@@ -825,8 +902,9 @@ export default function App() {
                 style={{ zoom }}
                 onPointerDown={onPagePointerDown}
                 onMouseDown={(e) => {
-                  if (e.shiftKey || (selectOnly.current && e.detail < 2)) e.preventDefault(); // a double-click edits right away
-                  selectOnly.current = false;
+                  // No caret, text selection or native image drag while a press may become a move; a double-click
+                  // still edits right away.
+                  if (e.shiftKey || (takeOver.current && e.detail < 2)) e.preventDefault();
                 }}
                 onPointerOver={onPageOver}
                 onPointerLeave={() => {
@@ -912,6 +990,7 @@ export default function App() {
             </div>
           )}
           {showKeys && <Shortcuts onClose={() => setShowKeys(false)} />}
+          {moveLabel && <div className="move-label" style={{ left: moveLabel.x + 14, top: moveLabel.y + 14 }}>{moveLabel.text}</div>}
           {toast && (
             <div className="toast" onClick={() => setToast('')}>
               <pre>{toast}</pre>

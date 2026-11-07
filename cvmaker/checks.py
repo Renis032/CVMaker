@@ -19,7 +19,7 @@ import httpx
 
 from . import coach, db, people
 from .models import Job, PostingReview, Profile
-from .web_fetch import html_to_text, http
+from .web_fetch import BlockedURL, html_to_text, http
 
 CLOSED_WORDING = [
     "no longer accepting applications", "not accepting applications", "this job is no longer available",
@@ -105,6 +105,8 @@ def check_live(job: Job) -> tuple[str, str]:
             r = c.get(job.url)
     except httpx.HTTPError as e:
         return "unknown", f"could not load it ({type(e).__name__})"
+    except BlockedURL as e:
+        return "unknown", str(e)
     if r.status_code in (404, 410):
         return "closed", f"the posting page is gone (HTTP {r.status_code})"
     if r.status_code >= 400:

@@ -13,6 +13,9 @@
   line-height: var(--lh);
   overflow: hidden;
   position: relative;
+  /* Its own stacking context: "behind the text" elements (z -1) stay above the page colour, moved elements (z 1)
+     above all CV content, free elements in front (z 2) on top. */
+  isolation: isolate;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
@@ -22,8 +25,9 @@
 .page b { font-weight: 700; }
 .plain-link { color: inherit; text-decoration: none; }
 
-.cols { display: flex; flex: 1; min-height: 0; position: relative; z-index: 1; }
-.col { min-height: 0; overflow: hidden; }
+.cols { display: flex; flex: 1; min-height: 0; position: relative; }
+/* Not clipped: anything can be moved anywhere on the page (the page itself still ends at A4). */
+.col { min-height: 0; overflow: visible; display: flow-root; }
 .main { flex: 1; min-width: 0; padding: 7mm 2.5mm 6mm 3mm; }
 .side {
   width: var(--side-w);
@@ -104,7 +108,7 @@
 
 /* Page layouts (Layout tab) */
 .sb-left .side { order: -1; }
-.hd-full > .cv-header { position: relative; z-index: 1; padding: 7mm 3mm 4mm; margin-bottom: 0; }
+.hd-full > .cv-header { position: relative; padding: 7mm 3mm 4mm; margin-bottom: 0; }
 .hd-full .col { padding-top: 5mm; }
 .cv-header.with-photo { display: flex; align-items: center; gap: 5mm; }
 .header-photo .photo { width: calc(var(--photo) * 0.75); height: calc(var(--photo) * 0.75); }
@@ -135,7 +139,7 @@
 
 /* Free elements (text boxes, shapes, lines, icons, images) */
 .free-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-.free-layer.behind { z-index: 0; }
+.free-layer.behind { z-index: -1; }
 .free { position: absolute; pointer-events: auto; transform-origin: center; }
 .free-shape, .free-icon, .free-image { width: 100%; height: 100%; }
 .free-image { display: block; object-fit: cover; }

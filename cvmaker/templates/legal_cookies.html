@@ -1,0 +1,13 @@
+{% extends "_legal_base.html" %}
+{% block title %}Cookies · CVMaker{% endblock %}
+{% block legal %}
+<h1>Cookie notice</h1>
+<p>CVMaker only uses what it needs to work, so there is nothing to accept. No advertising or tracking cookies.</p>
+<table>
+  <tr><th>Name</th><th>What it's for</th><th>Kept for</th></tr>
+  <tr><td><code>cvmaker_session</code></td><td>Keeps you logged in</td><td>30 days, or until you log out</td></tr>
+  <tr><td><code>cvmaker_person</code></td><td>Which profile in your account you're working on</td><td>Until you switch</td></tr>
+  <tr><td><code>cvmaker_google_state</code></td><td>Protects Google sign-in from forgery</td><td>10 minutes</td></tr>
+  <tr><td>Browser storage: <code>theme</code>, editor tabs</td><td>Your light/dark choice and editor layout, only in your browser</td><td>Until you clear it</td></tr>
+</table>
+{% endblock %}

@@ -124,3 +124,13 @@ export function editField(el: HTMLElement) {
   sel?.removeAllRanges();
   sel?.addRange(range);
 }
+
+/** Start typing in a field with the caret where it was clicked (at the end if the point isn't in its text). */
+export function editFieldAt(el: HTMLElement, x: number, y: number) {
+  el.focus();
+  const range = document.caretRangeFromPoint?.(x, y);
+  if (!range || !el.contains(range.startContainer)) return editField(el);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}

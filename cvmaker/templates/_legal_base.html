@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block shell %}
+{# A starting point written for an EU-hosted CVMaker. Have it reviewed by a lawyer before launch, and fill in the
+   CVMAKER_OPERATOR / CVMAKER_OPERATOR_EMAIL / CVMAKER_HOSTING_PROVIDER settings. #}
+<style>
+  .legal { max-width:760px; margin:0 auto; padding:40px 20px 60px; }
+  .legal h1 { letter-spacing:-.02em; margin-bottom:4px; }
+  .legal h2 { font-size:17px; margin:28px 0 6px; }
+  .legal p, .legal li { line-height:1.65; }
+  .legal table { border-collapse:collapse; width:100%; font-size:14px; margin:8px 0; }
+  .legal th, .legal td { text-align:left; border-bottom:1px solid var(--line); padding:8px 10px 8px 0; vertical-align:top; }
+  .legal .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
+  .legal .top a.brand { font-weight:750; color:var(--ink); }
+</style>
+<div class="legal">
+  <div class="top"><a class="brand" href="/">CVMaker</a><span class="muted"><a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a> · <a href="/legal/cookies">Cookies</a></span></div>
+  {% block legal %}{% endblock %}
+  <p class="muted" style="margin-top:40px">Last updated: {{ updated }}</p>
+</div>
+{% endblock shell %}

@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { PARENT_KIND, asSection, caps } from './items';
 import type { CvData, ElemStyle, FreeEl, SectionKey, Variant } from './types';
-import { DEFAULT_COLORS, FONTS, KINDS, documentColors, elemStyle, fontLabel, styleKey, toHex } from './design';
+import { DEFAULT_COLORS, FONTS, KINDS, documentColors, elemStyle, fontLabel, styleKey, offsetKey, setOffset, toHex } from './design';
 import { columns, uid } from './model';
 import { measuredHeight } from './Free';
 import { ICONS, iconSvg } from './icons';
@@ -341,9 +341,16 @@ export function Toolbar({ data, variant, sel, setSel, update, clip, upload, scop
       : can.builtinSection
         ? 'Take this section off the page in every version; its text stays in your profile (Del)'
         : `Delete the ${can.name} (Del)`;
-    if (!up && !can.item && !can.remove) return null;
+    const off = data.design.elements[offsetKey(k0, i0)];
+    const moved = !!(off?.dx || off?.dy);
+    if (!up && !can.item && !can.remove && !moved) return null;
     return (
       <span className="tb-items">
+        {moved && (
+          <Btn title="Moved by dragging: put it back where the layout places it" onClick={() => update((d) => setOffset(d.design.elements, offsetKey(k0, i0), 0, 0))}>
+            ↺ Put back
+          </Btn>
+        )}
         {up && (
           <Btn title="Select the whole item, to move, copy or delete it (Esc)" onClick={() => setSel(up)}>
             ⬑ Whole {caps(data, parentK, i).name}

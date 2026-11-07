@@ -156,6 +156,9 @@ export interface ElemStyle {
   width?: number;
   height?: number;
   imgSize?: number; // mm, photos and logos
+  /** Moved from its place on the page, in mm (Canva-style free moving; the rest of the page doesn't shift). */
+  dx?: number;
+  dy?: number;
   round?: number; // %, photos and logos
 }
 

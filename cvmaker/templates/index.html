@@ -405,7 +405,7 @@
         <label>Job boards</label>
         <div class="row">
           {% for name, label, has_key, key in boards %}
-            <label class="check" {% if not has_key %}title="Needs {{ key }} in .env"{% endif %}>
+            <label class="check" {% if not has_key %}title="Needs a key: Settings → API keys"{% endif %}>
               <input type="checkbox" name="sources" value="{{ name }}" {% if name in criteria.sources %}checked{% endif %}>
               {{ label }}{% if not has_key %} <span class="muted">(needs {{ key }})</span>{% endif %}
             </label>

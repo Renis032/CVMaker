@@ -44,8 +44,8 @@ def parse_posting(text: str, url: str = "") -> ParsedPosting:
 - apply_url: the application link if one appears in the text, else empty.
 - description: the full posting text - responsibilities, requirements, benefits, about the company - cleaned of navigation, cookie banners, footers and lists of other jobs. Keep the original language and wording; keep line breaks between sections and bullets. Do not summarise or translate.
 Never invent anything that is not in the text."""
-    content = (f"Page address: {url}\n\n" if url else "") + f"Text:\n{text[:60000]}"
-    return llm.ask(system, content, ParsedPosting, effort="low")
+    content = (f"Page address: {url}\n\n" if url else "") + f"Text:\n{llm.untrusted(text[:60000])}"
+    return llm.ask(system, content, ParsedPosting, effort="low", tier="fast")
 
 
 def review_posting(profile: Profile, job: Job, facts: list[str]) -> PostingReview:
@@ -61,7 +61,7 @@ The app's own checks (liveness, earlier sightings of the same job) are included 
         f"Posting:\n{_job_text(job)}\nSalary as stated: {job.salary or 'not stated'}\nPosted: {job.posted_at or 'unknown'}\n"
         f"Found via: {job.source}\nLink: {job.url}\n\nThe app's checks:\n" + ("\n".join(f"- {f}" for f in facts) or "- none")
     )
-    return llm.ask(system, content, PostingReview, effort="medium")
+    return llm.ask(system, content, PostingReview, effort="medium", tier="standard")
 
 
 def outreach(profile: Profile, job: Job, recipient: str, language: str, notes: str, posting_contacts: list[str]) -> OutreachKit:
@@ -82,7 +82,7 @@ Sign with the candidate's name. Only mention facts from the profile.
         content += f"\n\nThe candidate wants to write to: {recipient.strip()}"
     if notes.strip():
         content += f"\n\nExtra notes from the candidate:\n{notes.strip()}"
-    kit = llm.ask(system, content, OutreachKit, effort="medium")
+    kit = llm.ask(system, content, OutreachKit, effort="medium", tier="standard")
     if len(kit.linkedin_note) > LINKEDIN_NOTE_MAX:  # rare; trim at a word boundary rather than lose the draft
         kit.linkedin_note = kit.linkedin_note[: LINKEDIN_NOTE_MAX - 1].rsplit(" ", 1)[0] + "…"
     return kit
@@ -97,7 +97,7 @@ def draft_stories(profile: Profile, existing: list[Story]) -> DraftStories:
 - Skip stories that duplicate ones already in the bank.
 {TRUTH_RULES}"""
     content = f"Candidate profile:\n{_profile(profile)}\n\nStories already in the bank:\n{_stories(existing)}"
-    return llm.ask(system, content, DraftStories)
+    return llm.ask(system, content, DraftStories, tier="standard")
 
 
 def practice_question(profile: Profile, job: Job, category: str, asked: list[str]) -> PracticeQuestion:
@@ -107,7 +107,7 @@ Make it specific to the job and, for behavioural or CV questions, to the candida
         f"Category: {category}\n\nCandidate profile:\n{_profile(profile)}\n\nJob:\n{_job_text(job)}\n\n"
         "Already asked:\n" + ("\n".join(f"- {q}" for q in asked) or "- nothing yet")
     )
-    return llm.ask(system, content, PracticeQuestion, effort="low")
+    return llm.ask(system, content, PracticeQuestion, effort="low", tier="fast")
 
 
 def practice_feedback(profile: Profile, job: Job, question: str, answer: str, stories: list[Story]) -> PracticeFeedback:
@@ -124,7 +124,7 @@ def practice_feedback(profile: Profile, job: Job, question: str, answer: str, st
         f"Job:\n{_job_text(job)}\n\nCandidate profile:\n{_profile(profile)}\n\nStory bank:\n{_stories(stories)}\n\n"
         f"Question: {question}\n\nThe candidate's answer:\n{answer}"
     )
-    return llm.ask(system, content, PracticeFeedback, effort="medium")
+    return llm.ask(system, content, PracticeFeedback, effort="medium", tier="standard")
 
 
 def debrief(profile: Profile, job: Job, notes: dict, stories: list[Story]) -> DebriefReview:
@@ -141,7 +141,7 @@ def debrief(profile: Profile, job: Job, notes: dict, stories: list[Story]) -> De
         f"Job:\n{_job_text(job)}\n\nCandidate profile:\n{_profile(profile)}\n\nStory bank:\n{_stories(stories)}\n\n"
         f"Debrief notes:\n{json.dumps(notes, ensure_ascii=False, indent=2)}"
     )
-    return llm.ask(system, content, DebriefReview)
+    return llm.ask(system, content, DebriefReview, tier="standard")
 
 
 def review_offer(profile: Profile, job: Job, offer_text: str, wishes: str, market: str) -> OfferReview:

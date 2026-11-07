@@ -1,0 +1,8 @@
+.venv
+data
+editor/node_modules
+**/__pycache__
+.env
+tests
+docs
+.git

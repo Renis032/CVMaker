@@ -1,13 +1,14 @@
 import base64
 import re
 import subprocess
+import tempfile
 from datetime import date
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
-from . import editor, settings
+from . import editor, settings, web_fetch
 from .models import CoverLetter, CVContent, Job, Profile
 
 env = Environment(
@@ -106,23 +107,38 @@ def letter_pdf(body: str, profile: Profile, job: Job, out_path: Path) -> Path:
     return _print_pdf(letter_html(body, profile, job), out_path)
 
 
+# What a page printed to PDF may load: inline styles and scripts, images inlined as data: URLs, Google Fonts.
+# Nothing else - so content in a CV can't pull in local files (file://) or reach the network.
+PRINT_CSP = (
+    "default-src 'none'; img-src data:; style-src 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src data: https://fonts.gstatic.com; script-src 'unsafe-inline'"
+)
+
+
+def _with_csp(html: str) -> str:
+    meta = f'<meta http-equiv="Content-Security-Policy" content="{PRINT_CSP}">'
+    lower = html[:2000].lower()
+    at = lower.find("<head>")
+    if at >= 0:
+        return html[: at + 6] + meta + html[at + 6 :]
+    return meta + html
+
+
 def _print_pdf(html: str, out_path: Path) -> Path:
     html_path = out_path.with_suffix(".html")
-    html_path.write_text(html, encoding="utf-8")
-    result = subprocess.run(
-        [
-            settings.CHROME_BIN,
-            "--headless=new",
-            "--disable-gpu",
-            "--no-sandbox",
-            "--no-pdf-header-footer",
-            f"--print-to-pdf={out_path}",
-            html_path.as_uri(),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
+    html_path.write_text(_with_csp(html), encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="cvmaker-chrome-") as profile:
+        result = subprocess.run(
+            web_fetch.chrome_args(
+                f"--user-data-dir={profile}",
+                "--no-pdf-header-footer",
+                f"--print-to-pdf={out_path}",
+                html_path.as_uri(),
+            ),
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
     if result.returncode != 0 or not out_path.exists():
         raise RuntimeError(f"PDF rendering failed: {result.stderr[-300:]}")
     return out_path

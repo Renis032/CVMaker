@@ -458,3 +458,7 @@ kbd { background: var(--card); border: 1px solid var(--line); border-radius: 4px
 .el-tile.part { height: auto; min-height: 78px; padding: 8px 4px; text-align: center; line-height: 1.25; color: var(--ink); }
 .el-tile.part svg { color: var(--accent); }
 .el-tile.part.done { color: var(--muted); }
+
+/* Moving things on the page (Canva-style) */
+body.moving, body.moving * { cursor: grabbing !important; user-select: none !important; }
+.move-label { position: fixed; z-index: 1000; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: #111827; color: #fff; font: 600 11.5px/1.4 system-ui, sans-serif; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,.25); }

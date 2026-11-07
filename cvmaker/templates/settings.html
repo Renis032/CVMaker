@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Settings · CVMaker{% endblock %}
+{% block content %}
+<style>
+  .keys-form .key-row { display:grid; grid-template-columns:minmax(180px, 240px) 1fr auto; gap:6px 14px; align-items:center; padding:12px 0; border-top:1px solid var(--line); }
+  .keys-form .key-row:first-of-type { border-top:0; }
+  .keys-form .key-row label { margin:0; color:var(--ink); font-weight:600; font-size:13.5px; }
+  .keys-form .key-row .help { grid-column:2 / 4; color:var(--muted); font-size:12.5px; margin-top:-2px; }
+  .keys-form .key-row input { width:100%; }
+  .keys-form .now { font-size:12.5px; color:var(--muted); white-space:nowrap; }
+  .keys-form .now code { font-size:12px; }
+  @media (max-width:720px) { .keys-form .key-row { grid-template-columns:1fr; } .keys-form .key-row .help { grid-column:1; } }
+  .meter { height:10px; border-radius:999px; background:var(--chip); overflow:hidden; margin:8px 0 6px; }
+  .meter > span { display:block; height:100%; background:var(--accent); border-radius:inherit; }
+  .stat-row { display:flex; gap:24px; flex-wrap:wrap; margin-top:6px; }
+  .stat-row div { min-width:120px; } .stat-row strong { display:block; font-size:20px; }
+  .danger-zone { border-color:color-mix(in srgb, var(--bad) 35%, var(--line)); }
+  .ok { background:var(--good-soft); color:var(--ink); border-radius:10px; padding:10px 12px; font-size:13.5px; margin:0 0 12px; }
+  #key-test-result { margin-left:8px; font-size:13px; }
+  .btn.danger-fill { background:var(--bad); border-color:var(--bad); color:#fff; }
+  .btn.danger-fill:hover { filter:brightness(.95); }
+  .pw-form { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; max-width:760px; }
+  .pw-form > div { flex:1 1 200px; } .pw-form label { margin-top:0; }
+  .tg-steps { margin:0 0 12px; padding-left:20px; }
+  .tg-steps li { margin:4px 0; }
+  .tg-options { display:flex; gap:12px 18px; flex-wrap:wrap; align-items:flex-end; margin:12px 0 8px; }
+  .tg-options label { margin-top:0; } .tg-options .check { margin-bottom:9px; }
+</style>
+
+<h1>Settings{% if SERVER %} &amp; account{% endif %}</h1>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if saved %}<div class="ok">Saved.</div>{% endif %}
+{% if billing_state == 'done' %}<div class="ok">Thanks! Your subscription is being set up - your plan updates within a minute.</div>{% endif %}
+
+<div class="card" id="keys">
+  <h2>API keys</h2>
+  <p class="muted">
+    {% if SERVER %}
+    CVMaker's AI runs on {{ 'our key, within your plan\'s monthly allowance' if not rows[0].own else 'your own Anthropic key (no limit from us; Anthropic bills you)' }}.
+    You can add your own Anthropic key to use the AI without the plan limit. Job-board keys unlock extra job sources for you.
+    {% else %}
+    CVMaker uses <strong>your own Anthropic API key</strong>: you pay Anthropic directly for what you use, and nothing goes through anyone else.
+    Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com → API keys</a>.
+    Keys are stored encrypted on this computer.
+    {% endif %}
+  </p>
+  {% if backend != 'api' %}<p class="muted">Developer mode: Claude calls run through your local Claude Code login (CVMAKER_BACKEND={{ backend }}), so the Anthropic key isn't needed.</p>{% endif %}
+  <form class="keys-form" method="post" action="/settings/keys" autocomplete="off">
+    {% for r in rows %}
+    <div class="key-row">
+      <label for="k-{{ r.name }}">{{ r.label }}</label>
+      <input id="k-{{ r.name }}" type="{{ 'text' if r.name in ('github_user', 'adzuna_id') else 'password' }}" name="{{ r.name }}"
+             placeholder="{{ 'Saved - type to replace' if r.own else ('Using the site\'s key' if r.server_default else 'Not set') }}" autocomplete="off" spellcheck="false">
+      <span class="now">{% if r.own %}<code>{{ r.shown }}</code> <label class="check" style="display:inline-flex;gap:4px;margin:0 0 0 6px;font-weight:400"><input type="checkbox" name="clear_{{ r.name }}" value="1"> remove</label>{% endif %}</span>
+      {% if r.help %}<div class="help">{{ r.help }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    <div class="row" style="margin-top:12px">
+      <button class="btn" type="submit">Save keys</button>
+      <button class="btn secondary" type="button" id="key-test">Test the Anthropic key</button>
+      <span id="key-test-result" class="muted"></span>
+    </div>
+  </form>
+  <details style="margin-top:14px"><summary class="muted">Which models CVMaker uses</summary>
+    <p class="muted">Quick reading and extraction (rating many jobs at once, reading postings and career pages): <code>{{ models.fast }}</code>.
+      Reviews, analysis, chat and importing your CV: <code>{{ models.standard }}</code>.
+      Tailored CVs, cover letters, interview prep and offers: <code>{{ models.best }}</code>.</p>
+  </details>
+</div>
+
+{% if telegram %}
+<div class="card" id="telegram">
+  <h2>Telegram</h2>
+  <p class="muted">Get your new, well-rated jobs on your phone each day, ask for CVs and request changes by message. The bot only runs while CVMaker is running on this computer. Job details, your messages, CVs and PDFs pass through Telegram, and bot chats aren't end-to-end encrypted.</p>
+  {% if telegram.last_error %}<div class="err">The last summary couldn't be sent: {{ telegram.last_error }}</div>{% endif %}
+
+  {% if not telegram.has_token %}
+  <ol class="tg-steps">
+    <li>In Telegram, open <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> and send <code>/newbot</code>.</li>
+    <li>Choose any name and username for your bot.</li>
+    <li>Paste the token it gives you here.</li>
+  </ol>
+  <form class="row" method="post" action="/settings/telegram/token" autocomplete="off">
+    <input type="password" name="token" placeholder="123456789:AAH…" aria-label="Bot token" autocomplete="off" spellcheck="false" required style="max-width:420px">
+    <button class="btn" type="submit">Save token</button>
+  </form>
+
+  {% elif not telegram.linked %}
+  <p>Bot: <strong>@{{ telegram.bot }}</strong>. Now connect your Telegram account.</p>
+  {% if telegram.link %}
+  <div class="row">
+    <a class="btn" href="{{ telegram.link }}" target="_blank" rel="noopener noreferrer" id="tg-link">Open in Telegram and tap Start</a>
+    <span class="muted">This link works once, for 10 minutes. Waiting for you…</span>
+  </div>
+  <script>
+    setInterval(async () => {
+      try {
+        const r = await fetch("/settings/telegram/status");
+        if ((await r.json()).linked) location.reload();
+      } catch (e) {}
+    }, 3000);
+  </script>
+  {% else %}
+  <form method="post" action="/settings/telegram/connect"><button class="btn" type="submit">Make a connect link</button></form>
+  {% endif %}
+  <form method="post" action="/settings/telegram/remove" style="margin-top:12px"><button class="btn secondary" type="submit">Remove the bot token</button></form>
+
+  {% else %}
+  <p>Connected to <strong>{{ telegram.username or 'your Telegram account' }}</strong> through <strong>@{{ telegram.bot }}</strong>.</p>
+  {% if not telegram.schedule_on %}<div class="err">No saved search runs on a schedule, so no new jobs are being looked for. Turn one on under Search settings → Advanced.</div>{% endif %}
+  <form class="tg-options" method="post" action="/settings/telegram/options">
+    <label class="check"><input type="checkbox" name="daily" value="1" {{ 'checked' if telegram.daily }}> Send a daily summary</label>
+    <div><label for="tg-time">At</label><input id="tg-time" type="time" name="daily_time" value="{{ telegram.daily_time }}" required></div>
+    <div><label for="tg-rating">Lowest rating</label>
+      <select id="tg-rating" name="min_rating">{% for n in range(10, 0, -1) %}<option value="{{ n }}" {{ 'selected' if n == telegram.min_rating }}>{{ n }}/10</option>{% endfor %}</select></div>
+    <label class="check"><input type="checkbox" name="alerts" value="1" {{ 'checked' if telegram.alerts }}> Tell me straight away about top jobs</label>
+    <div><label for="tg-alert">Rated at least</label>
+      <select id="tg-alert" name="alert_rating">{% for n in range(10, 6, -1) %}<option value="{{ n }}" {{ 'selected' if n == telegram.alert_rating }}>{{ n }}/10</option>{% endfor %}</select></div>
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <p class="muted">If the computer is off at that time, the summary goes out when CVMaker next starts that day. Between 22:00 and 08:00, top-job alerts arrive without a sound.</p>
+  <div class="row">
+    <form method="post" action="/settings/telegram/send"><button class="btn secondary" type="submit">Send a summary now</button></form>
+    <form method="post" action="/settings/telegram/disconnect"><button class="btn secondary" type="submit">Disconnect</button></form>
+    <form method="post" action="/settings/telegram/remove"><button class="btn secondary" type="submit">Remove the bot token</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if autostart %}
+<div class="card" id="autostart">
+  <h2>Start at login</h2>
+  <p class="muted">Run CVMaker in the background whenever you log in to this computer, so scheduled searches and the Telegram bot keep working without opening it. It will be at <code>http://127.0.0.1:8000</code>.</p>
+  <form method="post" action="/settings/autostart">
+    {% if autostart.on %}
+    <p>On. CVMaker starts at your next login.</p>
+    <button class="btn secondary" type="submit">Turn off</button>
+    {% else %}
+    <input type="hidden" name="on" value="1">
+    <button class="btn" type="submit">Turn on</button>
+    {% endif %}
+  </form>
+</div>
+{% endif %}
+
+<div class="card" id="plan">
+  <h2>{% if SERVER %}Plan &amp; AI usage{% else %}AI usage{% endif %}</h2>
+  {% if SERVER %}
+  <p>You're on the <strong>{{ use.plan | capitalize }}</strong> plan{% if account and account.plan_until and use.plan != 'free' %}, paid until {{ account.plan_until | day }}{% endif %}.</p>
+  {% if not rows[0].own %}
+  {% set pct = (100 * use.used / use.allowance) if use.allowance else 100 %}
+  <div class="meter" aria-label="AI allowance used"><span style="width:{{ [pct, 100] | min }}%"></span></div>
+  <p class="muted">{{ '{:,}'.format(use.used) }} of {{ '{:,}'.format(use.allowance) }} tokens used this month · resets on the 1st.</p>
+  {% else %}
+  <p class="muted">You use your own Anthropic key, so there's no limit from us.</p>
+  {% endif %}
+  {% if billing_on %}
+  <div class="row">
+    {% if use.plan == 'free' %}
+    <form method="post" action="/billing/checkout"><button class="btn" type="submit">Upgrade to Pro</button></form>
+    <span class="muted">Pro: {{ '{:,}'.format(plan_tokens.pro) }} tokens a month and more scheduled searches.</span>
+    {% endif %}
+    {% if account and account.stripe_customer %}
+    <form method="post" action="/billing/portal"><button class="btn secondary" type="submit">Manage subscription &amp; invoices</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="stat-row">
+    <div><strong>{{ use.calls }}</strong><span class="muted">Claude requests this month</span></div>
+  </div>
+  <p class="muted">Anthropic shows what they cost in your <a href="https://console.anthropic.com/settings/usage" target="_blank" rel="noopener">console → Usage</a>.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="data">
+  <h2>Your data</h2>
+  <p class="muted">Download everything CVMaker holds for you{% if SERVER %} in this account{% endif %}: every person's profile, CVs, letters, jobs, applications and history, as backups you can restore later (My profile → Backups){% if SERVER %} plus your account details and AI usage{% endif %}.</p>
+  <form method="post" action="/settings/export"><button class="btn secondary" type="submit">Download all my data (.zip)</button></form>
+  {% if not SERVER %}<p class="muted" style="margin-top:10px">Everything lives in this folder on your computer; nothing is uploaded anywhere except what CVMaker sends to Anthropic and the job sites when you use those features.</p>{% endif %}
+</div>
+
+{% if SERVER and account %}
+<div class="card" id="account">
+  <h2>Account</h2>
+  <p>Logged in as <strong>{{ account.email }}</strong>.</p>
+  <form method="post" action="/settings/password" class="pw-form">
+    {% if account.password_hash %}<div><label for="cur">Current password</label><input id="cur" type="password" name="current" autocomplete="current-password"></div>{% endif %}
+    <div><label for="new">{{ 'New password' if account.password_hash else 'Set a password' }}</label><input id="new" type="password" name="password" minlength="10" required autocomplete="new-password"></div>
+    <div style="flex:0 0 auto"><button class="btn secondary" type="submit">{{ 'Change password' if account.password_hash else 'Set password' }}</button></div>
+  </form>
+  <p class="muted">Changing your password logs you out everywhere else.</p>
+</div>
+
+<div class="card danger-zone">
+  <h2>Delete my account</h2>
+  <p class="muted">This deletes your account and everything in it - profiles, CVs, letters, jobs, applications, backups - for good. Download your data first if you want to keep it.{% if account.stripe_subscription and use.plan != 'free' %} Cancel your subscription first.{% endif %}</p>
+  <form method="post" action="/settings/account/delete" onsubmit="return confirm('Delete your account and all its data for good?')">
+    <label for="confirm">Type <strong>{{ account.email }}</strong> to confirm</label>
+    <div class="row"><input id="confirm" type="text" name="confirm" autocomplete="off" style="max-width:320px"><button class="btn danger-fill" type="submit">Delete my account</button></div>
+  </form>
+</div>
+{% endif %}
+
+<script>
+  document.getElementById("key-test")?.addEventListener("click", async () => {
+    const out = document.getElementById("key-test-result");
+    out.textContent = "Testing…";
+    try {
+      const r = await fetch("/settings/keys/test", { method: "POST" });
+      const j = await r.json();
+      out.textContent = j.message;
+      out.style.color = j.ok ? "var(--good)" : "var(--bad)";
+    } catch (e) { out.textContent = "Couldn't test it."; }
+  });
+</script>
+{% endblock %}

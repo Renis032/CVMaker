@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from pydantic import ValidationError
 
-from . import assistant, auto, categories, claims, companies, cvcheck, cvdiff, db, editor, github, insights, pack, people, render, roles, settings, taste, tasks
+from . import assistant, auto, categories, claims, companies, cvcheck, cvdiff, db, editor, github, insights, pack, people, keys, render, roles, security, settings, taste, tasks, telegram, uploads
 from .auto import SavedSearch, load_criteria
 from .countries import COUNTRY_TERMS, country_name
 from .llm import LLMError
@@ -41,26 +41,26 @@ from .sources import BOARD_INFO, COMPANY_SOURCES, board_has_key, ensure_descript
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    for person in people.load():
-        with people.acting_as(person.id):
-            db.backfill()
-            taste.recompute()
+    for account_id in people.all_accounts():
+        with people.in_account(account_id):
+            for person in people.load():
+                with people.acting_as(person.id):
+                    db.backfill()
+                    taste.recompute()
     tasks.start()
     auto.start()
+    telegram.start()
     yield
 
 
-app = FastAPI(title="CVMaker", lifespan=lifespan)
+app = FastAPI(title="CVMaker", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.middleware("http")
-async def act_as_selected_person(request: Request, call_next):
-    """Everything a request does - and the background tasks it starts - works on the selected person's data."""
-    token = people.use(request.cookies.get(people.COOKIE, people.DEFAULT))
-    try:
-        return await call_next(request)
-    finally:
-        people.reset(token)
+async def guard(request: Request, call_next):
+    """Host and CSRF checks, login (server mode), then everything a request does - and the background tasks it
+    starts - works on the logged-in account's and the selected person's data (see security.py)."""
+    return await security.guard(request, call_next)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["md_bold"] = render.env.filters["md_bold"]
 templates.env.filters["ago"] = lambda ts: _ago(ts)
@@ -76,6 +76,7 @@ templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts).strftime("%
 templates.env.globals["STAGES"] = db.STAGES
 templates.env.globals["STAGE_LABELS"] = db.STAGE_LABELS
 templates.env.globals["FOLLOW_UP_DAYS"] = settings.FOLLOW_UP_DAYS
+templates.env.globals["SERVER"] = settings.SERVER
 
 
 def _split(value: str) -> list[str]:
@@ -113,6 +114,8 @@ def page(request: Request, name: str, **ctx) -> HTMLResponse:
             "notes_unread": db.notifications_unread(),
             "now": time.time(),
             "today": datetime.now().strftime("%Y-%m-%d"),
+            "needs_ai_key": not keys.has_ai_key(),
+            "account_email": (getattr(request.state, "account", None) or {}).get("email", ""),
             **ctx,
         },
     )
@@ -539,10 +542,14 @@ def insights_page(request: Request, period: str = "90"):
 
 @app.post("/insights/analyse")
 def insights_analyse():
-    profile = _need_profile()
-    tasks.submit("gaps", "Gap analysis across your jobs", lambda progress: insights.run_analysis(profile, progress),
-                 subject="gaps", url="/insights#gaps")
+    _need_profile()
+    tasks.submit("gaps", "Gap analysis across your jobs", "gaps", subject="gaps", url="/insights#gaps")
     return _back("/insights#gaps")
+
+
+@tasks.runner("gaps")
+def _gaps(progress):
+    return insights.run_analysis(_need_profile(), progress)
 
 
 @app.post("/job/{job_id:path}/status")
@@ -707,15 +714,17 @@ def _cvs_with_scores(owner_id: str) -> list[dict]:
 
 @app.post("/job/{job_id:path}/fit")
 def job_fit(job_id: str):
-    profile = _need_profile()
+    _need_profile()
     job, _ = db.get_job(job_id)
-
-    def run(progress):
-        pack.fit_check(profile, ensure_description(job), progress)
-        return f"/job/{job_id}#fit"
-
-    tasks.submit("fit", _job_label("Fit check", job), run, subject=f"fit:{job_id}", job_id=job_id, url=f"/job/{job_id}#fit")
+    tasks.submit("fit", _job_label("Fit check", job), "fit", subject=f"fit:{job_id}", job_id=job_id, url=f"/job/{job_id}#fit",
+                 args={"job_id": job_id})
     return _back(f"/job/{job_id}#fit")
+
+
+@tasks.runner("fit")
+def _fit(progress, job_id: str) -> str:
+    pack.fit_check(_need_profile(), ensure_description(db.get_job(job_id)[0]), progress)
+    return f"/job/{job_id}#fit"
 
 
 @app.post("/job/{job_id:path}/pack")
@@ -742,22 +751,25 @@ def _profile_project_links() -> set[str]:
 
 @app.post("/job/{job_id:path}/github")
 def job_github(job_id: str, refresh: int = Form(0)):
-    profile = _need_profile()
+    _need_profile()
     job, _ = db.get_job(job_id)
-
-    def run(progress):
-        progress.set(step="reading your repos")
-        try:
-            user = github.username(profile)
-            repos = _refetch(user) if refresh else github.fetch_repos(user)
-        except github.GithubError as e:
-            raise LLMError(str(e)) from e
-        progress.set(step="Claude is comparing them with the job")
-        pack.github_check(profile, ensure_description(job), repos)
-        return f"/job/{job_id}#github"
-
-    tasks.submit("github", _job_label("GitHub check", job), run, subject=f"github:{job_id}", job_id=job_id, url=f"/job/{job_id}#github")
+    tasks.submit("github", _job_label("GitHub check", job), "github", subject=f"github:{job_id}", job_id=job_id,
+                 url=f"/job/{job_id}#github", args={"job_id": job_id, "refresh": bool(refresh)})
     return _back(f"/job/{job_id}#github")
+
+
+@tasks.runner("github")
+def _github(progress, job_id: str, refresh: bool) -> str:
+    profile = _need_profile()
+    progress.set(step="reading your repos")
+    try:
+        user = github.username(profile)
+        repos = _refetch(user) if refresh else github.fetch_repos(user)
+    except github.GithubError as e:
+        raise LLMError(str(e)) from e
+    progress.set(step="Claude is comparing them with the job")
+    pack.github_check(profile, ensure_description(db.get_job(job_id)[0]), repos)
+    return f"/job/{job_id}#github"
 
 
 def _refetch(user: str) -> list[dict]:
@@ -806,16 +818,18 @@ def _layout(one_page: bool, font: str, instructions: str = "") -> dict:
 def job_tailor(
     job_id: str, instructions: str = Form(""), role_id: str = Form(""), one_page: bool = Form(False), font: str = Form("auto")
 ):
-    profile = _need_profile()
+    _need_profile()
     job, _ = db.get_job(job_id)
-    role = roles.get_role(role_id) if role_id else None
     layout = _layout(one_page, font, instructions)
-
-    def run(progress):
-        return f"/cv/{pack.tailored_cv(profile, ensure_description(job), role, layout, progress)}"
-
-    tasks.submit("tailor", _job_label("Tailored CV", job), run, subject=f"tailor:{job_id}", job_id=job_id, url=f"/job/{job_id}#docs")
+    tasks.submit("tailor", _job_label("Tailored CV", job), "tailor", subject=f"tailor:{job_id}", job_id=job_id,
+                 url=f"/job/{job_id}#docs", args={"job_id": job_id, "role_id": role_id, "layout": layout})
     return _back(f"/job/{job_id}#docs")
+
+
+@tasks.runner("tailor")
+def _tailor(progress, job_id: str, role_id: str, layout: dict) -> str:
+    role = roles.get_role(role_id) if role_id else None
+    return f"/cv/{pack.tailored_cv(_need_profile(), ensure_description(db.get_job(job_id)[0]), role, layout, progress)}"
 
 
 def _owner(owner_id: str) -> tuple[Job | None, RoleProfile | None]:
@@ -936,17 +950,20 @@ def cv_layout(cv_id: int, font: str = Form("auto"), one_page: bool = Form(False)
 def _submit_shorten(cv_id: int) -> None:
     owner_id, _, _ = db.get_cv(cv_id)
     job, role = _owner(owner_id)
-
-    def run(progress):
-        _, tailored, pdf_path = db.get_cv(cv_id)
-        layout, _ = db.cv_layout(cv_id)
-        pages, used = pack.render_fitting(tailored, Path(pdf_path), {**layout, "one_page": True}, job and ensure_description(job), progress)
-        db.update_cv(cv_id, tailored, {**layout, "font_used": used}, pages)
-        db.cache_delete(f"cvrate:{cv_id}:profile")
-        return f"/cv/{cv_id}"
-
     label = f"Fit CV #{cv_id} on one page" + (f" · {job.title} @ {job.company}" if job else "")
-    tasks.submit("onepage", label, run, subject=f"onepage:cv:{cv_id}", job_id=job.id if job else "", url=f"/cv/{cv_id}")
+    tasks.submit("onepage", label, "onepage", subject=f"onepage:cv:{cv_id}", job_id=job.id if job else "", url=f"/cv/{cv_id}",
+                 args={"cv_id": cv_id})
+
+
+@tasks.runner("onepage")
+def _onepage(progress, cv_id: int) -> str:
+    owner_id, tailored, pdf_path = db.get_cv(cv_id)
+    job, _ = _owner(owner_id)
+    layout, _ = db.cv_layout(cv_id)
+    pages, used = pack.render_fitting(tailored, Path(pdf_path), {**layout, "one_page": True}, job and ensure_description(job), progress)
+    db.update_cv(cv_id, tailored, {**layout, "font_used": used}, pages)
+    db.cache_delete(f"cvrate:{cv_id}:profile")
+    return f"/cv/{cv_id}"
 
 
 @app.post("/cv/{cv_id}/one-page")
@@ -982,44 +999,49 @@ def _baseline(owner_id: str, baseline: str, profile: Profile) -> tuple[CVContent
 
 @app.post("/cv/{cv_id}/rate")
 def cv_rate(cv_id: int, baseline: str = Form("profile")):
-    profile = _need_profile()
+    _need_profile()
     found = db.get_cv(cv_id)
     if not found:
         return _back("/")
     owner_id, _, _ = found
     job, role = _owner(owner_id)
-
-    def run(progress):
-        refresh_cv_pdf(cv_id)
-        _, tailored, pdf_path = db.get_cv(cv_id)
-        full = ensure_description(job) if job else None
-        extra = (role.key_skills + role.skill_keywords) if role else categories.expand(load_criteria()).skill_keywords
-        progress.set(step="measuring keywords and the PDF text")
-        base_cv, base_pdf, label = _baseline(owner_id, baseline, profile)
-        keywords = cvcheck.job_keywords(full, profile, extra)
-        base_cov = cvcheck.coverage(keywords, cvcheck.cv_text(base_cv))
-        new_cov = cvcheck.coverage(keywords, cvcheck.cv_text(tailored.cv))
-        report = "\n".join(
-            f"- {k}: baseline {'yes' if base_cov[k] else 'no'}, tailored {'yes' if new_cov[k] else 'no'}" for k in keywords
-        ) or "(no keywords found)"
-        progress.set(step="Claude is scoring both versions")
-        comparison = assistant.compare_cvs(base_cv, tailored.cv, full, role, report)
-        db.cache_put(
-            f"cvrate:{cv_id}:{baseline}",
-            {
-                "label": label,
-                "rated_at": time.time(),
-                "comparison": comparison.model_dump(),
-                "keywords": [[k, base_cov[k], new_cov[k]] for k in keywords],
-                "ats_baseline": cvcheck.ats_checks(base_cv, base_pdf, keywords),
-                "ats_tailored": cvcheck.ats_checks(tailored.cv, pdf_path, keywords),
-            },
-        )
-        return f"/cv/{cv_id}?vs={baseline}#rating"
-
     target = f"{job.title} @ {job.company}" if job else (role.name if role else "")
-    tasks.submit("cvrate", f"Rate CV #{cv_id} · {target}", run, subject=f"rate:{baseline}:cv:{cv_id}", job_id=job.id if job else "", url=f"/cv/{cv_id}?vs={baseline}#rating")
+    tasks.submit("cvrate", f"Rate CV #{cv_id} · {target}", "cvrate", subject=f"rate:{baseline}:cv:{cv_id}", job_id=job.id if job else "",
+                 url=f"/cv/{cv_id}?vs={baseline}#rating", args={"cv_id": cv_id, "baseline": baseline})
     return _back(f"/cv/{cv_id}#rating")
+
+
+@tasks.runner("cvrate")
+def _cvrate(progress, cv_id: int, baseline: str) -> str:
+    profile = _need_profile()
+    owner_id, _, _ = db.get_cv(cv_id)
+    job, role = _owner(owner_id)
+    refresh_cv_pdf(cv_id)
+    _, tailored, pdf_path = db.get_cv(cv_id)
+    full = ensure_description(job) if job else None
+    extra = (role.key_skills + role.skill_keywords) if role else categories.expand(load_criteria()).skill_keywords
+    progress.set(step="measuring keywords and the PDF text")
+    base_cv, base_pdf, label = _baseline(owner_id, baseline, profile)
+    keywords = cvcheck.job_keywords(full, profile, extra)
+    base_cov = cvcheck.coverage(keywords, cvcheck.cv_text(base_cv))
+    new_cov = cvcheck.coverage(keywords, cvcheck.cv_text(tailored.cv))
+    report = "\n".join(
+        f"- {k}: baseline {'yes' if base_cov[k] else 'no'}, tailored {'yes' if new_cov[k] else 'no'}" for k in keywords
+    ) or "(no keywords found)"
+    progress.set(step="Claude is scoring both versions")
+    comparison = assistant.compare_cvs(base_cv, tailored.cv, full, role, report)
+    db.cache_put(
+        f"cvrate:{cv_id}:{baseline}",
+        {
+            "label": label,
+            "rated_at": time.time(),
+            "comparison": comparison.model_dump(),
+            "keywords": [[k, base_cov[k], new_cov[k]] for k in keywords],
+            "ats_baseline": cvcheck.ats_checks(base_cv, base_pdf, keywords),
+            "ats_tailored": cvcheck.ats_checks(tailored.cv, pdf_path, keywords),
+        },
+    )
+    return f"/cv/{cv_id}?vs={baseline}#rating"
 
 
 @app.get("/cv/{cv_id}/preview", response_class=HTMLResponse)
@@ -1077,22 +1099,34 @@ def profile_preview():
 
 @app.post("/profile/import")
 async def profile_import(cv: UploadFile = File(...)):
-    data, name = await cv.read(), cv.filename or "cv.pdf"
+    name = Path(cv.filename or "cv.pdf").name
     if Path(name).suffix.lower() not in assistant.IMPORT_TYPES:
         return _back("/profile?error=" + quote("Use a PDF, Word (.docx), text file or a picture of your CV."))
-
-    def run(progress):
-        progress.set(step="Claude is reading your CV")
-        assistant.save_profile(assistant.import_cv(data, name))
-        return "/profile"
-
-    tasks.submit("import", f"Import CV · {cv.filename}", run, subject="import", url="/profile")
+    try:
+        data = await uploads.read(cv, kinds=uploads.CV_KINDS)
+    except uploads.UploadError as e:
+        return _back("/profile?error=" + quote(str(e)))
+    stored = uploads.stash(data, name)
+    tasks.submit("import", f"Import CV · {name}", "import-cv", subject="import", url="/profile", args={"stored": stored, "name": name})
     return _back("/profile")
+
+
+@tasks.runner("import-cv")
+def _import_cv(progress, stored: str, name: str) -> str:
+    data = uploads.unstash(stored)
+    progress.set(step="Claude is reading your CV")
+    assistant.save_profile(assistant.import_cv(data, name))
+    uploads.drop(stored)
+    return "/profile"
 
 
 @app.post("/profile/photo")
 async def profile_photo(photo: UploadFile = File(...)):
-    settings.PHOTO_PATH.write_bytes(await photo.read())
+    try:
+        data, _ = uploads.clean_image(await uploads.read(photo, kinds={"image"}), keep_format=False)
+    except uploads.UploadError as e:
+        return _back("/profile?error=" + quote(str(e)))
+    settings.PHOTO_PATH.write_bytes(data)
     editor.use_profile_photo()
     return _back("/profile")
 
@@ -1152,15 +1186,19 @@ def interview_questions(job_id: str = Form("")):
     job = db.get_job(job_id)[0] if job_id else None
     url = f"/interview?job_id={job_id}" if job_id else "/interview"
 
-    def run(progress):
-        progress.set(step="Claude is finding the gaps in your profile")
-        questions = assistant.interview_questions(profile, ensure_description(job) if job else None)
-        db.cache_put(_questions_key(job_id), questions.model_dump())
-        return url
-
     label = _job_label("Interview questions", job) if job else "Interview questions · general"
-    tasks.submit("questions", label, run, subject=f"questions:{job_id or 'general'}", job_id=job_id, url=url)
+    tasks.submit("questions", label, "questions", subject=f"questions:{job_id or 'general'}", job_id=job_id, url=url,
+                 args={"job_id": job_id, "url": url})
     return _back(url)
+
+
+@tasks.runner("questions")
+def _questions(progress, job_id: str, url: str) -> str:
+    job = db.get_job(job_id)[0] if job_id else None
+    progress.set(step="Claude is finding the gaps in your profile")
+    questions = assistant.interview_questions(_need_profile(), ensure_description(job) if job else None)
+    db.cache_put(_questions_key(job_id), questions.model_dump())
+    return url
 
 
 @app.post("/interview")
@@ -1176,14 +1214,17 @@ async def interview_submit(request: Request):
         return _back(f"/job/{job_id}" if job_id else "/profile")
     url = f"/job/{job_id}" if job_id else "/profile"
 
-    def run(progress):
-        progress.set(step="Claude is adding your answers to your profile")
-        assistant.save_profile(assistant.merge_answers(assistant.load_profile(), qa))
-        db.cache_delete(_questions_key(job_id))
-        return url
-
-    tasks.submit("answers", "Add interview answers to my profile", run, subject="answers", job_id=job_id, url="/profile")
+    tasks.submit("answers", "Add interview answers to my profile", "answers", subject="answers", job_id=job_id, url="/profile",
+                 args={"job_id": job_id, "qa": qa, "url": url})
     return _back(url)
+
+
+@tasks.runner("answers")
+def _answers(progress, job_id: str, qa: list, url: str) -> str:
+    progress.set(step="Claude is adding your answers to your profile")
+    assistant.save_profile(assistant.merge_answers(assistant.load_profile(), [tuple(x) for x in qa]))
+    db.cache_delete(_questions_key(job_id))
+    return url
 
 
 # --- role profiles -----------------------------------------------------------------------------------------
@@ -1238,15 +1279,21 @@ def roles_cv(role_id: str, instructions: str = Form(""), one_page: bool = Form(F
     if not role:
         return _back("/roles")
     layout = _layout(one_page, font, instructions)
-
-    def run(progress):
-        progress.set(step="Claude is writing your CV")
-        tailored = assistant.tailor(profile, None, role, instructions)
-        cv_id = pack.save_cv(profile, f"role:{role_id}", tailored, role.name, layout, None, progress)
-        return f"/cv/{cv_id}"
-
-    tasks.submit("tailor", f"General CV · {role.name}", run, subject=f"tailor:role:{role_id}", url="/roles")
+    tasks.submit("tailor", f"General CV · {role.name}", "role-cv", subject=f"tailor:role:{role_id}", url="/roles",
+                 args={"role_id": role_id, "layout": layout, "instructions": instructions})
     return _back("/roles")
+
+
+@tasks.runner("role-cv")
+def _role_cv(progress, role_id: str, layout: dict, instructions: str) -> str:
+    profile = _need_profile()
+    role = roles.get_role(role_id)
+    if not role:
+        raise LLMError("That role profile no longer exists.")
+    progress.set(step="Claude is writing your CV")
+    tailored = assistant.tailor(profile, None, role, instructions)
+    cv_id = pack.save_cv(profile, f"role:{role_id}", tailored, role.name, layout, None, progress)
+    return f"/cv/{cv_id}"
 
 
 # --- cover letters -------------------------------------------------------------------------------------------
@@ -1261,17 +1308,21 @@ def job_letter(
     length: str = Form("standard"),
     instructions: str = Form(""),
 ):
-    profile = _need_profile()
+    _need_profile()
+    job, _ = db.get_job(job_id)
+    tasks.submit("letter", _job_label("Cover letter", job), "letter", subject=f"letter:{job_id}", job_id=job_id,
+                 url=f"/job/{job_id}#letter",
+                 args={"job_id": job_id, "cv_id": cv_id, "language": language, "tone": tone, "length": length, "instructions": instructions})
+    return _back(f"/job/{job_id}#letter")
+
+
+@tasks.runner("letter")
+def _letter(progress, job_id: str, cv_id: str, language: str, tone: str, length: str, instructions: str) -> str:
     job, _ = db.get_job(job_id)
     found = db.get_cv(int(cv_id)) if cv_id else None
     cv = found[1].cv if found and found[0] == job_id else None
-
-    def run(progress):
-        letter_id = pack.letter(profile, ensure_description(job), cv, language, tone, length, instructions, progress)
-        return f"/letter/{letter_id}"
-
-    tasks.submit("letter", _job_label("Cover letter", job), run, subject=f"letter:{job_id}", job_id=job_id, url=f"/job/{job_id}#letter")
-    return _back(f"/job/{job_id}#letter")
+    letter_id = pack.letter(_need_profile(), ensure_description(job), cv, language, tone, length, instructions, progress)
+    return f"/letter/{letter_id}"
 
 
 @app.get("/letter/{letter_id}", response_class=HTMLResponse)
@@ -1350,15 +1401,17 @@ def prep_page(request: Request, job_id: str):
 
 @app.post("/prep/{job_id:path}")
 def prep_generate(job_id: str):
-    profile = _need_profile()
+    _need_profile()
     job, _ = db.get_job(job_id)
-
-    def run(progress):
-        pack.prep(profile, ensure_description(job), _cached_fit(job_id), progress)
-        return f"/prep/{job_id}"
-
-    tasks.submit("prep", _job_label("Interview prep", job), run, subject=f"prep:{job_id}", job_id=job_id, url=f"/prep/{job_id}")
+    tasks.submit("prep", _job_label("Interview prep", job), "prep", subject=f"prep:{job_id}", job_id=job_id, url=f"/prep/{job_id}",
+                 args={"job_id": job_id})
     return _back(f"/prep/{job_id}")
+
+
+@tasks.runner("prep")
+def _prep(progress, job_id: str) -> str:
+    pack.prep(_need_profile(), ensure_description(db.get_job(job_id)[0]), _cached_fit(job_id), progress)
+    return f"/prep/{job_id}"
 
 
 # --- companies -----------------------------------------------------------------------------------------------
@@ -1447,7 +1500,7 @@ def people_page(request: Request):
             rows.append(
                 {
                     "person": p,
-                    "folder": str(people.data_dir(p.id)),
+                    "folder": str(people.data_dir(p.id)) if settings.DESKTOP else "",
                     "headline": profile.headline if profile else "",
                     "totals": db.overview(),
                     "has_profile": profile is not None,
@@ -1506,3 +1559,10 @@ app.include_router(_editor_router)
 from .extras_routes import router as _extras_router  # noqa: E402
 
 app.include_router(_extras_router)
+from .auth_routes import router as _auth_router  # noqa: E402
+
+app.include_router(_auth_router)
+if settings.DESKTOP:
+    from .telegram_routes import router as _telegram_router  # noqa: E402
+
+    app.include_router(_telegram_router)

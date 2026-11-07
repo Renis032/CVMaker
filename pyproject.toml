@@ -15,8 +15,31 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "python-dotenv>=1.0",
     "openpyxl>=3.1.5",
+    "cryptography>=50.0.2",
+    "pillow>=13.0.0",
 ]
+
+[project.optional-dependencies]
+server = [
+    "boto3>=1.35",
+    "psycopg[binary]>=3.2",
+]
+desktop = [
+    "pywebview>=5.0",
+]
+
+[project.scripts]
+cvmaker = "cvmaker.desktop:main"
+cvmaker-worker = "cvmaker.worker:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

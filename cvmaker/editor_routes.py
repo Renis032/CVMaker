@@ -121,7 +121,7 @@ async def editor_save(request: Request, cv: str = ""):
 @router.post("/editor/api/upload")
 async def editor_upload(request: Request, name: str = "image.png"):
     try:
-        return {"path": editor.save_upload(name, await request.body())}
+        return {"path": editor.save_upload(Path(name).name, await request.body())}
     except ValueError as e:
         return _error(str(e))
 
@@ -144,16 +144,20 @@ def editor_upload_delete(path: str = ""):
     return {"ok": True}
 
 
+# Uploaded files are served so that nothing in them can run as this site (an SVG opened on its own, say).
+SAFE_FILE_HEADERS = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox", "X-Content-Type-Options": "nosniff"}
+
+
 @router.get("/editor/uploads/{name}")
 def editor_uploaded(name: str):
     found = editor.image_bytes(f"/editor/uploads/{Path(name).name}")
-    return Response(found[0], media_type=found[1]) if found else Response(status_code=404)
+    return Response(found[0], media_type=found[1], headers=SAFE_FILE_HEADERS) if found else Response(status_code=404)
 
 
 @router.get("/editor/api/photo")
 def editor_photo():
     found = editor.image_bytes("/editor/api/photo")
-    return Response(found[0], media_type=found[1]) if found else Response(status_code=404)
+    return Response(found[0], media_type=found[1], headers=SAFE_FILE_HEADERS) if found else Response(status_code=404)
 
 
 def _versions_dir() -> Path:
@@ -175,7 +179,7 @@ async def editor_export(request: Request, cv: str = ""):
         refresh_cv_pdf(cv_id)
         _, _, pdf_path = db.get_cv(cv_id)
         _, pages = db.cv_layout(cv_id)
-        return {"dir": str(Path(pdf_path).parent), "files": [Path(pdf_path).name], "pages": pages}
+        return {"dir": str(Path(pdf_path).parent) if settings.DESKTOP else "", "files": [Path(pdf_path).name], "pages": pages}
     profile = assistant.load_profile() or editor.blank_profile()
     layout = editor.load_layout()
     ids = body.get("ids") or [v["id"] for v in layout["variants"]]
@@ -188,7 +192,7 @@ async def editor_export(request: Request, cv: str = ""):
         render._print_pdf(editor.print_html(profile, variant), out)
         pages = max(pages, render.page_count(out))
         files.append(name)
-    return {"dir": str(_versions_dir()), "files": files, "pages": pages}
+    return {"dir": str(_versions_dir()) if settings.DESKTOP else "", "files": files, "pages": pages}
 
 
 @router.get("/editor/api/file")
@@ -206,7 +210,7 @@ def editor_file(name: str = "", cv: str = ""):
 
 @router.post("/editor/import")
 def editor_import(request: Request):
-    if not editor.CVEDITOR_DATA.exists():
+    if settings.SERVER or not editor.CVEDITOR_DATA.exists():
         return page(request, "error.html", message=f"No CVEditor data found at {editor.CVEDITOR_DATA}.")
     try:
         report = editor.import_cveditor()

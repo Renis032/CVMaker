@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from . import settings
+from . import settings, web_fetch
 
 # Job boards and hosting: their domain says nothing about the company.
 BOARDS = (
@@ -112,10 +112,12 @@ def _fetch_icon(domain: str, c: httpx.Client) -> tuple[bytes, str] | None:
     for url in (f"https://{domain}/apple-touch-icon.png", f"https://icons.duckduckgo.com/ip3/{domain}.ico"):
         try:
             r = c.get(url)
-        except httpx.HTTPError:
+        except (httpx.HTTPError, web_fetch.BlockedURL):
             continue
-        if _is_image(r):
-            return r.content, r.headers.get("content-type", "image/png").split(";")[0]
+        if _is_image(r) and len(r.content) < 2_000_000:
+            kind = r.headers.get("content-type", "").split(";")[0].strip().lower()
+            # never serve it back as anything but a plain image (no HTML, no SVG with scripts)
+            return r.content, kind if kind in {"image/png", "image/jpeg", "image/x-icon", "image/vnd.microsoft.icon", "image/gif", "image/webp"} else "image/png"
     return None
 
 
@@ -132,7 +134,8 @@ def logo(company: str, job_url: str = "", location: str = "") -> tuple[bytes, st
             return None
     tld = "bg" if "bulgaria" in location.lower() or "българия" in location.lower() else ""
     candidates = [d for d in [company_domain(job_url), _known_domains().get(k)] if d]
-    with httpx.Client(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 CVMaker"}) as c:
+    with httpx.Client(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 CVMaker"},
+                      event_hooks={"request": [web_fetch.guard_request]}) as c:
         found = None
         for domain in candidates:
             found = _fetch_icon(domain, c)

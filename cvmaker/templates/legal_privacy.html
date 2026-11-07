@@ -1,0 +1,40 @@
+{% extends "_legal_base.html" %}
+{% block title %}Privacy policy · CVMaker{% endblock %}
+{% block legal %}
+<h1>Privacy policy</h1>
+<p>CVMaker is run by {{ settings.OPERATOR_NAME }}{% if settings.OPERATOR_EMAIL %} (<a href="mailto:{{ settings.OPERATOR_EMAIL }}">{{ settings.OPERATOR_EMAIL }}</a>){% endif %}, the data controller for the personal data described here.</p>
+
+<h2>What we keep and why</h2>
+<table>
+  <tr><th>Data</th><th>Why</th><th>Legal basis (GDPR)</th></tr>
+  <tr><td>Your email, name and a hash of your password</td><td>Your account and logging in</td><td>Contract (Art. 6(1)(b))</td></tr>
+  <tr><td>What you put in CVMaker: your CV and profile, photo, jobs you save, applications, cover letters, interview notes, chat messages and uploaded files</td><td>Providing the service you asked for</td><td>Contract (Art. 6(1)(b))</td></tr>
+  <tr><td>AI usage counts (tokens per month)</td><td>Plan limits and billing</td><td>Contract</td></tr>
+  <tr><td>Payment details</td><td>Handled by Stripe; we only keep your Stripe customer id and plan</td><td>Contract, legal obligations (tax)</td></tr>
+  <tr><td>Technical logs (IP address, time, page) for a short period</td><td>Security and abuse prevention</td><td>Legitimate interest (Art. 6(1)(f))</td></tr>
+</table>
+<p>Your CV may contain information you choose to share, such as a photo. Please don't put special categories of data (health, religion, and so on) in it unless you want them on your CV.</p>
+
+<h2>Who processes it for us</h2>
+<ul>
+  <li><strong>Anthropic</strong> (the Claude AI): the text needed for each AI feature you use - for example your profile and a job posting when you tailor a CV - is sent to Anthropic's API. Anthropic does not use API data to train its models.</li>
+  {% if settings.HOSTING_PROVIDER %}<li><strong>{{ settings.HOSTING_PROVIDER }}</strong>: hosting and backups, in the EU.</li>{% else %}<li><strong>Our hosting provider</strong>: servers and backups, in the EU.</li>{% endif %}
+  <li><strong>Stripe</strong>: payments, if you subscribe.</li>
+  <li><strong>Our email provider</strong>: account emails (sign-up, password reset) and reminders.</li>
+</ul>
+<p>We have data processing agreements with each of them. When data leaves the EU (Anthropic, Stripe), it is covered by the EU-US Data Privacy Framework or Standard Contractual Clauses.</p>
+<p>When you search for jobs, CVMaker contacts job boards and company career pages with your search terms - not with your CV.</p>
+
+<h2>How long we keep it</h2>
+<ul>
+  <li>Your data: as long as your account exists. Delete your account (Settings → Delete my account) and it is erased{% if settings.DELETED_RETENTION_DAYS %} within {{ settings.DELETED_RETENTION_DAYS }} days{% else %} at once{% endif %}, backups included.</li>
+  <li>Automatic backups: a rolling set of recent backups per profile.</li>
+  <li>Invoices: as long as tax law requires.</li>
+</ul>
+
+<h2>Your rights</h2>
+<p>You can see, correct and download all your data at any time (Settings → Download all my data), and delete your account yourself. You can also object to processing, ask us to restrict it, or complain to your data protection authority. Write to us for anything else{% if settings.OPERATOR_EMAIL %} at <a href="mailto:{{ settings.OPERATOR_EMAIL }}">{{ settings.OPERATOR_EMAIL }}</a>{% endif %}.</p>
+
+<h2>Cookies</h2>
+<p>Only the ones needed for the site to work. See the <a href="/legal/cookies">cookie notice</a>.</p>
+{% endblock %}

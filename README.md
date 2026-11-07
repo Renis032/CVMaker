@@ -66,14 +66,73 @@ The screenshots use a made-up demo profile ("Alex Morgan") and fictional compani
 
 ## Setup
 
+CVMaker runs in two modes from the same code (`CVMAKER_MODE`):
+
+| | **Desktop** (default) | **Server** (hosted, for later) |
+|---|---|---|
+| Who | One person on their own computer | Many people with accounts |
+| Login | None; it only answers on 127.0.0.1 | Email + password, emailed login links, Google sign-in |
+| AI | The user's **own Anthropic API key** (Settings → API keys) | The operator's key, metered per plan; users may add their own |
+| Data | A folder on the computer | One folder per account under `data/accounts/`, Postgres or SQLite for accounts and the task queue |
+| Payment | Free | Stripe (off until configured) |
+
+### Desktop app
+
 ```bash
-cp .env.example .env        # optional: RAPIDAPI_KEY for LinkedIn/Indeed
-./run.sh                    # http://127.0.0.1:8000
+uv sync                      # once (add --extra desktop for a native window via pywebview)
+uv run cvmaker               # starts it and opens a window
 ```
 
-By default every Claude call runs through your local **Claude Code** login (`claude -p`), so it uses your Claude Pro/Max plan with no API billing. Your global CLAUDE.md and auto-memory are switched off for these calls. To use a pay-as-you-go API key instead, set `CVMAKER_BACKEND=api` and `ANTHROPIC_API_KEY` in `.env`.
+`cvmaker` starts the app on a free port on 127.0.0.1 and opens it in its own window: a native window with pywebview installed, otherwise Chrome/Chromium/Edge in app mode, otherwise the default browser. Starting it again opens the one that's running. Data goes to the system's per-user folder (`~/.local/share/CVMaker`, `~/Library/Application Support/CVMaker`, `%APPDATA%\CVMaker`). In a source checkout that already has `data/`, it uses `data/`.
 
-Requirements: Python 3.12 (installed with `uv`) and Google Chrome. Chrome loads JavaScript-heavy career pages and prints the CVs to PDF.
+On first start every page shows "Add your Anthropic API key". The user pastes their key in **Settings → API keys**, where *Test the Anthropic key* checks it. Keys are stored encrypted on that computer. Job-board keys (JSearch, Adzuna) and GitHub go there too.
+
+For development, `./run.sh` runs the same app with auto-reload on http://127.0.0.1:8000. Setting `CVMAKER_BACKEND=claude-code` in `.env` still routes Claude calls through your local Claude Code login. It's desktop only and for personal use; server mode refuses it.
+
+Requirements: Python 3.12 (installed with `uv`) and Google Chrome or Chromium. Chrome loads JavaScript-heavy career pages and prints the CVs to PDF.
+
+### Server mode
+
+```bash
+cp .env.example .env         # fill in the "Server mode" section: secret key, public URL, Postgres password, email…
+docker compose up -d         # web + worker + Postgres; put a TLS proxy (Caddy/Traefik/nginx) in front of :8000
+```
+
+- **Accounts:** `/signup` (email confirmation required before use), `/login`, emailed login links, password reset, Google sign-in (with `GOOGLE_CLIENT_ID`/`SECRET`). Passwords are scrypt hashes. Session and email tokens are random, and only their hashes are stored.
+- **Keeping users apart:** the account comes only from the session cookie. All data paths go through `people.account_root()`, so each account lives in its own folder. "People" are profiles inside an account, and the person cookie only picks people of that account.
+- **AI:** simple work uses cheaper models (`fast` = Haiku: rating many jobs, reading postings and career pages; `standard` = Sonnet: reviews, analysis, chat, CV import). Opus is kept for what goes to employers (tailored CVs, letters, prep, offers). Every call is metered per account. Plans get a monthly token allowance (`CVMAKER_FREE_TOKENS`, `CVMAKER_PRO_TOKENS`) and a per-minute limit. Users with their own key aren't limited.
+- **Background tasks** are a queue in the central database and survive restarts: `python -m cvmaker.worker 4 --scheduler`. A task whose worker dies is picked up again when its lease runs out. Scheduled searches per account are capped by plan.
+- **Billing:** Stripe Checkout, Customer Portal and a signed webhook (`/billing/webhook`). Turn on Stripe Tax for EU VAT.
+- **Email:** Resend, Postmark or SMTP (`CVMAKER_MAIL`). `console` writes emails to `data/outbox/` for development.
+- **Backups:** every account and person is backed up automatically (`CVMAKER_BACKUP_EVERY_HOURS`) and copied to S3-compatible storage when `S3_BUCKET` is set.
+- **GDPR:** Settings → *Download all my data* (a zip of everything, account details and AI usage included) and *Delete my account* (data, sessions and S3 backups go at once, or after `CVMAKER_DELETED_RETENTION_DAYS`). Privacy, terms and cookie pages are at `/legal/…` and use `CVMAKER_OPERATOR*`. **Have them checked by a lawyer before launch.**
+
+### Security (both modes)
+
+- **Host check and CSRF:** the app only answers to its own host names (desktop: localhost, which stops DNS rebinding). Anything that changes data must come from the app's own pages (Origin/Referer check). Cookies are HttpOnly and SameSite=Lax, and security headers are on every response.
+- **Fetching links:** the page fetcher refuses private and local addresses (also after redirects), odd ports and non-http schemes.
+- **Chrome:** it keeps its sandbox. `CVMAKER_CHROME_NO_SANDBOX=1` is only for containers that can't run it. Pages printed to PDF get a Content-Security-Policy, so nothing in a CV can load local files or reach the network.
+- **Uploads:** size limits, the real type is checked from the content, pictures are decoded and saved again by Pillow, zip bombs are refused, and uploaded files are served sandboxed.
+- **Prompt injection:** job postings, web pages and GitHub text go to Claude wrapped as untrusted data, with an instruction never to follow what's inside.
+
+### Tests
+
+```bash
+uv run pytest                                   # server mode, desktop mode (subprocess), PDF export if Chrome is installed
+CVMAKER_TEST_DATABASE_URL=postgresql://… uv run pytest   # the same against Postgres
+```
+
+They cover:
+- users can't reach each other's data;
+- sign-up, verification, login, reset and login links;
+- CSRF and host checks;
+- the private-address block;
+- upload checks;
+- the editor round trip and PDF export;
+- data export and account deletion;
+- Stripe webhooks;
+- usage limits;
+- tasks surviving a restart.
 
 ## How it works
 
@@ -87,8 +146,9 @@ Requirements: Python 3.12 (installed with `uv`) and Google Chrome. Chrome loads 
    - **Learning from your feedback**: the ✕ on a job asks why you're hiding it (too senior, too junior, wrong tech stack, wrong location, salary, not this company, not relevant). Those reasons and the jobs you like or move into the pipeline become a "taste" score per job: the **for you** sort combines Claude's fit, the keyword score and that taste, and each job shows why it moved ("↓ senior roles", "↑ Sofia"). Claude's fit ratings get the same feedback, and say when a job looks like ones you've hidden. "Not this company" hides all its jobs and blocks it from future searches (unblock on the jobs page). When a pattern repeats, e.g. 2+ jobs hidden as too senior, the jobs page offers a one-click filter change for your search.
    - **Dashboard strip**: new jobs this week, applications, response rate, follow-ups due, and the median salary seen (converted to ≈ € per month: yearly/hourly amounts and other currencies are converted with fixed rates, so salaries can be compared and sorted; net and gross are not converted).
 4. **Salary**: shown whenever a posting states one. It comes from the source's salary fields where they exist (Ashby, Lever, Recruitee, Himalayas, Jobicy, dev.bg, Adzuna, Remotive, RemoteOK, JSearch); otherwise it is picked out of the posting text (e.g. "€62,000 to €87,200", "4 500 - 6 000 лв. бруто").
-5. **Automatic search**: in a search's "Advanced" section, turn on "run it automatically every N hours". Newly found jobs are marked **NEW** until you open them or press "Mark all as seen"; the header shows how many there are, and a desktop notification is sent (`notify-send`). Schedules run while the app is open. To search while it is closed, add a cron job, e.g. `0 */6 * * * cd ~/Personal/Projects/CVMaker && ~/.local/bin/uv run python -m cvmaker.auto` (runs every scheduled search, then rates the new jobs).
+5. **Automatic search**: in a search's "Advanced" section, turn on "run it automatically every N hours". Newly found jobs are marked **NEW** until you open them or press "Mark all as seen"; the header shows how many there are, and a desktop notification is sent (`notify-send`, desktop mode). Schedules run while the app is open (server mode: in the worker). To search while it is closed, add a cron job, e.g. `0 */6 * * * cd ~/Personal/Projects/CVMaker && ~/.local/bin/uv run python -m cvmaker.auto` (runs every scheduled search, then rates the new jobs).
    - **Application packs**: after each search (scheduled or not), the jobs with a keyword score of at least 80 that have no pack yet get one, up to 3 per search. A pack is a fit check, a GitHub review with project ideas to build for that job, a tailored one-page CV, a matching cover letter and interview prep, made in that order (about 5 Claude calls). Each is saved in the app as usual and copied to `data/packs/<company>_<title>/` (`CV.pdf`, `CoverLetter.pdf`, `PACK.md` with the fit, gaps, projects to build, action plan and interview prep). Change the score, the number per search or switch it off under "Schedules & Claude rating" (stored in `data/prefs.json` as `pack_min_score`, `pack_max`, `pack_after_search`). Any job can get one with **Make application pack** on its page. Ready packs are listed on the jobs page.
+   - **Telegram** (desktop mode): set it up under Settings → Telegram by creating a bot with @BotFather, pasting its token and tapping Start on the one-time link. Each day at your chosen time the bot sends new jobs at or above your chosen Claude rating (default 7/10) and any follow-ups due, each job with Open, Hide, Tailor CV and Suggest changes buttons. Tailor CV sends the PDF with what changed and anything the checks couldn't back up. Write to the bot like the chat page, e.g. "shorten my summary": a profile change is only saved when you tap Apply, and can be undone. Jobs rated 9+ (your choice) are sent as soon as they're rated, silently between 22:00 and 08:00. A Cover letter button sends a letter that matches the job's latest CV. You can also send a PDF, Word file, photo or text file, with your question as the caption (same limits as the chat page). Commands: `/jobs`, `/suggest`, `/new`, `/unlink`. The bot asks Telegram for messages, so no port is opened, and it answers only the linked account. It runs only while the app is running (a summary missed while it was closed goes out when it next starts that day; on Linux, Settings → Start at login runs the app in the background from login, at `http://127.0.0.1:8000`, and `./run.sh` stops that copy first), and jobs only arrive if a saved search runs on a schedule. Job details, messages, CVs and PDFs pass through Telegram, and bot chats aren't end-to-end encrypted.
 6. **Applications** (`/pipeline` and the job page): move a job through To apply → Applied → Screening → Interview → Offer / Rejected / Ghosted, with a date and a note; each move is kept on the job's timeline. Each job has notes, a recruiter/contact, a next date, and which CV and cover letter you sent ("I sent this CV" on a CV page). The pipeline board supports drag and drop. Jobs still at "Applied" after 10 days (`CVMAKER_FOLLOW_UP_DAYS`) show as follow-ups due, with a desktop notification. The pipeline compares response rates with and without a tailored CV sent. Jobs at a company you applied to before are flagged ("applied 2× · last: rejected").
 7. **Background tasks**: searches, ratings and everything Claude writes (fit check, CV, letter, prep, CV rating, interview questions, CV import) run in the background, up to 4 at a time (`CVMAKER_TASK_WORKERS`). You can keep using the app; the header shows what's running, a notice appears when something finishes, and **My profile → Activity** lists every task with its job and a link to the result (**My documents** lists every CV and letter). Restarting the app stops running tasks; they are marked "interrupted".
 8. **Per job**: the job page is split into tabs (Overview, Fit & gaps, CV & letter, Application, Interview prep, GitHub), with a **Next step** box at the top worked out from what's done so far. The Overview shows the posting (headings and bullets recovered from the plain text) next to your progress and fit summary. Check your fit, then **generate a tailored CV**. Claude reorders and rewords your profile for the posting and renders a PDF in your CV's design. Requirements you don't meet are listed separately and are never put into the CV. With "Must fit on one page" (on by default), a CV that still runs over after the font shrinks is shortened by Claude. You can also pick the font size (8.4-10.8 pt). On the CV page:
@@ -103,7 +163,7 @@ Requirements: Python 3.12 (installed with `uv`) and Google Chrome. Chrome loads 
    - **Your gaps**: Claude groups the gaps from all your fit checks (full and quick) into a ranked list: how many jobs each one affects, whether it's something to learn or something you have but need to prove on your CV, how to close it, and what to do next. It also lists the tech terms your jobs ask for that your profile never mentions (counted from posting text, no Claude needed).
    - **Market**: from the collected jobs (last 30/90 days or everything, hidden ones included): the most requested skills with whether you have each and whether it's rising or falling over the last 4 weeks, salaries by seniority and place (each job a dot, with the median), and postings per week.
 13. **Jobs list density**: Comfortable shows the fit notes and feedback chips under each job; Compact shows one line per job. The choice is remembered in your browser.
-14. **Multiple people** (`/people`, or the person menu in the top bar): run job searches for a friend or partner from the same app. Each person has their own profile, photo, jobs, CVs, cover letters, applications, saved searches and schedules, role profiles and learned preferences. The company list (`companies.yaml`) and API keys are shared. Your original data stays in `data/` as the default person; everyone else lives in `data/people/<id>/`. The browser remembers who is selected, and the person menu turns orange while you're working for someone else. Background tasks and scheduled searches always work for the person who started them, and their notifications start with that person's name. GitHub checks use the GitHub link in each person's profile (`GITHUB_USER` in `.env` only applies to the default person). Removing a person moves their folder to `data/people/.removed/` instead of deleting it.
+14. **Multiple people** (`/people`, or the person menu in the top bar): run job searches for a friend or partner from the same app. Each person has their own profile, photo, jobs, CVs, cover letters, applications, saved searches and schedules, role profiles and learned preferences. The company list (`companies.yaml`) and the API keys in Settings are shared by the people of one account. Your original data stays in `data/` as the default person; everyone else lives in `data/people/<id>/`. The browser remembers who is selected, and the person menu turns orange while you're working for someone else. Background tasks and scheduled searches always work for the person who started them, and their notifications start with that person's name. GitHub checks use the GitHub link in each person's profile (the GitHub username in Settings only applies to the default person). Removing a person moves their folder to `data/people/.removed/` instead of deleting it.
 15. **Add a job by link or text** (`/add`, or **+ Add job** in the top bar): paste a posting's link or its text. Claude reads it, the job is saved as "To apply", and then (your choice) your fit is checked, a one-page CV is tailored, or a full application pack is made. LinkedIn and jobs.bg pages are not loaded; paste their text instead.
 16. **Posting checks** (the *Posting check* box on a job's overview):
     - **Still open?** Asked through the job board's own API (Greenhouse, Lever, Ashby, SmartRecruiters, Workable), otherwise by loading the posting and looking for 404/410, expired redirects or "no longer accepting applications" wording.
@@ -126,6 +186,7 @@ Requirements: Python 3.12 (installed with `uv`) and Google Chrome. Chrome loads 
     - **Add a section** (*Content* tab): Certifications, Courses, Awards, Volunteering, Publications, Conferences & talks, Achievements, References or your own heading. Each entry has a title, subtitle (issuer or organisation), date and optional details; sections move between columns and hide per version like the others.
     - **Left rail, in three groups:** *Add*: **Content** (every section with its items: add, delete, reorder, show/hide per version; skill groups and short lists as chips, so a new group or a new item is one click; the photo: add, change, remove; add a section) and **Insert** (*CV parts*: the profile photo, plus any section, the sidebar or logo spots you deleted, to put back; then text boxes, shapes, lines, icons, your images). *Look*: **Design** (your templates, templates, colour palettes, font pairs) and **Layout** (sidebar left / right / none, name across the full width, photo position, heading and bullet styles, contact icons, page colour, text size and spacing, base colours). *Manage*: **Versions**, **Layers**, **Job match**, **History**.
     - **Select with the mouse, like Canva:** click selects; drag on an empty spot (the grey area or blank space on the page) draws a selection box that picks everything it touches (sections only when fully inside); Shift+click adds or removes one. With several selected, the toolbar offers *Delete all* and *Hide in this version*, free objects move together when you drag one, and the arrow keys nudge them.
+    - **Move anything anywhere:** drag any part of the CV (the name, a contact line, a heading, a whole job or section, the photo, a column) and drop it anywhere on the page; the rest of the page stays where it is, like in Canva. Press inside something selected to drag all of it (select a job, then drag it by its title); a click without dragging goes one level in. Arrow keys nudge (Shift: 5 mm). Near its own place it snaps back (Alt: no snapping). *↺ Put back* in the toolbar or the right-click menu returns it to where the layout puts it. Moves are saved with the design, so they show in every version and in the PDF. Several selected things (drag a box, or Shift+click) move together.
     - **Select, then edit (like Canva):** one click on any text selects it without a typing cursor, so `Del` deletes it (a contact line or bullet is removed, other text is emptied). Click it again, double-click, press `Enter` or just start typing to edit it; `Esc` stops typing and keeps it selected.
     - **Delete anything:** select it and press `Del` (or the toolbar's *Delete*): items are deleted, text fields emptied, a built-in section (Summary, Experience…) or the sidebar is taken off the page (Content → *Shown* or Layout brings it back), the header's name and title are cleared, and the photo or a job's logo is deleted together with its spot (Content → *Add a photo*, or *+ Logo* on the job, brings it back). Every deletion shows a "Deleted … · Undo" notice.
     - **Items on the page:** a selected job, project, skill group, education entry, entry, bullet, list item, contact line or section also gets *+ Add below*, *Duplicate* and *↑ ↓*; inside an item's text, *⬑ Whole job* (or `Esc`) selects the item. Shortcuts: `Ctrl+D` duplicates, `Ctrl+Enter` adds a new one below, `Alt+↑/↓` moves, `H` hides it in this version, `Esc` goes one level up. `?` or *⌨ Shortcuts* lists them all.
@@ -183,7 +244,7 @@ cvmaker/
   companies.py   companies.yaml editing; finds a company's careers page / hiring platform
   auto.py        saved searches, schedules, follow-up reminders, Claude fit rating (`python -m cvmaker.auto` for cron)
   pack.py        application packs for high-scoring jobs; the fit/CV/letter/prep/GitHub steps the job page uses
-  tasks.py       background task runner (state in the `tasks` table, polled by every page)
+  tasks.py       background tasks: registered runners + a durable queue with leases (state in the `tasks` table, polled by every page)
   taste.py       learns from hide reasons and likes: taste score, filter suggestions, blocked companies, Claude context
   insights.py    skill demand, salaries and weekly postings from the collected jobs; Claude gap analysis across fit checks
   posting.py     plain-text job posting -> readable HTML (headings, bullets, paragraphs)
@@ -191,12 +252,31 @@ cvmaker/
   assistant.py   Claude prompts: CV import, interview, fit check, tailoring, CV rating, cover letter, interview prep
   editor.py      CV editor glue: versions/style (editor.json), profile <-> editor content, item ids, PDF printing via the editor's page, CVEditor import
   editor_routes.py /editor pages and API
+  telegram.py    the Telegram bot (desktop mode): daily summary, job buttons, CVs, chat by message
+  telegram_routes.py the Telegram and start-at-login actions in Settings
+  autostart.py   start at login (systemd user service, Linux)
   chat.py        the chat: context for Claude, proposed profile changes (apply/undo, readable diff), reply formatting
   chat_routes.py /chat pages
   claims.py      skill check: technologies in outgoing documents that the profile and GitHub don't back
   cvcheck.py     measured CV checks: job keyword coverage, PDF text layer (ATS)
-  llm.py         Claude calls with structured output: Claude Code (subscription) or API
+  llm.py         Claude calls with structured output: model tiers, the account's key, usage metering, untrusted-text wrapping
+  settings.py    configuration (desktop / server mode)
+  security.py    host check, CSRF, login gate, security headers
+  accounts.py    accounts, passwords, sessions, email tokens, Google sign-in, plans, deletion
+  auth_routes.py sign-up/login pages, Settings (API keys, plan and usage, export, delete), billing, legal pages
+  central.py     the central database (SQLite or Postgres): accounts, sessions, usage, rate limits, task queue
+  keys.py        each account's API keys, stored encrypted
+  usage.py       AI usage per account and the plan limits
+  billing.py     Stripe checkout, portal and webhook
+  mailer.py      email (console, SMTP, Resend, Postmark)
+  uploads.py     upload size/type checks, image re-encoding
+  storage.py     S3-compatible storage for backups
+  worker.py      separate task-queue worker process (`python -m cvmaker.worker`)
+  desktop.py     the desktop launcher (`cvmaker`)
   render.py      CV -> PDF via headless Chrome (drawn by the CV editor's page); cover letters
   static/editor/ the built CV editor (source in editor/)
-data/            profile.json, photo.png, searches.json, prefs.json, feedback.json, SQLite DB, generated CVs (git-ignored)
+data/            desktop: profile.json, photo.png, searches.json, prefs.json, feedback.json, SQLite DB, generated CVs;
+                 server: accounts/<id>/… per account, central.db (git-ignored)
+tests/           pytest suite
+Dockerfile, docker-compose.yml   server deployment
 ```

@@ -1,6 +1,7 @@
 """The chat page: ask Claude about your profile or a job, and apply profile changes it proposes.
 Included at the end of app.py (it uses app.py's page helpers)."""
 
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
@@ -11,6 +12,9 @@ from . import assistant, chat, db, tasks
 from .app import _back, page
 
 router = APIRouter()
+
+# Messages loaded at a time: the page opens with the latest ones, earlier ones load when you scroll up.
+PAGE_MESSAGES = 20
 
 STARTERS_GENERAL = [
     "What are the weakest parts of my CV, and how would you fix them?",
@@ -44,11 +48,12 @@ def _send(thread_id: int, text: str, uploads: list[tuple[str, bytes]]) -> None:
     message_id = db.chat_add(thread_id, "user", text)
     if uploads:
         chat.save_files(thread_id, message_id, uploads)
-    tasks.submit("chat", "Chat · " + chat.title_from(text), lambda progress: _run(thread_id, progress),
-                 subject=f"chat:{thread_id}", url=f"/chat/{thread_id}")
+    tasks.submit("chat", "Chat · " + chat.title_from(text), "chat",
+                 subject=f"chat:{thread_id}", url=f"/chat/{thread_id}", args={"thread_id": thread_id})
 
 
-def _run(thread_id: int, progress) -> str:
+@tasks.runner("chat")
+def _run(progress, thread_id: int) -> str:
     progress.set(step="Claude is thinking")
     chat.answer(thread_id)
     return f"/chat/{thread_id}"
@@ -60,23 +65,34 @@ def chat_home(request: Request, job: str = "", error: str = ""):
 
 
 @router.get("/chat/{thread_id:int}", response_class=HTMLResponse)
-def chat_thread(request: Request, thread_id: int, error: str = ""):
+def chat_thread(request: Request, thread_id: int, error: str = "", show: int = 0):
     thread = db.chat_thread_get(thread_id)
     if not thread:
         return page(request, "error.html", message="Chat not found")
-    return _page(request, thread, thread["job_id"], error)
+    return _page(request, thread, thread["job_id"], error, show)
 
 
-def _page(request: Request, thread: dict | None, job_id: str, error: str = ""):
-    found = db.get_job(job_id) if job_id else None
-    job = found[0] if found else None
-    messages = db.chat_messages(thread["id"]) if thread else []
+@router.get("/chat/{thread_id:int}/older", response_class=HTMLResponse)
+def chat_older(request: Request, thread_id: int, before: int):
+    """The page of messages before `before`, as an HTML fragment for the chat page to insert."""
+    messages, more = db.chat_messages_page(thread_id, PAGE_MESSAGES, before=before)
+    return page(request, "_chat_msgs.html", messages=_for_page(messages), more=more)
+
+
+def _for_page(messages: list[dict]) -> list[dict]:
     for m in messages:
         m["html"] = chat.to_html(m["text"])
         m["diff"] = chat.diff(m) if m["proposal"] else []
+    return messages
+
+
+def _page(request: Request, thread: dict | None, job_id: str, error: str = "", show: int = 0):
+    found = db.get_job(job_id) if job_id else None
+    job = found[0] if found else None
+    messages, more = db.chat_messages_page(thread["id"], PAGE_MESSAGES, include=show) if thread else ([], False)
     running = db.task_active("chat", f"chat:{thread['id']}") if thread else []
     return page(
-        request, "chat.html", thread=thread, job=job, messages=messages, running=running[0] if running else None,
+        request, "chat.html", thread=thread, job=job, messages=_for_page(messages), more=more, running=running[0] if running else None,
         threads=db.chat_threads(), job_options=_job_options(), error=error,
         starters=STARTERS_JOB if job else STARTERS_GENERAL,
         file_types=sorted(chat.FILE_TYPES), max_files=chat.MAX_FILES_PER_MESSAGE, max_mb=chat.MAX_FILE_MB, has_profile=assistant.load_profile() is not None,
@@ -121,7 +137,15 @@ def chat_file(request: Request, message_id: int, index: int):
     path = chat.file_path(message, index) if message else None
     if not path:
         return page(request, "error.html", message="File not found")
-    return FileResponse(path, filename=message["files"][index]["name"], content_disposition_type="inline")
+    name = message["files"][index]["name"]
+    # Only pictures, PDFs and plain text open in the browser; anything else downloads. Nothing runs as this site.
+    inline = Path(name).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".md"}
+    media = "text/plain; charset=utf-8" if Path(name).suffix.lower() in {".txt", ".md"} else None
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if Path(name).suffix.lower() != ".pdf":  # Chrome's PDF viewer doesn't open in a sandboxed page
+        headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+    return FileResponse(path, filename=name, media_type=media, content_disposition_type="inline" if inline else "attachment",
+                        headers=headers)
 
 
 @router.post("/chat/{thread_id:int}/job")
@@ -143,8 +167,8 @@ def _change(message_id: int, action) -> object:
     if not message:
         return _back("/chat")
     problem = action(message)
-    back = f"/chat/{message['thread_id']}"
-    return _back(back + (f"?error={quote(problem)}" if problem else "") + f"#m{message_id}")
+    back = f"/chat/{message['thread_id']}?show={message_id}"
+    return _back(back + (f"&error={quote(problem)}" if problem else "") + f"#m{message_id}")
 
 
 @router.post("/chat/msg/{message_id:int}/apply")

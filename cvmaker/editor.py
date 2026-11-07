@@ -635,9 +635,20 @@ IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 
 
 def save_upload(name: str, data: bytes) -> str:
+    """Store an image for the editor. Pictures are decoded and saved again (uploads.clean_image); SVGs are kept as
+    they are but only ever shown through <img> or served sandboxed, where their scripts can't run."""
+    from . import uploads
+
     ext = Path(name).suffix.lower()
     if ext not in IMAGE_EXT:
         raise ValueError("Unsupported image type")
+    uploads.check_size(data)
+    kind = uploads.sniff(data)
+    if ext == ".svg":
+        if kind != "svg":
+            raise ValueError("That file is not an SVG picture")
+    else:
+        data, ext = uploads.clean_image(data)
     uploads_dir().mkdir(parents=True, exist_ok=True)
     stored = f"{int(time.time() * 1000)}-{_slug(Path(name).stem) or 'image'}{ext}"
     (uploads_dir() / stored).write_bytes(data)

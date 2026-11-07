@@ -48,40 +48,7 @@
       </div>
       {% endif %}
 
-      {% for msg in messages %}
-      <div class="msg {{ msg.role }}" id="m{{ msg.id }}">
-        <div class="bubble">{% if msg.role == 'user' %}{{ msg.text }}{% else %}{{ msg.html }}{% endif %}</div>
-        {% if msg.files %}<div class="files">{% for f in msg.files %}<a class="file-chip" href="/chat/file/{{ msg.id }}/{{ loop.index0 }}" target="_blank" title="{{ f.name }} · {{ (f.size / 1024) | round | int }} KB"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> {{ f.name | truncate(40) }}</a>{% endfor %}</div>{% endif %}
-        {% if msg.changes %}
-        <div class="proposal state-{{ msg.state }}">
-          <div class="p-head">
-            <strong>{{ {'proposed': 'Suggested change to your profile', 'applied': '✓ Applied to your profile', 'undone': 'Undone', 'dismissed': 'Not applied', 'stale': 'Out of date'}.get(msg.state, 'Profile change') }}</strong>
-          </div>
-          <ul class="tight">{% for c in msg.changes %}<li>{{ c }}</li>{% endfor %}</ul>
-          {% if msg.diff %}
-          <details><summary class="muted">Show exactly what changes</summary>
-            {% for d in msg.diff %}
-            <div class="diff"><div class="d-sec">{{ d.section }}</div>
-              {% for kind, line in d.lines %}<div class="dl {{ {'+': 'add', '-': 'del', '…': 'gap'}.get(kind, '') }}">{{ '⋯' if kind == '…' else kind }} {{ line }}</div>{% endfor %}
-            </div>
-            {% endfor %}
-          </details>
-          {% endif %}
-          <div class="row" style="margin-top:8px">
-            {% if msg.state == 'proposed' %}
-            <form method="post" action="/chat/msg/{{ msg.id }}/apply"><button type="submit">Apply to my profile</button></form>
-            <form method="post" action="/chat/msg/{{ msg.id }}/dismiss"><button class="secondary" type="submit">Not now</button></form>
-            {% elif msg.state == 'applied' %}
-            <form method="post" action="/chat/msg/{{ msg.id }}/undo"><button class="secondary" type="submit">Undo</button></form>
-            <a class="muted" href="/profile">See my profile →</a>
-            {% elif msg.state == 'stale' %}<span class="muted">Your profile changed after this was written. Ask again to get a fresh change.</span>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
-        <div class="when muted">{{ msg.created | ago }}</div>
-      </div>
-      {% endfor %}
+      {% include "_chat_msgs.html" %}
       {% if running %}<div class="msg assistant">{{ m.running(running, "Claude is answering") }}</div>{% endif %}
       <div id="end"></div>
     </div>
@@ -123,8 +90,12 @@
   .intro p { line-height:1.55; }
   .starters { display:flex; flex-wrap:wrap; gap:8px; }
   .starters button { font-weight:400; text-align:left; }
-  .msg { display:flex; flex-direction:column; max-width:min(760px, 92%); }
+  .msg { display:flex; flex-direction:column; max-width:min(760px, 92%); scroll-margin-top:76px; }
   .msg.user { align-self:flex-end; align-items:flex-end; }
+  .older { align-self:center; font-weight:400; }
+  .msg .bubble.clamp { max-height:260px; overflow:hidden; -webkit-mask-image:linear-gradient(#000 70%, transparent); mask-image:linear-gradient(#000 70%, transparent); }
+  .show-more { align-self:flex-start; margin:4px 4px 0; }
+  .msg.user .show-more { align-self:flex-end; }
   .msg .bubble { padding:10px 14px; border-radius:14px; line-height:1.55; overflow-wrap:anywhere; }
   .msg.user .bubble { background:var(--accent); color:var(--accent-ink); border-bottom-right-radius:4px; white-space:pre-wrap; }
   .msg.assistant .bubble { background:var(--sunken); border:1px solid var(--line); border-bottom-left-radius:4px; }
@@ -212,8 +183,54 @@
     document.querySelectorAll(".starter").forEach(b => b.addEventListener("click", () => {
       box.value = b.textContent; box.focus(); box.setSelectionRange(box.value.length, box.value.length);
     }));
-    const end = document.getElementById("end");
-    if (end && document.querySelector(".msg")) end.scrollIntoView({ block: "end" });
+    const list = document.getElementById("messages");
+    const shown = () => [...list.querySelectorAll(".msg[id]")];
+    // Long messages start collapsed, except the newest message and the newest answer.
+    function clampLong() {
+      const all = shown(), keep = [all.at(-1), all.filter(m => m.classList.contains("assistant")).at(-1)];
+      for (const m of all) {
+        const bubble = m.querySelector(".bubble");
+        if (keep.includes(m) || m.querySelector(".show-more") || bubble.dataset.open || bubble.scrollHeight <= 360) continue;
+        bubble.classList.add("clamp");
+        bubble.after(Object.assign(document.createElement("button"), { type: "button", className: "link-btn show-more", textContent: "Show more" }));
+      }
+    }
+    list.addEventListener("click", e => {
+      if (e.target.id === "older") return loadOlder();
+      if (!e.target.classList.contains("show-more")) return;
+      const bubble = e.target.previousElementSibling;
+      bubble.classList.remove("clamp"); bubble.dataset.open = "1"; e.target.remove();
+    });
+    // Only the latest messages come with the page; earlier ones load when you scroll up to them.
+    let loading = false;
+    const nearTop = new IntersectionObserver(found => { if (found.some(f => f.isIntersecting)) loadOlder(); }, { rootMargin: "300px 0px 0px 0px" });
+    async function loadOlder() {
+      const older = document.getElementById("older");
+      if (!older || loading) return;
+      loading = true;
+      try {
+        const res = await fetch(`${location.pathname}/older?before=${older.dataset.before}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const html = await res.text(), anchor = shown()[0], top = anchor.getBoundingClientRect().top;
+        nearTop.disconnect();
+        older.outerHTML = html;
+        clampLong();
+        window.scrollBy(0, anchor.getBoundingClientRect().top - top);  // what you were reading stays in place
+        const next = document.getElementById("older");
+        if (next) nearTop.observe(next);
+      } catch (e) {} finally { loading = false; }
+    }
+    // The browser must not restore an old scroll position on a reload: where the page opens is decided below.
+    history.scrollRestoration = "manual";
+    addEventListener("DOMContentLoaded", () => {
+      clampLong();
+      const last = shown().at(-1), target = /^#m\d+$/.test(location.hash) && document.querySelector(location.hash);
+      if (target) target.scrollIntoView({ block: "start" });
+      else if (last && last.classList.contains("assistant")) last.scrollIntoView({ block: "start" });  // read a new answer from its start
+      else if (last) window.scrollTo(0, document.documentElement.scrollHeight);
+      const older = document.getElementById("older");
+      if (older) nearTop.observe(older);
+    });
     if (!box.disabled) box.focus({ preventScroll: true });
   })();
 </script>

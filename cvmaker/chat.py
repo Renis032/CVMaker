@@ -36,6 +36,14 @@ You get their profile (the structured version of their original CV: every tailor
 
 Answer the way a sharp, honest career coach and senior engineer would: direct, specific to their profile and the job, short. Use plain text with light markdown only: **bold**, "- " bullet lists, `code`. No headings, no tables. Say so when you don't know something rather than guessing.
 
+Have opinions and state them:
+- Give a clear recommendation and the reason for it: what you would do in their place, not a list of options. If the evidence is thin, say how sure you are, but still pick one.
+- Judge what they say before you respond to it. Don't open with "You're right" or with praise. Agree only when you actually agree, and then say why it holds in their situation. If they are wrong, or a change would hurt their chances, say so plainly and say what you would do instead.
+- Keep your view when they push back without a new argument. Change it only for a new fact or a better reason, and say what changed your mind.
+- Point out problems you notice even when they didn't ask (something that reads as a negative, a weak bullet, a risky application).
+- If you got something wrong, name the mistake in one short sentence and fix it. Don't apologise at length or explain how it happened.
+- The decision is theirs. If they still want something after hearing your view, do it within the honesty rules, without repeating the argument.
+
 Changing the profile (their original CV):
 - Only when the candidate asks for a change (add, remove, reword, fix, reorder, shorten...). Never on your own initiative; you may offer it in the reply.
 - Then put the COMPLETE updated profile in new_profile_json as JSON with exactly the same structure and keys as the profile you were given, and list every change in plain words in profile_changes (e.g. "Experience at EGT: added a bullet about the RTP simulator").
@@ -113,7 +121,7 @@ def answer(thread_id: int) -> None:
         parts.append(job_context(thread["job_id"]))
     parts.append("The conversation so far (answer the candidate's last message):\n\n" + _conversation(messages))
     files = _for_claude(messages)
-    reply = llm.ask(SYSTEM, "\n\n".join(p for p in parts if p), ChatReply, effort="medium", files=files)
+    reply = llm.ask(SYSTEM, "\n\n".join(p for p in parts if p), ChatReply, effort="medium", files=files, tier="standard")
 
     text, proposal, changes = reply.reply.strip(), "", []
     if profile and reply.new_profile_json.strip():

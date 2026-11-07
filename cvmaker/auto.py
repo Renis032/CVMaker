@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel, Field
 
-from . import assistant, db, pack, people, settings, taste, tasks
+from . import accounts, assistant, central, db, pack, people, settings, taste, tasks, telegram
 from .models import Criteria
 from .search import run_search
 from .sources import ensure_description
@@ -196,7 +196,7 @@ def run_saved(
     )
     taste.recompute()
     if scheduled and search.notify and new_ids:
-        tasks.notify(f"{len(new_ids)} new job{'s' if len(new_ids) != 1 else ''} from “{search.name}”", url="/?unseen=1", kind="jobs")
+        tasks.notify(f"{len(new_ids)} new job{'s' if len(new_ids) != 1 else ''} from “{search.name}”", url="/?unseen=1", kind="jobs", email=True)
     prefs = load_prefs()
     if prefs.rate_after_search and new_ids:
         top = _top_by_score(new_ids, prefs.rate_top)
@@ -211,6 +211,18 @@ def run_saved(
     return get_search(search_id)
 
 
+@tasks.runner("check-open")
+def _check_open(progress, ids: list[str]) -> str:
+    from . import checks
+
+    counts = checks.check_many(ids, progress)
+    if counts["closed"]:
+        n = counts["closed"]
+        tasks.notify(f"{n} saved posting{'s' if n != 1 else ''} closed", "They moved to the Closed tab.", url="/?status=closed", kind="closed",
+                     desktop=False)
+    return "/?status=closed"
+
+
 def submit_open_check(inline: bool = False, limit: int = 80) -> int | None:
     """Check saved jobs not checked in the last day are still open; closed ones leave the jobs list."""
     from . import checks
@@ -218,18 +230,17 @@ def submit_open_check(inline: bool = False, limit: int = 80) -> int | None:
     ids = db.jobs_to_check(20, checks.CHECK_STAGES, limit)
     if not ids:
         return None
-    def run(progress=None) -> str:
-        counts = checks.check_many(ids, progress)
-        if counts["closed"]:
-            n = counts["closed"]
-            tasks.notify(f"{n} saved posting{'s' if n != 1 else ''} closed", "They moved to the Closed tab.", url="/?status=closed", kind="closed",
-                         desktop=False)
-        return "/?status=closed"
-
     if inline:
-        run()
+        _check_open(None, ids)
         return None
-    return tasks.submit("check", f"Check {len(ids)} postings are still open", run, subject="check:open", url="/?status=closed")
+    return tasks.submit("check", f"Check {len(ids)} postings are still open", "check-open", subject="check:open",
+                        url="/?status=closed", args={"ids": ids})
+
+
+@tasks.runner("search")
+def _search(progress, search_id: str, scheduled: bool = False) -> str:
+    run_saved(search_id, progress, scheduled)
+    return f"/?search={search_id}&only_last=1"
 
 
 def submit_search(search_id: str, scheduled: bool = False) -> int:
@@ -237,9 +248,10 @@ def submit_search(search_id: str, scheduled: bool = False) -> int:
     return tasks.submit(
         "search",
         f"{'Scheduled search' if scheduled else 'Search'}: {search.name}",
-        lambda progress: (run_saved(search_id, progress, scheduled), f"/?search={search_id}&only_last=1")[1],
+        "search",
         subject=f"search:{search_id}",
         url=f"/?search={search_id}&only_last=1",
+        args={"search_id": search_id, "scheduled": scheduled},
     )
 
 
@@ -292,6 +304,8 @@ def rate_jobs(job_ids: list[str], progress: tasks.Progress | None = None) -> int
                 progress.set(done=done, total=len(job_ids), errors=errors)
     if errors and not done:
         raise RuntimeError(errors[0])
+    if done:
+        telegram.send_alerts()
     return done
 
 
@@ -301,10 +315,17 @@ def submit_rating(job_ids: list[str], label: str) -> int | None:
     return tasks.submit(
         "rate",
         f"{label} ({len(job_ids)} job{'s' if len(job_ids) != 1 else ''})",
-        lambda progress: (rate_jobs(job_ids, progress), "/?sort=fit")[1],
+        "rate",
         subject=f"rate:{','.join(sorted(job_ids))[:200]}",
         url="/?sort=fit",
+        args={"job_ids": job_ids},
     )
+
+
+@tasks.runner("rate")
+def _rate(progress, job_ids: list[str]) -> str:
+    rate_jobs(job_ids, progress)
+    return "/?sort=fit"
 
 
 # --- follow-up reminders and the scheduler ----------------------------------------------------------------
@@ -315,22 +336,48 @@ def remind_follow_ups() -> None:
     if not due:
         return
     names = ", ".join(f"{d['job'].company}" for d in due[:3]) + (" …" if len(due) > 3 else "")
-    tasks.notify(f"Time to follow up on {len(due)} application{'s' if len(due) != 1 else ''}", names, url="/pipeline#follow-ups", kind="follow-up")
+    tasks.notify(f"Time to follow up on {len(due)} application{'s' if len(due) != 1 else ''}", names, url="/pipeline#follow-ups", kind="follow-up",
+                 email=True)
     db.mark_reminded([d["job"].id for d in due])
+
+
+def scheduled_allowed() -> int:
+    """How many saved searches may run on a schedule for the current account (by plan)."""
+    return settings.PLAN_SCHEDULED_SEARCHES.get(accounts.plan_of(people.account()), 0) if settings.SERVER else 10**6
+
+
+def tick() -> None:
+    """One pass of the scheduler over every account and person: due saved searches, follow-up reminders, and
+    (server mode) automatic backups and wiping deleted accounts' data."""
+    for account_id in people.all_accounts():
+        with people.in_account(account_id):
+            allowed = scheduled_allowed()
+            for person in people.load():
+                with people.acting_as(person.id):
+                    try:
+                        for s in [s for s in load_searches() if s.auto][:allowed]:
+                            if time.time() >= next_run(s) and not search_running(s.id):
+                                submit_search(s.id, scheduled=True)
+                        remind_follow_ups()
+                    except Exception as e:  # keep the scheduler alive; the next tick tries again
+                        print(f"cvmaker scheduler ({account_id}/{person.name}): {e}")
+                    telegram.daily_tick()
+    try:
+        from . import backup
+
+        backup.scheduled()
+        if settings.SERVER:
+            accounts.purge_deleted()
+    except Exception as e:
+        print(f"cvmaker scheduler (backups): {e}")
 
 
 def _loop() -> None:
     while True:
         time.sleep(CHECK_EVERY_SECONDS)
-        for person in people.load():
-            with people.acting_as(person.id):
-                try:
-                    for s in load_searches():
-                        if s.auto and time.time() >= next_run(s) and not search_running(s.id):
-                            submit_search(s.id, scheduled=True)
-                    remind_follow_ups()
-                except Exception as e:  # keep the scheduler alive; the next tick tries again
-                    print(f"cvmaker scheduler ({person.name}): {e}")
+        # With several web processes or workers, only one of them runs each tick.
+        if central.hit("scheduler-tick", 1, CHECK_EVERY_SECONDS):
+            tick()
 
 
 _thread: threading.Thread | None = None
@@ -345,16 +392,19 @@ def start() -> None:
 
 
 if __name__ == "__main__":
-    # From cron: for each person, run every search that has its schedule on (the default person's active
-    # search if none has; other people only run searches they scheduled).
-    for person in people.load():
-        with people.acting_as(person.id):
-            scheduled = [s for s in load_searches() if s.auto]
-            if not scheduled and person.id == people.DEFAULT:
-                scheduled = [active_search()]
-            for chosen in scheduled:
-                done = run_saved(chosen.id, scheduled=True, rate_inline=True)
-                print(f"{person.name} / {done.name}: {done.last_found} matching jobs, {done.last_new} new, in {done.last_seconds}s")
-                for e in done.last_errors:
-                    print("error:", e)
-            remind_follow_ups()
+    # From cron: for each account and person, run every search that has its schedule on (the default person's
+    # active search if none has; other people only run searches they scheduled).
+    for account_id in people.all_accounts():
+        with people.in_account(account_id):
+            allowed = scheduled_allowed()
+            for person in people.load():
+                with people.acting_as(person.id):
+                    scheduled = [s for s in load_searches() if s.auto][:allowed]
+                    if not scheduled and person.id == people.DEFAULT and settings.DESKTOP:
+                        scheduled = [active_search()]
+                    for chosen in scheduled:
+                        done = run_saved(chosen.id, scheduled=True, rate_inline=True)
+                        print(f"{person.name} / {done.name}: {done.last_found} matching jobs, {done.last_new} new, in {done.last_seconds}s")
+                        for e in done.last_errors:
+                            print("error:", e)
+                    remind_follow_ups()

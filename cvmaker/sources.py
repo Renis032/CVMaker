@@ -12,7 +12,7 @@ from email.utils import parsedate_to_datetime
 
 from bs4 import BeautifulSoup
 
-from . import db, llm, settings
+from . import db, keys, llm, settings
 from .countries import country_name
 from .models import Criteria, ExtractedPostings, Job
 from .salary import find_salary, format_salary
@@ -255,9 +255,10 @@ def careerpage(company: dict, criteria: Criteria) -> list[Job]:
         listing = "\n".join(f"- {text} -> {href}" for text, href in links)
         extracted = llm.ask(
             CAREER_PAGE_SYSTEM,
-            f"Company: {company['name']}\nCareers page: {url}\n\nLinks on the page:\n{listing}",
+            f"Company: {company['name']}\nCareers page: {url}\n\nLinks on the page:\n{llm.untrusted(listing)}",
             ExtractedPostings,
             effort="low",
+            tier="fast",
         )
         postings = [p.model_dump() for p in extracted.postings]
         db.cache_put(cache_key, postings)
@@ -521,7 +522,7 @@ ADZUNA_COUNTRIES = {"AT", "AU", "BE", "BR", "CA", "CH", "DE", "ES", "FR", "GB", 
 
 def adzuna(criteria: Criteria) -> list[Job]:
     """Adzuna: large job search engine for the countries it covers (not Bulgaria). Free API key."""
-    if not (settings.ADZUNA_APP_ID and settings.ADZUNA_APP_KEY):
+    if not (keys.get('adzuna_id') and keys.get('adzuna_key')):
         raise RuntimeError("ADZUNA_APP_ID / ADZUNA_APP_KEY not set - get a free key at developer.adzuna.com")
     countries = [c for c in criteria.countries if c.upper() in ADZUNA_COUNTRIES]
     jobs = {}
@@ -531,8 +532,8 @@ def adzuna(criteria: Criteria) -> list[Job]:
                 r = c.get(
                     f"https://api.adzuna.com/v1/api/jobs/{country.lower()}/search/1",
                     params={
-                        "app_id": settings.ADZUNA_APP_ID,
-                        "app_key": settings.ADZUNA_APP_KEY,
+                        "app_id": keys.get('adzuna_id'),
+                        "app_key": keys.get('adzuna_key'),
                         "what": kw,
                         "max_days_old": criteria.max_age_days,
                         "results_per_page": 50,
@@ -568,9 +569,9 @@ def _date_posted(max_age_days: int) -> str:
 
 def jsearch(criteria: Criteria) -> list[Job]:
     """Google Jobs aggregate (LinkedIn, Indeed, Glassdoor, ...) via JSearch on RapidAPI."""
-    if not settings.RAPIDAPI_KEY:
-        raise RuntimeError("RAPIDAPI_KEY not set - LinkedIn/Indeed results need a JSearch key")
-    headers = {"X-RapidAPI-Key": settings.RAPIDAPI_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
+    if not keys.get('rapidapi'):
+        raise RuntimeError("No JSearch key - add one in Settings → API keys for LinkedIn/Indeed results")
+    headers = {"X-RapidAPI-Key": keys.get('rapidapi'), "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
     queries = criteria.queries[:3] or [f"{s} developer" for s in criteria.skill_keywords[:3]] or ["software developer"]
     searches = [(q, country, False) for country in criteria.countries for q in queries]
     if criteria.include_remote:
@@ -647,9 +648,13 @@ BOARD_INFO = {
 }
 
 
+# BOARD_INFO names the environment variable; the account's own key (Settings → API keys) comes first.
+ENV_KEYS = {"RAPIDAPI_KEY": "rapidapi", "ADZUNA_APP_ID": "adzuna_id", "ADZUNA_APP_KEY": "adzuna_key"}
+
+
 def board_has_key(name: str) -> bool:
     key = BOARD_INFO[name]["key"]
-    return not key or bool(getattr(settings, key, ""))
+    return not key or bool(keys.get(ENV_KEYS.get(key, "")))
 
 
 def board_applies(name: str, criteria: Criteria) -> bool:

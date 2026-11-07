@@ -68,6 +68,19 @@ const INLINE = new Set(['bullet', 'listItem', 'contact', 'projectTitle', 'projec
 
 export const styleKey = (k: string, i?: string) => (i ? `${k}#${i}` : k);
 
+/** Where an element's position offset is stored: always this one element (never "all of a kind"). */
+export const offsetKey = (k: string, i?: string) => styleKey(k, i);
+
+/** Set (or clear, when both are 0) one element's offset. */
+export function setOffset(elements: Record<string, ElemStyle>, key: string, dx: number, dy: number) {
+  const r = (n: number) => Math.round(n * 10) / 10;
+  const next: ElemStyle = { ...(elements[key] ?? {}), dx: r(dx), dy: r(dy) };
+  if (!next.dx) delete next.dx;
+  if (!next.dy) delete next.dy;
+  if (Object.keys(next).length) elements[key] = next;
+  else delete elements[key];
+}
+
 /** An element's style: its kind's style with its own on top. */
 export function elemStyle(design: Design, k: string, i?: string): ElemStyle {
   return { ...(design.elements[k] ?? {}), ...(i ? design.elements[`${k}#${i}`] ?? {} : {}) };
@@ -104,6 +117,7 @@ function decls(k: string, s: ElemStyle): string {
     if (s.height !== undefined) out.push(`min-height:${s.height}mm`);
   }
   if (s.imgSize !== undefined) out.push(`width:${s.imgSize}mm`, `height:${s.imgSize}mm`);
+  if (s.dx || s.dy) out.push('position:relative', `left:${s.dx ?? 0}mm`, `top:${s.dy ?? 0}mm`, 'z-index:1');
   if (s.round !== undefined) add('border-radius', `${s.round}%`);
   return out.join(';');
 }

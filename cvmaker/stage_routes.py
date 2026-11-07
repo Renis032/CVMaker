@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
-from . import assistant, auto, checks, claims, db, intake, stage, stories, tasks
+from . import assistant, auto, checks, claims, db, intake, stage, stories, tasks, uploads
 from .app import _back, _cached_prep, _job_label, _need_profile, _not_found, page
 from .llm import LLMError
 from .models import DraftStory, Story
@@ -42,14 +42,16 @@ def add_submit(text: str = Form(...), step: str = Form("cv")):
     url, pasted = intake.split_input(text)
     label = "Add job · " + (url[:60] if url else " ".join(pasted.split())[:60])
 
-    def run(progress):
-        try:
-            return intake.add_and_prepare(text, step, progress)
-        except intake.IntakeError as e:
-            raise LLMError(str(e)) from e
-
-    tasks.submit("add", label, run, url="/add")
+    tasks.submit("add", label, "add-job", url="/add", args={"text": text, "step": step})
     return _back("/add")
+
+
+@tasks.runner("add-job")
+def _add_job(progress, text: str, step: str) -> str:
+    try:
+        return intake.add_and_prepare(text, step, progress)
+    except intake.IntakeError as e:
+        raise LLMError(str(e)) from e
 
 
 # --- posting checks -------------------------------------------------------------------------------------------
@@ -82,15 +84,17 @@ def check_mark_closed(job_id: str):
 
 @router.post("/check/{job_id:path}/review")
 def check_review(job_id: str):
-    profile = _need_profile()
+    _need_profile()
     job = _job_or_none(job_id)
-
-    def run(progress):
-        checks.review(ensure_description(job), profile, progress)
-        return f"/job/{job_id}#overview"
-
-    tasks.submit("postcheck", _job_label("Posting check", job), run, subject=f"postcheck:{job_id}", job_id=job_id, url=f"/job/{job_id}#overview")
+    tasks.submit("postcheck", _job_label("Posting check", job), "postcheck", subject=f"postcheck:{job_id}", job_id=job_id,
+                 url=f"/job/{job_id}#overview", args={"job_id": job_id})
     return _back(f"/job/{job_id}#overview")
+
+
+@tasks.runner("postcheck")
+def _postcheck(progress, job_id: str) -> str:
+    checks.review(ensure_description(_job_or_none(job_id)), _need_profile(), progress)
+    return f"/job/{job_id}#overview"
 
 
 # --- outreach -------------------------------------------------------------------------------------------------
@@ -107,15 +111,17 @@ def outreach_contact(job_id: str, contact: str = Form(...)):
 
 @router.post("/outreach/{job_id:path}")
 def outreach_make(job_id: str, recipient: str = Form(""), language: str = Form("English"), notes: str = Form("")):
-    profile = _need_profile()
+    _need_profile()
     job = _job_or_none(job_id)
-
-    def run(progress):
-        stage.make_outreach(profile, ensure_description(job), recipient, language, notes, progress)
-        return f"/job/{job_id}#outreach"
-
-    tasks.submit("outreach", _job_label("Outreach drafts", job), run, subject=f"outreach:{job_id}", job_id=job_id, url=f"/job/{job_id}#outreach")
+    tasks.submit("outreach", _job_label("Outreach drafts", job), "outreach", subject=f"outreach:{job_id}", job_id=job_id,
+                 url=f"/job/{job_id}#outreach", args={"job_id": job_id, "recipient": recipient, "language": language, "notes": notes})
     return _back(f"/job/{job_id}#outreach")
+
+
+@tasks.runner("outreach")
+def _outreach(progress, job_id: str, recipient: str, language: str, notes: str) -> str:
+    stage.make_outreach(_need_profile(), ensure_description(_job_or_none(job_id)), recipient, language, notes, progress)
+    return f"/job/{job_id}#outreach"
 
 
 # --- story bank ---------------------------------------------------------------------------------------------
@@ -155,17 +161,18 @@ def stories_delete(story_id: str):
 
 @router.post("/stories/draft")
 def stories_draft():
-    profile = _need_profile()
-
-    def run(progress):
-        from . import coach
-
-        progress.set(step="Claude is drafting stories from your profile")
-        stories.add_drafts(coach.draft_stories(profile, stories.load()).stories, "profile")
-        return "/stories"
-
-    tasks.submit("stories", "Draft stories for the story bank", run, subject="stories:draft", url="/stories")
+    _need_profile()
+    tasks.submit("stories", "Draft stories for the story bank", "draft-stories", subject="stories:draft", url="/stories")
     return _back("/stories")
+
+
+@tasks.runner("draft-stories")
+def _draft_stories(progress) -> str:
+    from . import coach
+
+    progress.set(step="Claude is drafting stories from your profile")
+    stories.add_drafts(coach.draft_stories(_need_profile(), stories.load()).stories, "profile")
+    return "/stories"
 
 
 # --- interview practice -----------------------------------------------------------------------------------
@@ -194,14 +201,16 @@ def practice_ask(job_id: str, question: str = Form(""), custom: str = Form(""), 
     if text:
         pid = db.practice_add(job_id, "your question" if custom.strip() else "from your prep", text)
         return _back(f"/practice/{job_id}#q{pid}")
-    profile = _need_profile()
-
-    def run(progress):
-        pid = stage.ask_question(profile, ensure_description(job), category, progress)
-        return f"/practice/{job_id}#q{pid}"
-
-    tasks.submit("practice-q", _job_label("Practice question", job), run, subject=f"practice-q:{job_id}", job_id=job_id, url=f"/practice/{job_id}")
+    _need_profile()
+    tasks.submit("practice-q", _job_label("Practice question", job), "practice-q", subject=f"practice-q:{job_id}", job_id=job_id,
+                 url=f"/practice/{job_id}", args={"job_id": job_id, "category": category})
     return _back(f"/practice/{job_id}")
+
+
+@tasks.runner("practice-q")
+def _practice_q(progress, job_id: str, category: str) -> str:
+    pid = stage.ask_question(_need_profile(), ensure_description(_job_or_none(job_id)), category, progress)
+    return f"/practice/{job_id}#q{pid}"
 
 
 @router.post("/practice-answer/{practice_id}")
@@ -209,16 +218,18 @@ def practice_answer(practice_id: int, answer: str = Form(...)):
     item = db.practice_get(practice_id)
     if not item:
         raise LLMError("That practice question no longer exists.")
-    profile = _need_profile()
+    _need_profile()
     job = _job_or_none(item["job_id"])
     db.practice_update(practice_id, answer=answer)
-
-    def run(progress):
-        stage.give_feedback(profile, job, practice_id, answer, progress)
-        return f"/practice/{job.id}#q{practice_id}"
-
-    tasks.submit("practice-a", _job_label("Answer feedback", job), run, subject=f"practice-a:{practice_id}", job_id=job.id, url=f"/practice/{job.id}#q{practice_id}")
+    tasks.submit("practice-a", _job_label("Answer feedback", job), "practice-a", subject=f"practice-a:{practice_id}", job_id=job.id,
+                 url=f"/practice/{job.id}#q{practice_id}", args={"job_id": job.id, "practice_id": practice_id, "answer": answer})
     return _back(f"/practice/{job.id}#q{practice_id}")
+
+
+@tasks.runner("practice-a")
+def _practice_a(progress, job_id: str, practice_id: int, answer: str) -> str:
+    stage.give_feedback(_need_profile(), _job_or_none(job_id), practice_id, answer, progress)
+    return f"/practice/{job_id}#q{practice_id}"
 
 
 @router.post("/practice-delete/{practice_id}")
@@ -236,7 +247,7 @@ def debrief_add(
     job_id: str, date: str = Form(""), round: str = Form("Other"), interviewers: str = Form(""), questions: str = Form(""),
     went_well: str = Form(""), went_badly: str = Form(""), feeling: int = Form(3), next_steps: str = Form(""),
 ):
-    profile = _need_profile()
+    _need_profile()
     job = _job_or_none(job_id)
     notes = {"date": date, "round": round, "interviewers": interviewers, "questions_asked": questions,
              "went_well": went_well, "was_hard": went_badly, "feeling_1_to_5": feeling, "next_steps_they_mentioned": next_steps}
@@ -248,12 +259,15 @@ def debrief_add(
     status = db.get_job(job_id)[1]
     db.add_event(job_id, at, status, f"Debrief: {round.lower()}" + (f" with {interviewers}" if interviewers else ""))
 
-    def run(progress):
-        stage.review_debrief(profile, ensure_description(job), debrief_id, progress)
-        return f"/job/{job_id}#interview"
-
-    tasks.submit("debrief", _job_label("Debrief", job), run, subject=f"debrief:{debrief_id}", job_id=job_id, url=f"/job/{job_id}#interview")
+    tasks.submit("debrief", _job_label("Debrief", job), "debrief", subject=f"debrief:{debrief_id}", job_id=job_id,
+                 url=f"/job/{job_id}#interview", args={"job_id": job_id, "debrief_id": debrief_id})
     return _back(f"/job/{job_id}#interview")
+
+
+@tasks.runner("debrief")
+def _debrief(progress, job_id: str, debrief_id: int) -> str:
+    stage.review_debrief(_need_profile(), ensure_description(_job_or_none(job_id)), debrief_id, progress)
+    return f"/job/{job_id}#interview"
 
 
 @router.post("/debrief-story/{debrief_id}")
@@ -280,9 +294,12 @@ def debrief_delete(debrief_id: int):
 
 @router.post("/offer/{job_id:path}")
 async def offer_review(job_id: str, text: str = Form(""), wishes: str = Form(""), file: UploadFile | None = File(None)):
-    profile = _need_profile()
+    _need_profile()
     job = _job_or_none(job_id)
-    data = await file.read() if file and file.filename else b""
+    try:
+        data = await uploads.read(file, kinds={"pdf"}) if file and file.filename else b""
+    except uploads.UploadError as e:
+        raise LLMError(str(e)) from e
     if data:
         try:
             text = (text + "\n\n" if text.strip() else "") + stage.pdf_text(data)
@@ -291,12 +308,15 @@ async def offer_review(job_id: str, text: str = Form(""), wishes: str = Form("")
     if not text.strip():
         raise LLMError("Paste the offer or contract text, or upload it as a PDF.")
 
-    def run(progress):
-        stage.review_offer(profile, job, text, wishes, progress)
-        return f"/job/{job_id}#offer"
-
-    tasks.submit("offer", _job_label("Offer review", job), run, subject=f"offer:{job_id}", job_id=job_id, url=f"/job/{job_id}#offer")
+    tasks.submit("offer", _job_label("Offer review", job), "offer", subject=f"offer:{job_id}", job_id=job_id,
+                 url=f"/job/{job_id}#offer", args={"job_id": job_id, "text": text, "wishes": wishes})
     return _back(f"/job/{job_id}#offer")
+
+
+@tasks.runner("offer")
+def _offer(progress, job_id: str, text: str, wishes: str) -> str:
+    stage.review_offer(_need_profile(), _job_or_none(job_id), text, wishes, progress)
+    return f"/job/{job_id}#offer"
 
 
 # --- skill check --------------------------------------------------------------------------------------------

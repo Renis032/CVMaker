@@ -4,6 +4,8 @@ const GROUPS: [string, [string, string][]][] = [
     'Anything on the page',
     [
       ['Click', 'Select it (Del deletes it)'],
+      ['Drag', 'Move it anywhere on the page (the rest stays put; Alt: no snapping back to its place)'],
+      ['Arrows (Shift: 5 mm)', 'Nudge what is selected'],
       ['Click again / double-click / Enter / just type', 'Edit the selected text'],
       ['Drag on an empty spot', 'Selection box: selects everything it touches (whole sections only when fully inside)'],
       ['Shift+click', 'Add to or remove from the selection'],

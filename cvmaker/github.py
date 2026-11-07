@@ -4,7 +4,7 @@ import re
 
 import httpx
 
-from . import db, people, settings
+from . import db, keys, people, settings
 from .models import Profile
 from .web_fetch import http
 
@@ -27,27 +27,29 @@ class GithubError(RuntimeError):
 
 
 def username(profile: Profile | None) -> str:
-    """The GitHub user in the profile's contact; GITHUB_USER in .env only stands in for the default person."""
+    """The GitHub user in the profile's contact; the username in Settings only stands in for the default person."""
     link = profile.contact.github if profile else ""
     match = re.search(r"github\.com/([A-Za-z0-9-]+)", link) or re.fullmatch(r"([A-Za-z0-9-]+)", link.strip())
     if match:
         return match.group(1)
-    if settings.GITHUB_USER and people.is_default():
+    if keys.own("github_user") and people.is_default():
+        return keys.own("github_user")
+    if settings.DESKTOP and settings.GITHUB_USER and people.is_default():
         return settings.GITHUB_USER
     raise GithubError("No GitHub username - add github.com/<username> to the profile's contact details")
 
 
 def _api_headers() -> dict:
     headers = {"Accept": "application/vnd.github+json"}
-    if settings.GITHUB_TOKEN:
-        headers["Authorization"] = f"Bearer {settings.GITHUB_TOKEN}"
+    if token := keys.get("github_token"):
+        headers["Authorization"] = f"Bearer {token}"
     return headers
 
 
 def _api_get(client: httpx.Client, path: str):
     r = client.get(f"{API}{path}", headers=_api_headers())
     if r.status_code == 403 and r.headers.get("x-ratelimit-remaining") == "0":
-        raise GithubError("GitHub rate limit reached (60 requests/hour without a token) - set GITHUB_TOKEN in .env or try later")
+        raise GithubError("GitHub rate limit reached (60 requests/hour without a token) - add a GitHub token in Settings → API keys or try later")
     r.raise_for_status()
     return r.json()
 

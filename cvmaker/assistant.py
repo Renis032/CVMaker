@@ -67,14 +67,14 @@ extra_facts and preferences: empty lists (they are filled later by an interview)
 {TRUTH_RULES}"""
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
-        return llm.ask(system, "Extract the profile from this CV.", Profile, pdf=data)
+        return llm.ask(system, "Extract the profile from this CV.", Profile, pdf=data, tier="standard")
     if suffix == ".docx":
         from .chat import docx_text
 
         data, filename = docx_text(data).encode(), Path(filename).stem + ".txt"
     elif suffix not in IMPORT_TYPES:
         raise ValueError(f"Can't read {suffix or 'this file type'}: use a PDF, Word (.docx), text file or a picture of the CV.")
-    return llm.ask(system, "Extract the profile from the attached CV.", Profile, files=[(filename, data)])
+    return llm.ask(system, "Extract the profile from the attached CV.", Profile, files=[(filename, data)], tier="standard")
 
 
 def interview_questions(profile: Profile, job: Job | None) -> InterviewQuestions:
@@ -91,7 +91,7 @@ Do not ask about things the profile already answers. Ask one thing per question.
         system,
         f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\n{target}",
         InterviewQuestions,
-        effort="medium",
+        effort="medium", tier="standard",
     )
 
 
@@ -107,7 +107,7 @@ Keep everything already in the profile unless an answer explicitly corrects it. 
     return llm.ask(
         system,
         f"Current profile:\n{profile.model_dump_json(indent=2)}\n\nInterview:\n{transcript}",
-        Profile,
+        Profile, tier="standard",
     )
 
 
@@ -130,10 +130,10 @@ gap_plan - how the candidate gets from where they are to being a strong candidat
 Be realistic about seniority and must-have requirements; do not flatter."""
     content = f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}"
     if repos_text:
-        content += f"\n\nCandidate's public GitHub repositories:\n{repos_text}"
+        content += f"\n\nCandidate's public GitHub repositories:\n{llm.untrusted(repos_text)}"
     if taste:
         system += "\n" + TASTE_NOTE
-    return llm.ask(system, _with_taste(content, taste), FitAssessment)
+    return llm.ask(system, _with_taste(content, taste), FitAssessment, tier="standard")
 
 
 QUICK_FIT_DESCRIPTION_CHARS = 5000
@@ -159,8 +159,8 @@ Judge only from the profile and the posting text. If a posting has almost no des
         for j in jobs
     ]
     profile_text = profile.model_dump_json(exclude={"contact", "interests", "preferences"})
-    content = f"Candidate profile:\n{profile_text}\n\nJobs:\n{json.dumps(postings, ensure_ascii=False, indent=1)}"
-    return llm.ask(system + ("\n" + TASTE_NOTE if taste else ""), _with_taste(content, taste), QuickFits, effort="low")
+    content = f"Candidate profile:\n{profile_text}\n\nJobs:\n{llm.untrusted(json.dumps(postings, ensure_ascii=False, indent=1))}"
+    return llm.ask(system + ("\n" + TASTE_NOTE if taste else ""), _with_taste(content, taste), QuickFits, effort="low", tier="fast")
 
 
 def gap_analysis(profile: Profile, jobs: list[dict]) -> GapAnalysis:
@@ -182,7 +182,7 @@ The refs are only for job_refs: in summary, learn_next and the texts, name a job
 Use only what the profile and the gaps say. Never claim the candidate has experience the profile does not show."""
     profile_text = profile.model_dump_json(exclude={"contact", "interests", "preferences"})
     content = f"Candidate profile:\n{profile_text}\n\nJobs and their gaps:\n{json.dumps(jobs, ensure_ascii=False, indent=1)}"
-    return llm.ask(system, content, GapAnalysis, effort="medium")
+    return llm.ask(system, content, GapAnalysis, effort="medium", tier="standard")
 
 
 def shorten_cv(cv: CVContent, job: Job | None, overflow: float, instructions: str = "") -> CVContent:
@@ -220,8 +220,8 @@ summary: two or three sentences - what to show for this job and what to build ne
 Also use the candidate profile to avoid suggesting things they already have."""
     return llm.ask(
         system,
-        f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}\n\nPublic GitHub repositories:\n{repos_text}",
-        GithubReview,
+        f"Candidate profile:\n{profile.model_dump_json(indent=2)}\n\nJob:\n{_job_text(job)}\n\nPublic GitHub repositories:\n{llm.untrusted(repos_text)}",
+        GithubReview, tier="standard",
     )
 
 
@@ -339,11 +339,12 @@ Do not reward a CV for claims; both CVs come from the same profile, and neither 
         f"{target}\n\nBaseline CV:\n{baseline.model_dump_json(indent=2)}\n\n"
         f"Tailored CV:\n{tailored.model_dump_json(indent=2)}\n\nKeyword report:\n{keyword_report}"
     )
-    return llm.ask(system, content, CVComparison)
+    return llm.ask(system, content, CVComparison, tier="standard")
 
 
 def _job_text(job: Job) -> str:
-    return json.dumps(
+    """The posting, marked as untrusted text from the internet."""
+    return llm.untrusted(json.dumps(
         {
             "title": job.title,
             "company": job.company,
@@ -353,4 +354,4 @@ def _job_text(job: Job) -> str:
         },
         ensure_ascii=False,
         indent=2,
-    )
+    ))

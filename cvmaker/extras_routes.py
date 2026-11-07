@@ -10,7 +10,7 @@ from starlette.datastructures import UploadFile as StarletteUpload
 
 import shutil
 
-from . import backup, db, history, logos, people, settings
+from . import backup, db, history, logos, people, settings, uploads
 from .app import _back, page
 
 router = APIRouter()
@@ -76,7 +76,9 @@ async def backup_restore(request: Request):
     if not isinstance(upload, StarletteUpload) or not upload.filename:
         return _back("/profile?backup_error=" + quote("Choose a backup .zip file first.") + "#backup")
     try:
-        report = backup.restore(await upload.read())
+        data = await uploads.read(upload, kinds={"zip"}, limit=200 * 1024 * 1024)
+        uploads.check_zip(data)
+        report = backup.restore(data)
     except ValueError as e:
         return _back("/profile?backup_error=" + quote(str(e)) + "#backup")
     db.cache_put("backup:report", report)
