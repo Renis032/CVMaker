@@ -15,6 +15,8 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from pydantic import ValidationError
+
 from . import assistant, db, taste
 from .models import GapAnalysis, Profile
 from .search import SENIORITY_LEVELS, _contains, seniority
@@ -208,7 +210,7 @@ def cached_analysis() -> dict | None:
         return None
     try:
         analysis = GapAnalysis.model_validate(cached["analysis"])
-    except Exception:
+    except (ValidationError, KeyError, TypeError):  # saved by an older version: analysed again on request
         return None
     jobs = cached["jobs"]
 

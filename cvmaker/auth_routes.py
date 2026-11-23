@@ -15,7 +15,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import accounts, autostart, backup, billing, central, keys, mailer, people, security, settings, telegram, usage
+from . import accounts, autostart, backup, billing, central, keys, log, mailer, people, security, settings, telegram, usage
 from .app import _back, page, templates
 
 router = APIRouter()
@@ -82,7 +82,7 @@ def signup(request: Request, email: str = Form(...), password: str = Form(...), 
     try:
         _send_verify(account)
     except mailer.MailError as e:
-        print(f"cvmaker: verification email failed: {e}")
+        log.error("verification email failed: %s", e)
     return _logged_in(request, account, "/verify")
 
 
@@ -181,7 +181,7 @@ def forgot(request: Request, email: str = Form(...), magic: int = Form(0)):
                                 f"Choose a new password here:\n{mailer.link('/reset/' + token)}\n\nThe link works for 2 hours. "
                                 "If you didn't ask for it, ignore this email - your password stays the same.")
             except mailer.MailError as e:
-                print(f"cvmaker: email failed: {e}")
+                log.error("login/reset email failed: %s", e)
     return RedirectResponse("/login?sent=1", status_code=303)
 
 
@@ -368,7 +368,7 @@ async def billing_webhook(request: Request):
     except (billing.BillingError, ValueError) as e:
         return PlainTextResponse(str(e), status_code=400)
     result = await run_in_threadpool(billing.handle, event)
-    print(f"cvmaker billing: {result}")
+    log.info("billing: %s", result)
     return PlainTextResponse("ok")
 
 

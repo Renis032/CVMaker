@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from . import settings, web_fetch
+from . import log, settings, web_fetch
 
 # Job boards and hosting: their domain says nothing about the company.
 BOARDS = (
@@ -86,7 +86,8 @@ def _known_domains() -> dict[str, str]:
                 if c.get("name") and d:
                     out[key(c["name"])] = d
         return out
-    except Exception:
+    except Exception as e:  # an unreadable company list only costs the logos their known domains
+        log.warning("company list not readable for logos: %s", e)
         return {}
 
 

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from . import coach, db, people
+from . import coach, db, debugging, log, people
 from .models import Job, PostingReview, Profile
 from .web_fetch import BlockedURL, html_to_text, http
 
@@ -159,7 +159,8 @@ def check_many(job_ids: list[str], progress=None) -> dict:
         for n, f in enumerate(futures, 1):
             try:
                 counts[f.result()[0]] += 1
-            except Exception:
+            except Exception as e:
+                log.warning("posting check failed: %s: %s", type(e).__name__, e, exc_info=debugging())
                 counts["unknown"] += 1
             if progress:
                 progress.set(done=n, total=len(job_ids), step=f"{n} of {len(job_ids)} checked · {counts['closed']} closed")

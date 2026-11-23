@@ -12,7 +12,7 @@ import secrets
 import shutil
 import time
 
-from . import central, people, settings
+from . import central, log, people, settings
 
 SESSION_COOKIE = "cvmaker_session"
 SESSION_DAYS = 30
@@ -170,7 +170,7 @@ def delete(account_id: str) -> None:
         try:
             storage.delete_prefix(f"backups/{account_id}/")
         except Exception as e:  # the account is gone either way; the operator sees this in the logs
-            print(f"cvmaker: could not delete S3 backups of {account_id}: {e}")
+            log.error("could not delete S3 backups of %s: %s", account_id, e)
     folder = people.account_root(account_id)
     if not folder.exists():
         return

@@ -11,7 +11,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import assistant, db, github, render, settings, taste, tasks
+from . import assistant, db, debugging, github, log, render, settings, tasks, taste
 from .models import CVContent, FitAssessment, GithubReview, InterviewPrep, Job, Profile, RoleProfile, TailoredCV
 from .sources import ensure_description
 
@@ -31,7 +31,8 @@ def fit_check(profile: Profile, job: Job, progress=None) -> FitAssessment:
         progress.set(step="reading your GitHub")
     try:
         repos_text = github.repos_for_prompt(github.fetch_repos(github.username(profile)), compact=True)
-    except Exception:
+    except Exception as e:  # no GitHub user, or GitHub is down: judge the fit from the profile alone
+        log.debug("fit check without GitHub: %s", e)
         repos_text = ""
     if progress:
         progress.set(step="Claude is judging your fit")
@@ -187,7 +188,7 @@ def run_packs(job_ids: list[str], min_score: int, limit: int, inline: bool = Fal
             make_pack(job_id)
             done.append(job_id)
         except Exception as e:
-            print(f"pack for {job_id} failed: {e}")
+            log.warning("application pack for %s failed: %s", job_id, e, exc_info=debugging())
     if done:
         names = ", ".join(db.get_job(i)[0].company for i in done[:3]) + (" …" if len(done) > 3 else "")
         tasks.notify(f"{len(done)} application pack{'s' if len(done) != 1 else ''} ready", names, url="/#auto", kind="pack")

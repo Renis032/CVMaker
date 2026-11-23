@@ -13,6 +13,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from . import log
+
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
@@ -24,6 +26,10 @@ def _env(name: str, default: str = "") -> str:
 def _flag(name: str, default: bool = False) -> bool:
     value = _env(name)
     return default if not value else value.lower() in {"1", "true", "yes", "on"}
+
+
+_level = _env("CVMAKER_LOG_LEVEL", "INFO").upper()
+log.setLevel(_level if _level in {"DEBUG", "INFO", "WARNING", "ERROR"} else "INFO")
 
 
 MODE = _env("CVMAKER_MODE", "desktop").lower()

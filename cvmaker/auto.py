@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel, Field
 
-from . import accounts, assistant, central, db, pack, people, settings, taste, tasks, telegram
+from . import accounts, assistant, central, db, log, pack, people, settings, tasks, taste, telegram
 from .models import Criteria
 from .search import run_search
 from .sources import ensure_description
@@ -283,7 +283,8 @@ def rate_jobs(job_ids: list[str], progress: tasks.Progress | None = None) -> int
                 continue
             try:
                 jobs.append(ensure_description(found[0]))
-            except Exception:
+            except Exception as e:  # rate it from what the source listed
+                log.debug("could not load the full posting of %s: %s", job_id, e)
                 jobs.append(found[0])
         by_id = {j.id: j for j in jobs}
         rated = 0
@@ -359,8 +360,8 @@ def tick() -> None:
                             if time.time() >= next_run(s) and not search_running(s.id):
                                 submit_search(s.id, scheduled=True)
                         remind_follow_ups()
-                    except Exception as e:  # keep the scheduler alive; the next tick tries again
-                        print(f"cvmaker scheduler ({account_id}/{person.name}): {e}")
+                    except Exception:  # keep the scheduler alive; the next tick tries again
+                        log.exception("scheduler failed for %s/%s", account_id, person.id)
                     telegram.daily_tick()
     try:
         from . import backup
@@ -368,8 +369,8 @@ def tick() -> None:
         backup.scheduled()
         if settings.SERVER:
             accounts.purge_deleted()
-    except Exception as e:
-        print(f"cvmaker scheduler (backups): {e}")
+    except Exception:
+        log.exception("scheduled backups failed")
 
 
 def _loop() -> None:

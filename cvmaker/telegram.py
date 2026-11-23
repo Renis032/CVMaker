@@ -23,7 +23,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel, Field
 
-from . import assistant, chat, claims, cvdiff, db, keys, pack, people, settings, taste, tasks
+from . import assistant, chat, claims, cvdiff, db, keys, log, pack, people, settings, tasks, taste
 from .sources import ensure_description
 
 API_URL = "https://api.telegram.org"
@@ -363,7 +363,7 @@ def daily_tick() -> None:
             return
         update_config(last_day=today, last_error="")
     except Exception as e:  # keep the scheduler alive
-        print(f"cvmaker telegram: {_clean(e)}")
+        log.error("telegram: %s", _clean(e))
 
 
 _alert_lock = threading.Lock()
@@ -385,7 +385,7 @@ def send_alerts() -> None:
             if config.chat_id and config.alerts and _token():
                 _send_jobs(config, new_jobs(config, config.alert_rating), "New top match", _quiet_now())
     except Exception as e:
-        print(f"cvmaker telegram: {_clean(e)}")
+        log.error("telegram: %s", _clean(e))
 
 
 # --- the conversation ----------------------------------------------------------------------------------------------
@@ -502,14 +502,14 @@ def _receive_files(person: str, messages: list[dict]) -> None:
             text = "\n".join(captions) or ("Have a look at the attached file." if len(uploads) == 1 else "Have a look at the attached files.")
             _ask(config, text, uploads)
     except TelegramError as e:
-        print(f"cvmaker telegram: {e}")
+        log.error("telegram: %s", _clean(e))
         try:
             with people.in_account(people.LOCAL, person):
                 send(load_config().chat_id, "Sorry, I couldn't get that file. Please send it again.")
         except TelegramError:
             pass
     except Exception as e:
-        print(f"cvmaker telegram: {_clean(e)}")
+        log.error("telegram: %s", _clean(e))
 
 
 _albums: dict[str, list[dict]] = {}
@@ -834,7 +834,7 @@ def _poll_once() -> None:
         try:
             handle_update(update)
         except Exception as e:
-            print(f"cvmaker telegram: {_clean(e)}")
+            log.error("telegram: %s", _clean(e))
 
 
 def _loop() -> None:
@@ -860,10 +860,10 @@ def _loop() -> None:
             time.sleep(15)
         except TelegramError as e:
             # 401: the token was revoked. 409: another copy of the app is polling with this bot, or one just restarted.
-            print(f"cvmaker telegram: {e}")
+            log.error("telegram: %s", _clean(e))
             time.sleep(60 if e.status == 401 else 10)
         except Exception as e:
-            print(f"cvmaker telegram: {_clean(e)}")
+            log.error("telegram: %s", _clean(e))
             time.sleep(15)
 
 

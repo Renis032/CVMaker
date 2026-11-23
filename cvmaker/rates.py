@@ -10,7 +10,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 
-from . import settings
+from . import log, settings
 
 ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 MAX_AGE = 24 * 3600
@@ -104,7 +104,7 @@ def refresh(force: bool = False) -> bool:
         if not rates:
             raise ValueError("no usable rates in the ECB feed")
     except Exception as e:  # network, XML, anything: keep what we have
-        print(f"cvmaker: exchange rates not updated ({type(e).__name__}: {e})")
+        log.warning("exchange rates not updated (%s: %s)", type(e).__name__, e)
         return False
     data = {"fetched": now, "date": date, "rates": rates}
     with _lock:
@@ -114,5 +114,5 @@ def refresh(force: bool = False) -> bool:
             tmp.write_text(json.dumps(data, indent=2))
             tmp.replace(_path())
         except OSError as e:
-            print(f"cvmaker: exchange rates not saved ({e})")
+            log.warning("exchange rates not saved (%s)", e)
     return True

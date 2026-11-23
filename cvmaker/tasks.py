@@ -17,7 +17,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from . import central, db, people, settings
+from . import central, db, debugging, log, people, settings
 
 # Tasks that take at least this long also send a desktop notification when they finish.
 NOTIFY_AFTER_SECONDS = 45
@@ -123,8 +123,8 @@ def work_one() -> bool:
         while not stop.wait(RENEW_EVERY_SECONDS):
             try:
                 _renew(item["id"])
-            except Exception:
-                pass
+            except Exception as e:  # the next beat tries again; if they all fail the lease runs out and the task is retried
+                log.warning("could not renew the lease of task %s: %s", item["id"], e)
 
     beat = threading.Thread(target=heartbeat, daemon=True)
     beat.start()
@@ -159,6 +159,7 @@ def _run(task_id: int, fn: Callable[[Progress], str | None]) -> None:
             fields["url"] = url
         db.task_update(task_id, **fields)
     except Exception as e:  # shown on the page; the task list is where errors surface
+        log.warning("task %s failed: %s: %s", task_id, type(e).__name__, e, exc_info=debugging())
         db.task_update(task_id, status="error", error=f"{e}"[:1500] or type(e).__name__, finished=time.time())
     task = db.task_get(task_id)
     ok = task["status"] == "done"
@@ -177,8 +178,8 @@ def _worker_loop() -> None:
         try:
             if work_one():
                 continue
-        except Exception as e:  # keep the worker alive
-            print(f"cvmaker worker: {e}")
+        except Exception:  # keep the worker alive
+            log.exception("task worker failed outside a task")
         _wake.wait(2)
         _wake.clear()
 
@@ -208,8 +209,8 @@ def notify(title: str, body: str = "", url: str = "", kind: str = "info", deskto
     unless desktop=False, and by email to the account's address when email=True (server mode)."""
     try:
         db.notification_add(kind, title, body, url)
-    except Exception:  # a notification must never break the work that triggered it
-        pass
+    except Exception as e:  # a notification must never break the work that triggered it
+        log.warning("notification not saved (%s): %s", title, e)
     if email and settings.SERVER:
         try:
             from . import accounts, mailer
@@ -221,7 +222,7 @@ def notify(title: str, body: str = "", url: str = "", kind: str = "info", deskto
                             f"{person_prefix()}{title}{(chr(10) * 2 + body) if body else ''}{link}\n\n"
                             f"You get these emails for scheduled searches and follow-up reminders. Turn a search's notifications off in its settings.")
         except Exception as e:
-            print(f"cvmaker: notification email failed: {e}")
+            log.error("notification email failed: %s", e)
     if desktop and settings.DESKTOP and shutil.which("notify-send"):
         text = person_prefix() + title + (f": {body}" if body else "") + (f" - {settings.PUBLIC_URL}{url}" if url.startswith("/") else "")
         subprocess.run(["notify-send", "CVMaker", text], check=False)
