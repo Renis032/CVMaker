@@ -1,0 +1,8 @@
+{"jobs": [
+  {"id": 4012345, "title": "Senior Java Developer", "absolute_url": "https://boards.greenhouse.io/acme/jobs/4012345",
+   "location": {"name": "Sofia, Bulgaria"}, "first_published": "2026-11-02T09:00:00-05:00", "updated_at": "2026-11-10T09:00:00-05:00",
+   "content": "&lt;h3&gt;About the role&lt;/h3&gt;&lt;p&gt;Build payment services in Java.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Spring Boot&lt;/li&gt;&lt;/ul&gt;&lt;script&gt;track()&lt;/script&gt;"},
+  {"id": 4012346, "title": "Support Engineer", "absolute_url": "https://boards.greenhouse.io/acme/jobs/4012346",
+   "location": {"name": "Remote - EMEA"}, "updated_at": "2026-11-11T09:00:00-05:00", "content": ""},
+  {"id": 4012347, "title": "Office Manager", "location": null}
+]}

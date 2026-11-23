@@ -12,7 +12,7 @@ import math
 import re
 from collections import Counter, defaultdict
 
-from . import db, people, settings
+from . import db, settings
 from .cvcheck import TECH_TERMS
 from .models import Criteria, Job, Profile
 from .search import SENIORITY_LEVELS, _contains, seniority
@@ -101,7 +101,10 @@ def dismiss(suggestion_id: str) -> None:
 
 # --- features ------------------------------------------------------------------------------------------
 
-_feature_cache: dict[tuple[str, str, int, int], dict[str, str]] = {}
+# Keyed by what the features are computed from (the job's text and the terms looked for), never by ids alone:
+# job ids and person ids repeat across accounts, and two profiles can have the same number of skills.
+_feature_cache: dict[tuple, dict[str, str]] = {}
+_FEATURE_CACHE_MAX = 20000
 
 
 def _terms(profile: Profile | None) -> list[str]:
@@ -111,9 +114,12 @@ def _terms(profile: Profile | None) -> list[str]:
 
 def features(job: Job, terms: list[str]) -> dict[str, str]:
     """feature id -> human label, e.g. {'level:senior': 'senior roles', 'tech:php': 'php'}."""
-    key = (people.current(), job.id, len(job.description), len(terms))
+    key = (job.id, hash((job.title, job.company, job.location, job.remote, bool(job.salary), tuple(job.tags),
+                         job.description[:DESCRIPTION_CHARS])), hash(tuple(terms)))
     if key in _feature_cache:
         return _feature_cache[key]
+    if len(_feature_cache) >= _FEATURE_CACHE_MAX:
+        _feature_cache.clear()
     text = f"{job.title}\n{job.description[:DESCRIPTION_CHARS]}".lower()
     level = seniority(job)
     found = {f"level:{level}": f"{level} roles", f"company:{_company(job.company)}": job.company}

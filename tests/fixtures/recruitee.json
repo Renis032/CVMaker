@@ -1,0 +1,6 @@
+{"offers": [
+  {"id": 77, "title": "Frontend Developer", "location": "Plovdiv, Bulgaria", "remote": false, "hybrid": true,
+   "careers_url": "https://northwind.recruitee.com/o/frontend-developer", "published_at": "2026-11-01 08:30:00 UTC",
+   "description": "<p>React and TypeScript.</p>", "requirements": "<ul><li>3 years</li></ul>",
+   "salary": {"min": "4000", "max": "5500", "currency": "EUR", "period": "month"}}
+]}

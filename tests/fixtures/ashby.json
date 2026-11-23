@@ -1,0 +1,7 @@
+{"jobs": [
+  {"id": "9f0e", "title": "Platform Engineer", "location": "London", "isRemote": true, "jobUrl": "https://jobs.ashbyhq.com/helix/9f0e",
+   "descriptionPlain": "Kubernetes and Go.", "publishedAt": "2026-11-05T10:00:00.000+00:00",
+   "compensation": {"scrapeableCompensationSalarySummary": "£80K - £100K", "compensationTierSummary": "£80K – £100K • Offers Equity"}},
+  {"id": "9f0f", "title": "Data Analyst", "location": "Lisbon", "isRemote": false, "jobUrl": "https://jobs.ashbyhq.com/helix/9f0f",
+   "descriptionPlain": "SQL.", "publishedAt": "2026-11-06T10:00:00.000+00:00", "compensation": null}
+]}

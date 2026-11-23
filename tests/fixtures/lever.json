@@ -1,0 +1,8 @@
+[
+  {"id": "a1b2c3d4-0000-4000-8000-000000000001", "text": "Backend Engineer", "hostedUrl": "https://jobs.lever.co/bluefin/a1b2c3d4",
+   "categories": {"location": "Berlin", "team": "Platform", "commitment": "Full-time"}, "workplaceType": "remote",
+   "createdAt": 1762000000000, "descriptionPlain": "We run Kotlin services.",
+   "lists": [{"text": "Requirements", "content": "<li>Kotlin</li><li>PostgreSQL</li>"}],
+   "salaryRange": {"min": 70000, "max": 90000, "currency": "EUR", "interval": "per-year-salary"}},
+  {"id": "a1b2c3d4-0000-4000-8000-000000000002", "text": "QA Engineer", "categories": {}, "workplaceType": "on-site"}
+]

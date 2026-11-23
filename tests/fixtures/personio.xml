@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workzag-jobs>
+  <position>
+    <id>555</id>
+    <office>Munich</office>
+    <additionalOffices><office>Remote</office></additionalOffices>
+    <name>DevOps Engineer</name>
+    <seniority>experienced</seniority>
+    <schedule>full-time</schedule>
+    <createdAt>2026-11-03T12:00:00+00:00</createdAt>
+    <jobDescriptions>
+      <jobDescription><name>Your tasks</name><value><![CDATA[<ul><li>Run Terraform</li></ul>]]></value></jobDescription>
+      <jobDescription><name>Your profile</name><value><![CDATA[<p>AWS experience</p>]]></value></jobDescription>
+    </jobDescriptions>
+  </position>
+</workzag-jobs>
