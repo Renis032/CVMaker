@@ -26,7 +26,7 @@ The screenshots use a made-up demo profile ("Alex Morgan") and fictional compani
 
 ![Tailored CV](screenshots/cv.png)
 
-**CV editor**: click anything on the page and the toolbar changes it (font, size, colour, spacing, box size, ✦ Rewrite with Claude); templates, elements, text, uploads, layout, versions, layers and history on the left.
+**CV editor**: click anything on the page and the toolbar changes it (font, size, colour, spacing, effects, box size, ✦ Rewrite with Claude), with the path of what is selected at the bottom; content, insert, design (templates), layout, versions, layers and history on the left.
 
 ![CV editor](screenshots/editor.png)
 

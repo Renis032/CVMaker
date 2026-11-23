@@ -43,6 +43,7 @@ Everything is described in the [user guide](docs/guide.md).
 |---|---|
 | ![Job page](docs/screenshots/job.png) | ![CV editor](docs/screenshots/editor.png) |
 | ![Application pipeline](docs/screenshots/pipeline.png) | ![Insights: your gaps](docs/screenshots/insights-gaps.png) |
+| ![Jobs list, dark theme](docs/screenshots/jobs-dark.png) | ![CV editor, dark theme](docs/screenshots/editor-dark.png) |
 
 The screenshots use a made-up demo profile and fictional companies. [All screenshots](docs/screenshots.md)
 
