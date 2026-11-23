@@ -340,7 +340,7 @@ kbd { background: var(--card); border: 1px solid var(--line); border-radius: 4px
 /* Job match */
 .match { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 14px; }
 .match-bar { height: 8px; border-radius: 999px; background: var(--chip); overflow: hidden; }
-.match-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), #38bdf8); }
+.match-bar i { display: block; height: 100%; border-radius: inherit; background: var(--sel); }
 .kw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .kw-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); }
 .kw-list li.ok { background: var(--sunken); }
