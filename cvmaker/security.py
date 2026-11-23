@@ -21,7 +21,7 @@ from . import accounts, people, settings
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 # Reachable without logging in (server mode).
 PUBLIC_PREFIXES = ("/login", "/signup", "/logout", "/forgot", "/reset", "/verify", "/magic", "/auth/google", "/legal/",
-                   "/billing/webhook", "/healthz", "/favicon", "/sw.js")
+                   "/billing/webhook", "/healthz", "/favicon", "/sw.js", "/static/app/")
 # Logged in but not yet verified: only these.
 UNVERIFIED_OK = ("/verify", "/logout", "/legal/", "/settings/account/delete")
 # Requests that prove themselves another way (Stripe signs its webhook).

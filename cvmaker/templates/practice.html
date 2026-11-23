@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="{{ static('practice.css') }}">{% endblock %}
 {% import "_macros.html" as m %}
 {% block title %}Practice · {{ job.title }} - CVMaker{% endblock %}
 {% block content %}
@@ -81,17 +82,5 @@
   {% endif %}
 </div>
 {% endfor %}
-<style>
-  .practice h3.q { font-size:17px; line-height:1.45; margin:6px 0 12px; }
-  blockquote.answer { margin:8px 0; padding:8px 12px; border-left:3px solid var(--line-strong); color:var(--muted); white-space:pre-wrap; }
-  .practice h4 { margin:14px 0 6px; }
-</style>
-<script>
-  document.querySelectorAll(".practice textarea[name=answer]").forEach(t => {
-    const out = t.closest("form").querySelector(".answer-count");
-    if (!out) return;
-    const show = () => { const n = t.value.trim().split(/\s+/).filter(Boolean).length; out.textContent = n ? `${n} words · about ${Math.max(1, Math.round(n / 140))} min spoken` : ""; };
-    t.addEventListener("input", show);
-  });
-</script>
+<script src="{{ static('practice.js') }}"></script>
 {% endblock %}

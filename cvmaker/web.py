@@ -33,6 +33,32 @@ templates.env.filters["ph"] = lambda text: Markup(
 templates.env.filters["hue"] = lambda text: int(hashlib.md5((text or "").lower().encode()).hexdigest()[:4], 16) % 360
 templates.env.filters["initials"] = lambda text: "".join(w[0] for w in re.findall(r"[A-Za-z0-9]+", text or "?")[:2]).upper() or "?"
 templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
+
+
+# --- the app's own CSS and JS (cvmaker/static/app) -----------------------------------------------------------------
+STATIC = Path(__file__).parent / "static" / "app"
+STATIC_TYPES = {".css": "text/css", ".js": "text/javascript"}
+_static_versions: dict[str, tuple[float, str]] = {}
+
+
+def static_version(name: str) -> str:
+    """A short hash of the file's content (worked out again when the file changes, for development)."""
+    path = STATIC / name
+    mtime = path.stat().st_mtime
+    cached = _static_versions.get(name)
+    if not cached or cached[0] != mtime:
+        cached = (mtime, hashlib.sha256(path.read_bytes()).hexdigest()[:12])
+        _static_versions[name] = cached
+    return cached[1]
+
+
+def static(name: str) -> str:
+    """The address of a file in static/app. It carries the content's hash, so browsers can keep the file for good
+    and still get a new one the moment it changes."""
+    return f"/static/app/{name}?v={static_version(name)}"
+
+
+templates.env.globals["static"] = static
 templates.env.globals["STAGES"] = db.STAGES
 templates.env.globals["STAGE_LABELS"] = db.STAGE_LABELS
 templates.env.globals["FOLLOW_UP_DAYS"] = settings.FOLLOW_UP_DAYS

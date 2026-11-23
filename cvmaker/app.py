@@ -6,11 +6,11 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from . import auto, db, people, security, settings, taste, tasks, telegram
 from .llm import LLMError
-from .web import page
+from .web import STATIC, STATIC_TYPES, page, static_version
 
 
 @asynccontextmanager
@@ -55,6 +55,18 @@ def service_worker_kill_switch():
     """Another app once served on this address and left a service worker that shows its cached pages.
     Browsers re-check /sw.js on each visit; this replacement unregisters itself and reloads the page."""
     return Response(SW_KILL_SWITCH, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/static/app/{name}")
+def static_file(name: str, v: str = ""):
+    """The app's own CSS and JS. Pages link them with ?v=<content hash> (web.static), so that address never changes
+    content and can be cached for a year; without the right hash the browser is told to check each time."""
+    path = STATIC / name
+    if path.suffix not in STATIC_TYPES or path.parent != STATIC or not path.is_file():
+        return Response(status_code=404)
+    fresh = v == static_version(name)
+    return FileResponse(path, media_type=STATIC_TYPES[path.suffix],
+                        headers={"Cache-Control": "public, max-age=31536000, immutable" if fresh else "no-cache"})
 
 
 # --- background tasks API (polled by every page) ----------------------------------------------------

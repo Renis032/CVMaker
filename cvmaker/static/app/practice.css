@@ -1,0 +1,3 @@
+.practice h3.q { font-size:17px; line-height:1.45; margin:6px 0 12px; }
+blockquote.answer { margin:8px 0; padding:8px 12px; border-left:3px solid var(--line-strong); color:var(--muted); white-space:pre-wrap; }
+.practice h4 { margin:14px 0 6px; }

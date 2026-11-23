@@ -1,0 +1,5 @@
+.story-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:0 18px; }
+@media (max-width:520px) { .story-grid { grid-template-columns:1fr; } }
+dl.star { display:grid; grid-template-columns:28px 1fr; gap:6px 8px; margin:10px 0; }
+dl.star dt { font-weight:700; color:var(--accent); }
+dl.star dd { margin:0; line-height:1.5; }

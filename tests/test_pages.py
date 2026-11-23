@@ -33,3 +33,35 @@ def test_pages_render_with_a_profile_and_a_job():
     assert "Senior Java Developer" in client.get("/pipeline").text
     assert "Acme" in client.get("/export.csv?pipeline=1").text
     assert client.get("/job/nope").status_code in (200, 404)        # an error page, not a crash
+
+
+def test_pages_link_css_and_js_that_exist_and_can_be_cached():
+    import re
+
+    from conftest import client
+
+    user, _ = new_user()
+    anonymous = client()
+    login = anonymous.get("/login")
+    assert login.status_code == 200
+    links = set(re.findall(r'(?:href|src)="(/static/app/[^"]+)"', login.text))
+    assert any("auth.css" in x for x in links)                  # the login page needs its styles before anyone logs in
+    for path in PAGES[:13]:
+        links |= set(re.findall(r'(?:href|src)="(/static/app/[^"]+)"', user.get(path).text))
+    assert len(links) > 10
+    for link in links:
+        r = anonymous.get(link)
+        assert r.status_code == 200 and r.content, link
+        assert r.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert r.headers["content-type"].startswith(("text/css", "text/javascript"))
+        assert r.headers["x-content-type-options"] == "nosniff"
+        # the same file under another (stale) version must not be cached as if it were that version
+        assert anonymous.get(link.split("?")[0] + "?v=old").headers["cache-control"] == "no-cache"
+
+
+def test_static_serves_only_its_own_css_and_js():
+    from conftest import client
+
+    c = client()
+    for name in ["nope.css", "..%2f..%2fsettings.py", "%2e%2e", "base.css.bak", "../editor/index.html", "..%2feditor%2feditor.js"]:
+        assert c.get(f"/static/app/{name}").status_code in (303, 404), name
