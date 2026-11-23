@@ -557,7 +557,7 @@ def _cv_summary(job, tailored) -> str:
 
 @tasks.runner("telegram-tailor")
 def _tailor_task(progress, job_id: str, make_new: bool = False) -> str:
-    from .app import refresh_cv_pdf  # app.py imports this module's routes
+    from .cv_routes import refresh_cv_pdf  # cv_routes.py imports this module
 
     config = load_config()
     found = db.get_job(job_id)

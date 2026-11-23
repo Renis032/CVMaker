@@ -8,7 +8,8 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from . import assistant, auto, checks, claims, db, intake, stage, stories, tasks, uploads
-from .app import _back, _cached_prep, _job_label, _need_profile, _not_found, page
+from .job_routes import _cached_prep
+from .web import _back, _job_label, _need_profile, _not_found, page
 from .llm import LLMError
 from .models import DraftStory, Story
 from .sources import ensure_description

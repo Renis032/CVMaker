@@ -11,7 +11,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import assistant, cvcheck, db, editor, llm, render, settings
 from .models import RewriteResult
-from .app import _back, _not_found, page, refresh_cv_pdf
+from .cv_routes import refresh_cv_pdf
+from .web import _back, _not_found, page
 
 router = APIRouter()
 

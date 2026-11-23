@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from starlette.concurrency import run_in_threadpool
 
 from . import accounts, autostart, backup, billing, central, keys, log, mailer, people, security, settings, telegram, usage
-from .app import _back, page, templates
+from .web import _back, page, templates
 
 router = APIRouter()
 GOOGLE_STATE_COOKIE = "cvmaker_google_state"

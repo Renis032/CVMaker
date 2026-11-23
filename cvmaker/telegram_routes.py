@@ -6,7 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Form
 
 from . import autostart, telegram
-from .app import _back
+from .web import _back
 
 router = APIRouter()
 BACK = "/settings"

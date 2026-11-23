@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from starlette.datastructures import UploadFile as StarletteUpload
 
 from . import assistant, chat, db, tasks
-from .app import _back, page
+from .web import _back, page
 
 router = APIRouter()
 

@@ -11,7 +11,7 @@ from starlette.datastructures import UploadFile as StarletteUpload
 import shutil
 
 from . import backup, db, history, logos, people, settings, uploads
-from .app import _back, page
+from .web import _back, page
 
 router = APIRouter()
 
