@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS debriefs (
 );
 """
 
-# Jobs that existed before the 'seen' flag count as seen; newly found jobs are inserted unseen.
+# Columns added before the schema was versioned. Together with SCHEMA this is version 1, and the list is closed:
+# a database without a version gets whichever of these it lacks. Every later change goes into STEPS below.
+# (Jobs that existed before the 'seen' flag count as seen; newly found jobs are inserted unseen.)
 MIGRATIONS = [
     ("jobs", "seen", "ALTER TABLE jobs ADD COLUMN seen INTEGER NOT NULL DEFAULT 1"),
     ("jobs", "status_at", "ALTER TABLE jobs ADD COLUMN status_at REAL NOT NULL DEFAULT 0"),
@@ -131,6 +133,23 @@ MIGRATIONS = [
     ("cvs", "layout", "ALTER TABLE cvs ADD COLUMN layout TEXT NOT NULL DEFAULT '{}'"),
     ("cvs", "pages", "ALTER TABLE cvs ADD COLUMN pages INTEGER NOT NULL DEFAULT 0"),
 ]
+
+# Schema changes after version 1, in order: step i brings a database from version i+1 to i+2. Each is a list of
+# SQL statements or a function taking the connection, runs once per database inside one transaction, and is
+# recorded in PRAGMA user_version. Only ever append; never edit or reorder a step that has shipped.
+STEPS: list = [
+    [   # 2: indexes for the lookups every page makes
+        "CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status)",
+        "CREATE INDEX IF NOT EXISTS events_job ON events (job_id)",
+        "CREATE INDEX IF NOT EXISTS cvs_job ON cvs (job_id)",
+        "CREATE INDEX IF NOT EXISTS letters_job ON letters (job_id)",
+        "CREATE INDEX IF NOT EXISTS practice_job ON practice (job_id)",
+        "CREATE INDEX IF NOT EXISTS debriefs_job ON debriefs (job_id)",
+        "CREATE INDEX IF NOT EXISTS chat_messages_thread ON chat_messages (thread_id)",
+        "CREATE INDEX IF NOT EXISTS tasks_status ON tasks (status)",
+    ],
+]
+SCHEMA_VERSION = 1 + len(STEPS)
 
 # Application stages after "new", in pipeline order. "hidden" is not a stage.
 STAGES = ["liked", "applied", "screening", "interview", "offer", "rejected", "ghosted"]
@@ -168,23 +187,55 @@ def _order_by(sort: str, direction: str = "") -> str:
         order += ", json_extract(data, '$.salary') = ''"
     return order + ", score DESC, first_seen DESC"
 
-# Database files whose schema is up to date in this process (one per person).
-_migrated: set[str] = set()
+def _version(conn) -> int:
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def migrate(conn) -> None:
+    """Bring a database up to SCHEMA_VERSION. Safe to call from several processes at once (the web app and the
+    worker): each step takes the write lock, then looks at the version again before doing anything."""
+    if _version(conn) == 0:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _version(conn) == 0:
+                for statement in SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                for table, column, sql in MIGRATIONS:
+                    if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                        conn.execute(sql)
+                conn.execute("PRAGMA user_version = 1")
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+    for number, step in enumerate(STEPS, start=2):
+        if _version(conn) >= number:
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _version(conn) < number:
+                if callable(step):
+                    step(conn)
+                else:
+                    for statement in step:
+                        conn.execute(statement)
+                conn.execute(f"PRAGMA user_version = {number}")
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
 
 
 @contextmanager
 def connect():
-    path = str(settings.DB_PATH)
-    conn = sqlite3.connect(path, timeout=30)
+    conn = sqlite3.connect(str(settings.DB_PATH), timeout=30)
     conn.row_factory = sqlite3.Row
     try:
-        if path not in _migrated:
-            conn.executescript(SCHEMA)
-            for table, column, sql in MIGRATIONS:
-                if column not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
-                    conn.execute(sql)
-            conn.commit()
-            _migrated.add(path)
+        # Read on every connection (it costs one page read), not remembered per process: a backup made by an
+        # older version can be restored over the file while the app runs.
+        if _version(conn) < SCHEMA_VERSION:
+            migrate(conn)
         yield conn
         conn.commit()
     finally:
