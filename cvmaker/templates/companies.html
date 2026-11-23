@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Companies - CVMaker{% endblock %}
 {% block content %}
-<div class="card">
+<div class="page-head"><div>
   <h1>Companies</h1>
-  <p class="muted">Every search also checks these companies' own job listings. Add a company by its website or careers page: the app finds the careers page and checks whether it runs on a hiring platform with a public API (Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Personio). If not, Claude reads the job links on the careers page. Saved in <code>companies.yaml</code>.</p>
+  <p class="lead">Every search also checks these companies' own job listings. Add a company by its website or careers page: the app finds the careers page and checks whether it runs on a hiring platform with a public API (Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Recruitee, Personio). If not, Claude reads the job links on the careers page. Saved in <code>companies.yaml</code>.</p>
+</div></div>
+<div class="card">
   <form method="post" action="/companies/discover" data-slow>
     <div class="grid">
       <div><label>Company name</label><input type="text" name="name" required value="{{ form.name if form }}" placeholder="e.g. Chaos"></div>
@@ -56,8 +58,9 @@
 {% for group, items in groups.items() %}
 <div class="card">
   <h2>{{ group }}</h2>
-  <table>
-    <tr><th>Company</th><th>Type</th><th>Board / page</th><th></th></tr>
+  <div class="table-wrap"><table class="companies">
+    <colgroup><col style="width:26%"><col style="width:17%"><col><col style="width:170px"></colgroup>
+    <thead><tr><th scope="col">Company</th><th scope="col">Type</th><th scope="col">Board / page</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     {% for c in items %}
     <tr>
       <td><strong>{{ c.name }}</strong>{% if c.default_location %}<div class="muted">{{ c.default_location }}</div>{% endif %}</td>
@@ -66,16 +69,16 @@
       <td style="white-space:nowrap">
         <form method="post" action="/companies/test" data-slow style="display:inline">
           <input type="hidden" name="group" value="{{ group }}"><input type="hidden" name="name" value="{{ c.name }}">
-          <button class="secondary" type="submit">Test</button><span class="busy muted">…</span>
+          <button class="secondary sm" type="submit">Test</button><span class="busy muted">…</span>
         </form>
         <form method="post" action="/companies/remove" style="display:inline" onsubmit="return confirm('Remove {{ c.name }}?')">
           <input type="hidden" name="group" value="{{ group }}"><input type="hidden" name="name" value="{{ c.name }}">
-          <button class="secondary" type="submit">Remove</button>
+          <button class="quiet danger sm" type="submit" aria-label="Remove {{ c.name }}">Remove</button>
         </form>
       </td>
     </tr>
     {% endfor %}
-  </table>
+  </table></div>
 </div>
 {% endfor %}
 {% endblock %}

@@ -46,6 +46,8 @@ def test_pages_link_css_and_js_that_exist_and_can_be_cached():
     assert login.status_code == 200
     links = set(re.findall(r'(?:href|src)="(/static/app/[^"]+)"', login.text))
     assert any("auth.css" in x for x in links)                  # the login page needs its styles before anyone logs in
+    assert any("InterVariable.woff2" in x for x in links)       # ... and the font comes from the app, not a font service
+    assert "fonts.googleapis.com" not in login.text and "fonts.gstatic.com" not in login.text
     for path in PAGES[:13]:
         links |= set(re.findall(r'(?:href|src)="(/static/app/[^"]+)"', user.get(path).text))
     assert len(links) > 10
@@ -53,15 +55,16 @@ def test_pages_link_css_and_js_that_exist_and_can_be_cached():
         r = anonymous.get(link)
         assert r.status_code == 200 and r.content, link
         assert r.headers["cache-control"] == "public, max-age=31536000, immutable"
-        assert r.headers["content-type"].startswith(("text/css", "text/javascript"))
+        assert r.headers["content-type"].startswith(("text/css", "text/javascript", "font/woff2", "image/svg+xml"))
         assert r.headers["x-content-type-options"] == "nosniff"
         # the same file under another (stale) version must not be cached as if it were that version
         assert anonymous.get(link.split("?")[0] + "?v=old").headers["cache-control"] == "no-cache"
 
 
-def test_static_serves_only_its_own_css_and_js():
+def test_static_serves_only_its_own_files():
     from conftest import client
 
     c = client()
-    for name in ["nope.css", "..%2f..%2fsettings.py", "%2e%2e", "base.css.bak", "../editor/index.html", "..%2feditor%2feditor.js"]:
+    for name in ["nope.css", "..%2f..%2fsettings.py", "%2e%2e", "base.css.bak", "../editor/index.html", "..%2feditor%2feditor.js",
+                 "InterVariable-LICENSE.txt"]:
         assert c.get(f"/static/app/{name}").status_code in (303, 404), name

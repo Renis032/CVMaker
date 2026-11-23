@@ -6,9 +6,11 @@
 .ps { display:flex; flex-direction:column; gap:1px; padding:12px 14px; border-radius:14px; background:color-mix(in srgb, var(--card) 80%, transparent); border:1px solid var(--hero-line); }
 .ps .k { font-size:12px; color:var(--muted); font-weight:550; } .ps .v { font-size:22px; font-weight:750; letter-spacing:-.02em; } .ps .sub { font-size:11.5px; color:var(--muted); }
 @media (max-width:900px) { .pipe-hero { grid-template-columns:1fr; } }
-.col h3 .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+.col { background:var(--sunken); border:1px solid var(--line); border-radius:var(--radius); padding:10px; min-height:220px; transition:background .15s, border-color .15s; }
+.col .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
 .col h3 .count { margin-left:auto; font-size:12px; font-weight:650; padding:1px 8px; border-radius:999px; background:var(--card); color:var(--muted); border:1px solid var(--line); }
 .col { border-top:3px solid var(--line-strong); }
+.col h3 { font-size:13.5px; }
 .st-liked { border-top-color:#ec4899; } .st-liked .dot { background:#ec4899; }
 .st-applied { border-top-color:var(--accent); } .st-applied .dot { background:var(--accent); }
 .st-screening, .st-interview { border-top-color:var(--warn); } .st-screening .dot, .st-interview .dot { background:var(--warn); }
@@ -25,11 +27,14 @@
 .jcard:hover { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .jcard .move .cs-btn { padding:4px 9px; font-size:12.5px; }
 .board { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(200px, 1fr); gap:12px; overflow-x:auto; padding-bottom:10px; }
-.col { background:var(--sunken); border:1px solid var(--line); border-radius:var(--radius); padding:10px; min-height:220px; }
 .col.over { border-color:var(--accent); background:var(--accent-soft); }
 .col h3 { display:flex; align-items:center; gap:6px; margin:0 0 10px; }
 .cards { display:flex; flex-direction:column; gap:8px; min-height:60px; }
+/* an empty column says what it is for */
+.cards:not(:has(.jcard))::after { content:"Drop a job here"; display:grid; place-items:center; min-height:72px; border:1px dashed var(--line-strong); border-radius:var(--radius-sm); color:var(--muted); font-size:12.5px; }
+.col.over .cards:not(:has(.jcard))::after { border-color:var(--accent); color:var(--accent-soft-ink); }
 .jcard { background:var(--card); border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px; box-shadow:var(--shadow); cursor:grab; }
-.jcard.dragging { opacity:.5; }
+.jcard.dragging { opacity:.5; cursor:grabbing; }
+.jcard:active { cursor:grabbing; }
 .jcard a strong { color:var(--ink); } .jcard .note { margin-top:6px; font-size:12px; }
 .jcard .move { margin-top:8px; } .jcard .move select { padding:4px 8px; font-size:12.5px; }

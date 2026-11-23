@@ -59,7 +59,7 @@ def service_worker_kill_switch():
 
 @app.get("/static/app/{name}")
 def static_file(name: str, v: str = ""):
-    """The app's own CSS and JS. Pages link them with ?v=<content hash> (web.static), so that address never changes
+    """The app's own CSS, JS, font and icon. Pages link them with ?v=<content hash> (web.static), so that address never changes
     content and can be cached for a year; without the right hash the browser is told to check each time."""
     path = STATIC / name
     if path.suffix not in STATIC_TYPES or path.parent != STATIC or not path.is_file():

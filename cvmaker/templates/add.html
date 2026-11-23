@@ -3,9 +3,11 @@
 {% import "_macros.html" as m %}
 {% block title %}Add a job - CVMaker{% endblock %}
 {% block content %}
-<div class="card">
+<div class="page-head"><div>
   <h1>Add a job you found</h1>
-  <p class="muted">Paste the link to the posting, or the posting text itself. Claude reads it, the job is saved to your list as “To apply”, and the steps you choose run straight after. You can leave this page; it keeps running.</p>
+  <p class="lead">Paste the link to the posting, or the posting text itself. Claude reads it, the job is saved to your list as “To apply”, and the steps you choose run straight after. You can leave this page; it keeps running.</p>
+</div></div>
+<div class="card">
   <form method="post" action="/add" data-slow>
     <label for="add-text">Link or posting text</label>
     <textarea id="add-text" name="text" required style="min-height:160px" placeholder="https://boards.greenhouse.io/company/jobs/123…

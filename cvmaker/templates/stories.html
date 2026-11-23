@@ -3,20 +3,22 @@
 {% import "_macros.html" as m %}
 {% block title %}Story bank - CVMaker{% endblock %}
 {% block content %}
-<div class="card">
-  <div class="page-head">
+<div class="page-head">
+  <div>
     <h1>Story bank</h1>
+    <p class="lead">Real examples from your work, ready for “Tell me about a time…” questions. Each one follows <strong>STAR+R</strong>: the situation, your task, what you did, the result, and what you took from it. Interview prep, practice feedback and debriefs all use these, so the better they are, the better those get.
+  Claude only drafts from facts in your profile. Where a detail is missing it leaves a <span class="ph">[placeholder]</span> and a question for you.</p>
+  </div>
+    {% if items %}
     <div class="row">
       {% if not active %}
       <form method="post" action="/stories/draft" data-slow><button class="{{ 'secondary' if items }}" type="submit">{{ 'Draft more from my profile' if items else 'Draft stories from my profile' }}</button></form>
       {% endif %}
       <a class="btn secondary" href="/stories?new=1#edit">+ Write one</a>
     </div>
-  </div>
-  <p class="muted">Real examples from your work, ready for “Tell me about a time…” questions. Each one follows <strong>STAR+R</strong>: the situation, your task, what you did, the result, and what you took from it. Interview prep, practice feedback and debriefs all use these, so the better they are, the better those get.
-  Claude only drafts from facts in your profile. Where a detail is missing it leaves a <span class="ph">[placeholder]</span> and a question for you.</p>
-  {% for t in active %}{{ m.running(t, "Claude is drafting stories from your profile") }}{% endfor %}
+    {% endif %}
 </div>
+{% for t in active %}{{ m.running(t, "Claude is drafting stories from your profile") }}{% endfor %}
 
 {% if editing %}
 <div class="card" id="edit">
@@ -47,7 +49,15 @@
 {% endif %}
 
 {% if not items and not editing %}
-<div class="card"><p class="muted">No stories yet. Let Claude draft 6-8 from your profile, or write your own.</p></div>
+<div class="empty">
+  <div class="empty-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg></div>
+  <strong>No stories yet</strong>
+  <p>Let Claude draft 6-8 from your profile, or write your own. Interview prep and practice get better with every story you add.</p>
+  <div class="row">
+    {% if not active %}<form method="post" action="/stories/draft" data-slow><button type="submit">Draft stories from my profile</button></form>{% endif %}
+    <a class="btn secondary" href="/stories?new=1#edit">+ Write one</a>
+  </div>
+</div>
 {% endif %}
 
 <div class="story-grid">

@@ -35,9 +35,9 @@ templates.env.filters["initials"] = lambda text: "".join(w[0] for w in re.findal
 templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
 
 
-# --- the app's own CSS and JS (cvmaker/static/app) -----------------------------------------------------------------
+# --- the app's own CSS, JS, font and icon (cvmaker/static/app) -----------------------------------------------------------------
 STATIC = Path(__file__).parent / "static" / "app"
-STATIC_TYPES = {".css": "text/css", ".js": "text/javascript"}
+STATIC_TYPES = {".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2", ".svg": "image/svg+xml"}
 _static_versions: dict[str, tuple[float, str]] = {}
 
 

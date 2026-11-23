@@ -51,6 +51,21 @@ and `base*.js` for every page, and one `<page>.css` / `<page>.js` per page that 
 with `{{ static('index.css') }}`, which adds a hash of the file's content, so browsers keep the file for a year and
 still pick up a change at once. No build step.
 
+The same folder holds the Inter font (`InterVariable.woff2`, SIL Open Font License, licence text beside it) and the
+favicon, so the app's pages make no request to a font service and work offline. The CV editor and the printed CVs
+still load their fonts from Google Fonts, because a CV can use any of the editor's font pairs.
+
+Conventions the shared styles (`base.css`) give every page:
+
+- a page starts with `.page-head` (an `h1`, an optional `.lead` paragraph, actions on the right) or a hero panel;
+- an empty list is an `.empty` block that says what belongs there and offers the next action (`.empty.inline`
+  inside a card);
+- buttons are primary by default, `.secondary`, `.quiet` (and `.quiet.danger`), with `.sm` for table rows;
+- colours come from the tokens at the top of `base.css`, defined once for light and once for dark. Text colours
+  are chosen to meet WCAG AA contrast on their backgrounds;
+- every interactive element shows a focus ring for keyboard users, animation is switched off under
+  `prefers-reduced-motion`, and touch screens get 44px targets.
+
 ## Changing the database
 
 Each person has a SQLite file (`cvmaker/db.py`). `PRAGMA user_version` records its schema version. To change the

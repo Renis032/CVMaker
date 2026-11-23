@@ -89,7 +89,18 @@ async function refreshBell(unread) {
   });
 })();
 
-document.querySelectorAll("[data-nav-toggle], [data-nav-close]").forEach(b => b.addEventListener("click", () => document.body.classList.toggle("nav-open")));
+document.querySelectorAll("[data-nav-toggle], [data-nav-close]").forEach(b => b.addEventListener("click", () => {
+  const open = document.body.classList.toggle("nav-open");
+  document.querySelectorAll("[data-nav-toggle]").forEach(t => t.setAttribute("aria-expanded", String(open)));
+}));
+// Tell assistive technology which page the sidebar is on, and let Escape close the mobile menu.
+document.querySelectorAll(".sidenav a.nav.on").forEach(a => a.setAttribute("aria-current", "page"));
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.body.classList.contains("nav-open")) {
+    document.body.classList.remove("nav-open");
+    document.querySelectorAll("[data-nav-toggle]").forEach(t => { t.setAttribute("aria-expanded", "false"); t.focus(); });
+  }
+});
 document.querySelector(".theme-toggle").addEventListener("click", () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;

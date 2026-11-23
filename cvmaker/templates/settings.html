@@ -3,7 +3,10 @@
 {% block title %}Settings · CVMaker{% endblock %}
 {% block content %}
 
-<h1>Settings{% if SERVER %} &amp; account{% endif %}</h1>
+<div class="page-head"><div>
+  <h1>Settings{% if SERVER %} &amp; account{% endif %}</h1>
+  <p class="lead">{% if SERVER %}Your API keys, plan, usage and account.{% else %}Your API keys, the Telegram bot and how CVMaker runs on this computer.{% endif %}</p>
+</div></div>
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 {% if saved %}<div class="ok">Saved.</div>{% endif %}
 {% if billing_state == 'done' %}<div class="ok">Thanks! Your subscription is being set up - your plan updates within a minute.</div>{% endif %}

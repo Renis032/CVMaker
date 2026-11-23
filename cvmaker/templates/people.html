@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}People - CVMaker{% endblock %}
 {% block content %}
-<div class="card">
+<div class="page-head"><div>
   <h1>People</h1>
-  <p class="muted">Everyone here has their own profile, photo, jobs, CVs, cover letters, applications, saved searches, role profiles and learned preferences. The company list and API keys are shared. Switch person with the menu in the top bar; this browser remembers the choice.</p>
-</div>
+  <p class="lead">Everyone here has their own profile, photo, jobs, CVs, cover letters, applications, saved searches, role profiles and learned preferences. The company list and API keys are shared. Switch person with the menu in the top bar; this browser remembers the choice.</p>
+</div></div>
 
 {% for r in rows %}{% set p = r.person %}
 <div class="card" {% if p.id == person.id %}style="box-shadow:inset 4px 0 0 var(--accent), var(--shadow)"{% endif %}>

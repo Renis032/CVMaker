@@ -72,7 +72,10 @@
       {% if sources.full or sources.quick %}
       <p class="muted">Claude reads the gaps from your {{ sources.full }} full fit check{{ 's' if sources.full != 1 }} and {{ sources.quick }} quick rating{{ 's' if sources.quick != 1 }}, groups the ones that mean the same thing, and ranks them by how many jobs each would open, with a plan for what to learn or prove first.</p>
       {% else %}
-      <p class="muted">No fit checks yet. Rate jobs with Claude from the <a href="/">job list</a> or run a full fit check on a job; their gaps show up here.</p>
+      <div class="empty inline">
+        <strong>No fit checks yet</strong>
+        <p>Rate jobs with Claude from the <a href="/">job list</a>, or run a full fit check on a job. Their gaps are grouped and ranked here.</p>
+      </div>
       {% endif %}
     {% endif %}
   </div>
