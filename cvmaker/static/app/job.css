@@ -1,7 +1,7 @@
-.job-hero { position:relative; padding:22px 26px 20px; margin-bottom:6px; border-radius:22px; background:var(--hero); border:1px solid var(--hero-line); }
+.job-hero { position:relative; padding:10px 2px 6px; margin-bottom:6px; background:transparent; border:0; }
 .back-link { font-size:13px; color:var(--muted); font-weight:550; }
 .jh-top { display:grid; grid-template-columns:72px minmax(0, 1fr) auto; gap:20px; align-items:center; margin-top:12px; }
-.jh-logo { position:relative; overflow:hidden; width:72px; height:72px; border-radius:18px; display:grid; place-items:center; font-weight:800; font-size:22px;
+.jh-logo { position:relative; overflow:hidden; width:72px; height:72px; border-radius:18px; display:grid; place-items:center; font-weight:700; font-size:22px;
   color:hsl(var(--h) 70% 42%); background:hsl(var(--h) 85% 95%); border:1px solid hsl(var(--h) 60% 88%); box-shadow:var(--shadow); }
 :root[data-theme="dark"] .jh-logo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jh-logo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); } }
@@ -9,9 +9,9 @@
 .jh-logo.has-img img { opacity:1; }
 .jh-company { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; font-size:14.5px; }
 .jh-company .pill { margin:0; }
-.jh-main h1 { margin:4px 0 10px; font-size:clamp(22px, 2.6vw, 30px); line-height:1.15; letter-spacing:-.025em; font-weight:800; overflow-wrap:anywhere; }
+.jh-main h1 { margin:4px 0 10px; font-size:clamp(26px, 3vw, 38px); line-height:1.1; letter-spacing:-.03em; font-weight:600; overflow-wrap:anywhere; }
 .jh-meta { display:flex; flex-wrap:wrap; gap:6px; }
-.mp { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; font-size:13px; font-weight:550; background:color-mix(in srgb, var(--card) 80%, transparent); border:1px solid var(--hero-line); color:var(--ink); }
+.mp { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; font-size:13px; font-weight:550; background:var(--card); border:1px solid var(--line); color:var(--ink); }
 .mp svg { color:var(--muted); }
 .mp.sal { color:var(--good); } .mp.sal svg { color:var(--good); }
 .mode-remote { color:var(--good); background:var(--good-soft); border-color:transparent; }
@@ -22,20 +22,19 @@
   background:conic-gradient(currentColor calc(var(--v) * 1%), var(--line) 0); }
 .jh-fit .ring::before { content:""; position:absolute; inset:6px; border-radius:50%; background:var(--card); }
 .jh-fit .ring .rv { position:relative; display:flex; align-items:baseline; }
-.jh-fit .ring b { position:relative; font-size:26px; font-weight:800; }
+.jh-fit .ring b { position:relative; font-size:26px; font-weight:700; }
 .jh-fit .ring small { position:relative; font-size:12px; font-weight:650; opacity:.7; }
 .jh-fit .lbl { font-size:12px; font-weight:600; color:var(--muted); }
 .jh-fit.f-hi { color:var(--good); } .jh-fit.f-mid { color:var(--warn); } .jh-fit.f-lo { color:var(--muted); }
 .jh-fit, .jh-fit.f-hi, .jh-fit.f-mid, .jh-fit.f-lo { background:none; padding:0; }
 .jh-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:18px; }
 .jh-actions form { margin:0; }
-.btn.glow { box-shadow:0 10px 24px -10px var(--accent); }
 .pill.pack-ready { background:var(--good-soft); color:var(--good); margin:0; padding:6px 12px; font-size:13px; font-weight:600; }
 .next-banner { display:flex; align-items:center; gap:14px; margin-top:16px; padding:12px 16px; border-radius:14px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); color:var(--ink); }
 .next-banner:hover { text-decoration:none; border-color:var(--accent); }
-.nb-ico { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; flex:none; color:#fff; background:linear-gradient(135deg, #6d5efc, #a78bfa); }
+.nb-ico { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; flex:none; color:#fff; background:var(--accent-fill); }
 .nb-text { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; }
-.nb-text .k { width:100%; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--accent-soft-ink); }
+.nb-text .k { width:100%; font-size:12px; font-weight:700; color:var(--muted); }
 .nb-text strong { font-size:15px; }
 .nb-text .muted { font-size:13px; }
 @media (max-width:700px) { .jh-top { grid-template-columns:56px minmax(0, 1fr); } .jh-logo { width:56px; height:56px; font-size:18px; } .jh-fit { grid-column:1 / -1; flex-direction:row; justify-content:flex-start; } .jh-fit .ring { width:56px; height:56px; } .jh-fit .ring b { font-size:19px; } .job-hero { padding:18px; } }
@@ -54,7 +53,7 @@
 .job-head, .tab-panel, .overview > * { min-width:0; }
 .head-main > div:first-child { min-width:0; overflow-wrap:anywhere; }
 .glance .card { padding:18px; }
-.glance-h { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:12px 0 4px; }
+.glance-h { font-size:12px; font-weight:600; color:var(--muted); margin:12px 0 4px; }
 ul.plus li::marker { content:"+  "; color:var(--good); font-weight:700; }
 ul.minus li::marker { content:"–  "; color:var(--bad); font-weight:700; }
 
@@ -77,7 +76,7 @@ ol.steps li .pill { margin:0; }
 
 .closed-tile { margin-top:14px; border-color:var(--bad); background:var(--bad-soft); color:var(--bad); }
 .dot { display:inline-block; width:9px; height:9px; border-radius:50%; flex:none; margin-top:6px; background:var(--muted); }
-.dot.red { background:var(--bad); } .dot.amber { background:var(--warn); } .dot.green { background:var(--good); } .dot.info { background:var(--accent); }
+.dot.red { background:var(--bad); } .dot.amber { background:var(--warn); } .dot.green { background:var(--good); } .dot.info { background:var(--accent-fill); }
 .live .dot { margin:0 4px 0 0; }
 .posting-check .flag { display:flex; gap:8px; padding:8px 0; border-top:1px dashed var(--line); font-size:13.5px; }
 .posting-check .ev, .ev { font-size:12.5px; line-height:1.45; margin-top:2px; overflow-wrap:anywhere; }

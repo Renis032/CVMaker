@@ -7,7 +7,7 @@
 .keys-form .now code { font-size:12px; }
 @media (max-width:720px) { .keys-form .key-row { grid-template-columns:1fr; } .keys-form .key-row .help { grid-column:1; } }
 .meter { height:10px; border-radius:999px; background:var(--chip); overflow:hidden; margin:8px 0 6px; }
-.meter > span { display:block; height:100%; background:var(--accent); border-radius:inherit; }
+.meter > span { display:block; height:100%; background:var(--accent-fill); border-radius:inherit; }
 .stat-row { display:flex; gap:24px; flex-wrap:wrap; margin-top:6px; }
 .stat-row div { min-width:120px; } .stat-row strong { display:block; font-size:20px; }
 .danger-zone { border-color:color-mix(in srgb, var(--bad) 35%, var(--line)); }

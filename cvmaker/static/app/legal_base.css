@@ -5,4 +5,4 @@
 .legal table { border-collapse:collapse; width:100%; font-size:14px; margin:8px 0; }
 .legal th, .legal td { text-align:left; border-bottom:1px solid var(--line); padding:8px 10px 8px 0; vertical-align:top; }
 .legal .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
-.legal .top a.brand { font-weight:750; color:var(--ink); }
+.legal .top a.brand { font-weight:650; color:var(--ink); }

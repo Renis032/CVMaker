@@ -1,35 +1,36 @@
-/* CVMaker's design tokens (cvmaker/templates/base.html), so the editor looks like the rest of the site. */
+/* CVMaker's design tokens (cvmaker/static/app/base.css), so the editor looks like the rest of the site: neutral
+   greys, near-black type, one blue. */
 :root {
-  --bg:#f6f6fb; --card:#ffffff; --sunken:#f9f9fd; --ink:#0f1222; --muted:#646b80; --line:#e8e8f1; --line-strong:#d7d9e5;
-  --accent:#5b4bff; --accent-ink:#ffffff; --accent-soft:#efedff; --accent-soft-ink:#4130d8;
-  --bad:#dc2626; --warn:#b45309; --chip:#f2f2f8; --canvas:#ebebf3;
-  --shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
-  --shadow-lg:0 10px 30px -12px rgba(16,24,40,.25);
-  --radius:14px; --radius-sm:9px;
+  --bg:#f5f5f7; --card:#ffffff; --sunken:#fafafc; --ink:#1d1d1f; --muted:#6a6a70; --line:#e8e8ed; --line-strong:#d2d2d7;
+  --accent:#0071e3; --accent-ink:#ffffff; --accent-soft:#e8f1fc; --accent-soft-ink:#0058b0;
+  --bad:#d1101f; --warn:#a84a00; --chip:#ececf0; --canvas:#e8e8ed;
+  --shadow:0 1px 2px rgba(0,0,0,.03);
+  --shadow-lg:0 20px 48px -16px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.04);
+  --radius:14px; --radius-sm:10px;
   /* Selection colour; its own name because the CV page redefines --accent for its own colours. */
   --sel: var(--accent);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg:#090a10; --card:#11131c; --sunken:#0d0f17; --ink:#e9eaf2; --muted:#8c92a8; --line:#1e2130; --line-strong:#2a2e42;
-    --accent:#7c6cff; --accent-ink:#ffffff; --accent-soft:#1c1a3a; --accent-soft-ink:#c9c2ff;
-    --bad:#f87171; --warn:#fbbf24; --chip:#1a1d29; --canvas:#06070b;
-    --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-lg:0 10px 30px -12px rgba(0,0,0,.7);
-    color-scheme: dark;
+  --bg:#000000; --card:#1c1c1e; --sunken:#151517; --ink:#f5f5f7; --muted:#a1a1a6; --line:#2a2a2d; --line-strong:#3a3a3c;
+  --accent:#0a84ff; --accent-ink:#ffffff; --accent-soft:#0d2743; --accent-soft-ink:#8cc4ff;
+  --bad:#ff6961; --warn:#ff9f0a; --chip:#2c2c2e; --canvas:#0a0a0b;
+  --shadow:none; --shadow-lg:0 20px 48px -16px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
+  color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg:#090a10; --card:#11131c; --sunken:#0d0f17; --ink:#e9eaf2; --muted:#8c92a8; --line:#1e2130; --line-strong:#2a2e42;
-  --accent:#7c6cff; --accent-ink:#ffffff; --accent-soft:#1c1a3a; --accent-soft-ink:#c9c2ff;
-  --bad:#f87171; --warn:#fbbf24; --chip:#1a1d29; --canvas:#06070b;
-  --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-lg:0 10px 30px -12px rgba(0,0,0,.7);
+  --bg:#000000; --card:#1c1c1e; --sunken:#151517; --ink:#f5f5f7; --muted:#a1a1a6; --line:#2a2a2d; --line-strong:#3a3a3c;
+  --accent:#0a84ff; --accent-ink:#ffffff; --accent-soft:#0d2743; --accent-soft-ink:#8cc4ff;
+  --bad:#ff6961; --warn:#ff9f0a; --chip:#2c2c2e; --canvas:#0a0a0b;
+  --shadow:none; --shadow-lg:0 20px 48px -16px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 html { -webkit-font-smoothing: antialiased; }
-body { font: 13.5px/1.45 Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--ink); background: var(--bg); }
+body { font: 13.5px/1.45 -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, 'Segoe UI', sans-serif; letter-spacing: -.011em; color: var(--ink); background: var(--bg); }
 a { color: var(--accent); text-decoration: none; }
 button, input, select { font: inherit; color: inherit; }
 input, select { background: var(--card); color: var(--ink); }
