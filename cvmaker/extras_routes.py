@@ -1,5 +1,5 @@
 """Smaller site-wide features: company logos, the notification bell, backups and the history of your CV.
-Included at the end of app.py (it uses app.py's page helpers)."""
+Included by app.py; the page helpers come from web.py."""
 
 from pathlib import Path
 from urllib.parse import quote

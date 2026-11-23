@@ -1,5 +1,5 @@
 """Routes for adding jobs by link, posting checks, outreach, the story bank, interview practice, debriefs and
-offer review. Included at the end of app.py (it uses app.py's page helpers)."""
+offer review. Included by app.py; the page helpers come from web.py."""
 
 import time
 from datetime import datetime

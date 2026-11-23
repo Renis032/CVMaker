@@ -1,5 +1,5 @@
 """The CV editor: the built React app at /editor/, its API at /editor/api/ and uploaded images.
-Included at the end of app.py (it uses app.py's page helpers)."""
+Included by app.py; the page helpers come from web.py."""
 
 import json
 from pathlib import Path

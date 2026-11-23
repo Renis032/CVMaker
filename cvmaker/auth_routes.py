@@ -3,7 +3,7 @@
 Server mode: sign-up, login (password, emailed link or Google), email verification, password reset, logout, the
 account page (plan and usage, change password, export everything, delete the account), Stripe billing and the legal
 pages. Desktop mode: only Settings (your own API keys, usage, export).
-Included at the end of app.py (it uses app.py's page helpers).
+Included by app.py; the page helpers come from web.py.
 """
 
 import secrets

@@ -1,5 +1,5 @@
 """The Telegram and start-at-login cards' actions on the Settings page (desktop mode; they don't exist on a server).
-Included at the end of app.py."""
+Included by app.py."""
 
 from urllib.parse import quote
 

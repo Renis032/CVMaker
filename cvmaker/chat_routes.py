@@ -1,5 +1,5 @@
 """The chat page: ask Claude about your profile or a job, and apply profile changes it proposes.
-Included at the end of app.py (it uses app.py's page helpers)."""
+Included by app.py; the page helpers come from web.py."""
 
 from pathlib import Path
 from urllib.parse import quote
