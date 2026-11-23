@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import yaml
 
-from . import categories, db, people, settings
+from . import categories, db, people, rates, settings
 from .countries import COUNTRY_TERMS
 from .models import Criteria, Job, Profile
 from .salary import find_salary
@@ -130,6 +130,7 @@ def run_search(
 
 def _run_search(criteria: Criteria, profile: Profile | None, on_progress: Callable[[dict], None]) -> SearchResult:
     criteria = categories.expand(criteria)
+    rates.refresh()  # at most once a day; the salaries this search finds are converted with them
     companies = load_companies()
     tasks = {}
     with ThreadPoolExecutor(max_workers=8) as pool:

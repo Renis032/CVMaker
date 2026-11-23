@@ -2,6 +2,8 @@
 
 import re
 
+from . import rates
+
 CURRENCY_SIGNS = {"EUR": "€", "USD": "$", "GBP": "£"}
 PERIODS = {
     "year": "/year", "yearly": "/year", "annual": "/year", "annually": "/year", "yr": "/year",
@@ -74,11 +76,9 @@ def find_salary(text: str) -> str:
     return ""
 
 
-# Rough conversion rates to EUR, only for comparing salaries with each other. BGN is the fixed euro rate
-# (Bulgaria adopted the euro on 1 Jan 2026; older postings still quote лв.).
-EUR_RATES = {
-    "EUR": 1.0, "BGN": 1 / 1.95583, "USD": 0.92, "GBP": 1.17, "PLN": 0.23, "RON": 0.20, "CHF": 1.05,
-}
+# Conversion to EUR, only for comparing salaries with each other: rates.py holds the ECB's daily rates when they
+# have been fetched, and this fixed table otherwise.
+EUR_RATES = rates.FALLBACK
 _CURRENCY_WORDS = [
     ("BGN", r"лв|лева|\bbgn\b"), ("EUR", r"€|\beur\b|евро"), ("GBP", r"£|\bgbp\b"), ("USD", r"\$|\busd\b"),
     ("PLN", r"\bpln\b|zł"), ("RON", r"\bron\b|\blei\b"), ("CHF", r"\bchf\b"),
@@ -121,7 +121,7 @@ def monthly_eur(text: str) -> float | None:
         pass
     elif re.search(r"year|annum|annual|/\s?yr|jahr|годин", low) or value >= 15000:
         value /= 12
-    value *= EUR_RATES[currency]
+    value *= rates.current()[currency]
     return round(value) if 200 <= value <= 100000 else None
 
 

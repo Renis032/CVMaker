@@ -120,6 +120,8 @@ TASK_WORKERS = int(_env("CVMAKER_TASK_WORKERS", "4"))
 TASK_MAX_ATTEMPTS = int(_env("CVMAKER_TASK_ATTEMPTS", "3"))
 # Days after applying until the app reminds you to follow up.
 FOLLOW_UP_DAYS = float(_env("CVMAKER_FOLLOW_UP_DAYS", "10"))
+# Fetch the ECB's daily exchange rates (once a day, when a search runs) for comparing salaries. Off: fixed rates.
+LIVE_RATES = _flag("CVMAKER_LIVE_RATES", True)
 
 # --- uploads ---------------------------------------------------------------------------------------------------
 MAX_UPLOAD_MB = float(_env("CVMAKER_MAX_UPLOAD_MB", "15"))

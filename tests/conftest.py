@@ -22,6 +22,7 @@ os.environ.update({
     "CVMAKER_SIGNUPS_PER_IP_HOUR": "10000",
     "CVMAKER_LOGINS_PER_IP_MINUTE": "10000",
     "CVMAKER_BACKUP_EVERY_HOURS": "0",
+    "CVMAKER_LIVE_RATES": "0",
     "ANTHROPIC_API_KEY": "",
     "DATABASE_URL": os.environ.get("CVMAKER_TEST_DATABASE_URL", f"sqlite:///{_DATA / 'central.db'}"),
     "STRIPE_SECRET_KEY": "sk_test_dummy",
