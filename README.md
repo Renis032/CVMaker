@@ -10,6 +10,8 @@ The screenshots use a made-up demo profile ("Alex Morgan") and fictional compani
 
 ![Jobs list](docs/screenshots/jobs.png)
 
+**Searching and filtering the list**: the search box takes words (all must appear, the description included), `"exact phrases"`, `-excluded` words and fields (`company:acme`, `title:`, `location:`, `skill:`, `source:`). The filters beside the list (work mode, seniority, Claude fit, salary, posting date, country, tags, source, keyword match) show how many jobs each option gives, combine freely, and update the list in place; the address always holds the current view, so it can be bookmarked, exported (CSV/XLSX export what you see) or rated with Claude as is. `/` jumps to the search box from anywhere, and the top bar suggests jobs and companies while you type.
+
 **Dark theme**: every page, the CV editor included, follows the system theme or the toggle in the top bar.
 
 ![Jobs list, dark theme](docs/screenshots/jobs-dark.png)

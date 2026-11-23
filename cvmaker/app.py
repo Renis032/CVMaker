@@ -12,10 +12,11 @@ from urllib.parse import quote
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import QueryParams
 from markupsafe import Markup, escape
 from pydantic import ValidationError
 
-from . import assistant, auto, categories, claims, companies, cvcheck, cvdiff, db, editor, github, insights, pack, people, keys, render, roles, security, settings, taste, tasks, telegram, uploads
+from . import assistant, auto, categories, claims, companies, cvcheck, cvdiff, db, editor, github, insights, jobfilter, pack, people, keys, render, roles, security, settings, taste, tasks, telegram, uploads
 from .auto import SavedSearch, load_criteria
 from .countries import COUNTRY_TERMS, country_name
 from .llm import LLMError
@@ -205,47 +206,24 @@ def _suggestions() -> dict:
     }
 
 
-def _list_rows(
-    search: SavedSearch, status: str, only_last: int, unseen: int, salary: int, sort: str, direction: str = ""
-) -> list[dict]:
-    ids = search.last_job_ids if only_last else None
-    closed = status == "closed"
+def _list_rows(search: SavedSearch, f: jobfilter.Filters) -> list[dict]:
+    """The rows of the tab you are on (all, not seen, liked, hidden, closed), before the filters."""
+    ids = search.last_job_ids if f.only_last else None
+    closed = f.status == "closed"
     return db.list_jobs(
-        ids=ids, status=None if closed else status or None, unseen=bool(unseen), with_salary=bool(salary), sort=sort,
-        direction=direction, closed=True if closed else False,
+        ids=ids, status=None if closed else f.status or None, unseen=bool(f.unseen), with_salary=bool(f.salary),
+        sort=f.sql_sort, direction=f.dir, closed=True if closed else False,
     )
 
 
-def _filter_rows(rows: list[dict], q: str, where: str) -> list[dict]:
-    """Narrow the job list by words (all must appear in the title, company, location or tags) and by work mode."""
-    words = q.lower().split()
-    out = []
-    for r in rows:
-        j = r["job"]
-        hybrid = "hybrid" in [t.lower() for t in j.tags]
-        if where == "remote" and not j.remote or where == "hybrid" and not hybrid or where == "onsite" and (j.remote or hybrid):
-            continue
-        text = " ".join([j.title, j.company, j.location, " ".join(j.tags), j.source]).lower()
-        if all(w in text for w in words):
-            out.append(r)
-    return out
+def _view(search: SavedSearch, params) -> tuple[jobfilter.Filters, jobfilter.Result]:
+    """The filtered job list an address (its query parameters) asks for."""
+    f = jobfilter.Filters.from_params(params)
+    return f, jobfilter.apply(_list_rows(search, f), f)
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(
-    request: Request,
-    search: str = "",
-    status: str = "",
-    only_last: int = 0,
-    role: str = "",
-    unseen: int = 0,
-    salary: int = 0,
-    sort: str = "score",
-    dir: str = "",
-    new: int = 0,
-    q: str = "",
-    where: str = "",
-):
+def index(request: Request, search: str = "", role: str = "", new: int = 0):
     prefs = auto.load_prefs()
     if search and auto.get_search(search) and prefs.active_search != search:
         prefs.active_search = search
@@ -258,6 +236,8 @@ def index(
         criteria.skill_keywords = chosen.skill_keywords or criteria.skill_keywords
     searches = auto.load_searches()
     learned = taste.summary(assistant.load_profile())
+    f, result = _view(current, request.query_params)
+    stats = db.stats()
     return page(
         request,
         "index.html",
@@ -276,18 +256,14 @@ def index(
         packs=pack.recent_packs(8),
         roles=roles.load_roles(),
         chosen_role=chosen,
-        rows=_filter_rows(_list_rows(current, status, only_last, unseen, salary, sort, dir), q, where),
-        q=q,
-        where=where,
+        f=f,
+        result=result,
+        rows=result.rows,
+        jobs_total=sum(n for stage, n in stats["by_stage"].items() if stage != "hidden"),
+        fopt=jobfilter,
         settings_open=bool(new or role),
         companies_seen=db.company_summaries(),
-        stats=db.stats(),
-        status=status,
-        only_last=only_last,
-        unseen=unseen,
-        salary=salary,
-        sort=sort,
-        dir=db.sort_direction(sort, dir),
+        stats=stats,
         company_sources=list(COMPANY_SOURCES),
         boards=[(name, info["label"], board_has_key(name), info["key"]) for name, info in BOARD_INFO.items()],
         seniority_levels=SENIORITY_LEVELS,
@@ -298,12 +274,12 @@ def index(
     )
 
 
-def _query(**params) -> str:
-    """The current list's query string with some parameters changed (for tabs and sort links)."""
-    return "?" + "&".join(f"{k}={v}" for k, v in params.items() if v not in ("", 0, None))
-
-
-templates.env.globals["query"] = _query
+@app.get("/api/suggest")
+def api_suggest(q: str = ""):
+    """Quick search (top bar): the best matching saved jobs and companies while you type."""
+    if len(q.strip()) < 2:
+        return {"jobs": [], "companies": [], "total": 0}
+    return jobfilter.suggest(db.list_jobs(sort="match"), q[:200])
 
 
 @app.post("/search")
@@ -403,11 +379,11 @@ def prefs_save(
 
 
 @app.post("/rate")
-def rate_view(
-    status: str = Form(""), only_last: int = Form(0), unseen: int = Form(0), salary: int = Form(0), back: str = Form("/")
-):
-    """Rate the not-yet-rated jobs in the list you are looking at (highest keyword score first)."""
-    rows = _list_rows(auto.active_search(), status, only_last, unseen, salary, "score")
+def rate_view(query: str = Form(""), back: str = Form("/")):
+    """Rate the not-yet-rated jobs in the list you are looking at (filters included), best keyword match first."""
+    f = jobfilter.Filters.from_params(QueryParams(query))
+    f.sort, f.dir, f.limit = "score", "", 5000
+    rows = jobfilter.apply(_list_rows(auto.active_search(), f), f).rows
     auto.submit_rating(db.unrated([r["job"].id for r in rows])[: auto.load_prefs().rate_top], "Rate jobs in this list")
     return _back(back)
 
@@ -466,15 +442,14 @@ def _export_rows(rows: list[dict]) -> list[list]:
 
 
 @app.get("/export.{fmt}")
-def export(
-    fmt: str, status: str = "", only_last: int = 0, unseen: int = 0, salary: int = 0, sort: str = "score", dir: str = "",
-    pipeline: int = 0,
-):
-    rows = (
-        db.list_jobs(statuses=db.STAGES, sort="newest", closed=None)
-        if pipeline
-        else _list_rows(auto.active_search(), status, only_last, unseen, salary, sort, dir)
-    )
+def export(request: Request, fmt: str, pipeline: int = 0):
+    """The pipeline, or the job list as you see it: same tab, filters and sort, every match (not just one page)."""
+    if pipeline:
+        rows = db.list_jobs(statuses=db.STAGES, sort="newest", closed=None)
+    else:
+        f = jobfilter.Filters.from_params(request.query_params)
+        f.limit = 100000
+        rows = jobfilter.apply(_list_rows(auto.active_search(), f), f).rows
     name = f"cvmaker_{'pipeline' if pipeline else 'jobs'}_{datetime.now():%Y-%m-%d}"
     data = _export_rows(rows)
     if fmt == "xlsx":

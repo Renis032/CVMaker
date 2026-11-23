@@ -1,40 +1,50 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}Jobs · CVMaker{% endblock %}
+{% block body_class %}jobs-page{% endblock %}
 {% block content %}
 {% set run = running.get(current.id) %}
 {% set age_choices = [3, 7, 14, 30, 60, 90] %}
-{% set base = dict(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, q=q, where=where) %}
+{% set here = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
 
-<section class="hero">
-  <div class="hero-main">
-    <div class="eyebrow">
-      <span class="dot {{ 'live' if run }}"></span>
-      {% if run %}Searching “{{ current.name }}” now…{% elif current.last_run %}“{{ current.name }}” ran {{ current.last_run | ago }} · {{ current.last_new }} new{% else %}Ready when you are{% endif %}
+{# One facet option: a checkbox with its label and how many jobs it would give. #}
+{% macro opt(name, o) -%}
+<label class="fopt"><input type="checkbox" name="{{ name }}" value="{{ o.value }}" {{ 'checked' if o.on }}><span class="box"></span><span class="lbl">{{ o.label }}</span><span class="n">{{ o.count }}</span></label>
+{%- endmacro %}
+
+<section class="jhead {{ 'first-run' if not jobs_total }}">
+  <div class="jhead-top">
+    <div class="jhead-title">
+      <h1>Jobs</h1>
+      <p class="lead">
+        {% if not jobs_total %}Nothing saved yet. Run your first search to fill this list.
+        {% else %}{{ stats.new_week }} new this week{% if unseen_total %} · <a href="/?unseen=1">{{ unseen_total }} you haven't seen</a>{% endif %} · ranked by your skills and what you liked before{% endif %}
+      </p>
     </div>
-    <h1>Find your next <span class="grad">opportunity</span></h1>
-    <p class="lead">{{ stats.new_week }} new jobs this week{% if unseen_total %}, <a href="/?unseen=1">{{ unseen_total }} you haven't seen yet</a>{% endif %}. Ranked against your skills and what you liked before.</p>
-    <form class="hero-search" method="get" action="/" role="search">
-      {% for k in ['status', 'only_last', 'unseen', 'salary'] %}{% if base[k] %}<input type="hidden" name="{{ k }}" value="{{ base[k] }}">{% endif %}{% endfor %}
-      {% if sort != 'score' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
-      <label class="hs-field hs-q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input type="search" name="q" value="{{ q }}" placeholder="Title, company or skill" aria-label="Filter jobs"></label>
-      <label class="hs-field hs-where"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-        <select name="where" aria-label="Work mode">
-          {% for v, l in [('', 'Any work mode'), ('remote', 'Remote'), ('hybrid', 'Hybrid'), ('onsite', 'On-site')] %}<option value="{{ v }}" {% if where == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
-        </select></label>
-      <button type="submit">Search</button>
-    </form>
-    <div class="hero-actions">
+    <div class="jhead-actions">
+      <button class="secondary" type="button" data-open-settings title="What to look for, where, and how often">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg> Search settings</button>
       {% if current.id %}
-      <form method="post" action="/searches/{{ current.id }}/run"><button class="glow" type="submit" {% if run %}disabled title="Already running"{% endif %}>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg> Find new jobs</button></form>
+      <form method="post" action="/searches/{{ current.id }}/run"><button class="glow" type="submit" {% if run %}disabled title="Already running"{% endif %} title="Search the job boards and company pages for “{{ current.name }}”">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg> {{ 'Searching…' if run else 'Find new jobs' }}</button></form>
       {% endif %}
-      <button class="secondary" type="button" data-open-settings>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg> Search settings</button>
-      <a class="btn secondary" href="/add">+ Add a job by link</a>
     </div>
-    {% if run %}
+  </div>
+
+  <div class="searches" aria-label="Saved searches">
+    <span class="searches-k">Searching for</span>
+    {% for s in searches %}
+    <a class="spill {{ 'on' if s.id == current.id }}" href="/?search={{ s.id }}" title="{{ 'Runs every %g h' % s.every_hours if s.auto else 'Runs only when you start it' }}{% if s.last_run %} · last ran {{ s.last_run | ago }}, {{ s.last_new }} new{% endif %}">
+      {% if running.get(s.id) %}<span class="spin"></span>{% else %}<span class="dot {{ 'auto' if s.auto }}"></span>{% endif %}{{ s.name }}{% if s.auto %}<small>every {{ '%g' % s.every_hours }} h</small>{% endif %}</a>
+    {% endfor %}
+    <a class="spill add" href="/?new=1">+ New search</a>
+    <span class="searches-state">
+      {% if run %}running now…{% elif current.last_run %}last ran {{ current.last_run | ago }} · {{ current.last_new }} new{% elif current.id %}not run yet{% endif %}
+      · <a href="#auto">schedules</a>
+    </span>
+  </div>
+
+  {% if run %}
   <div class="running" data-task-id="{{ run.id }}">
     <span class="spin"></span>
     <div style="flex:1">
@@ -43,111 +53,203 @@
     </div>
   </div>
   {% endif %}
+
+  <div class="jsearch" role="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input type="search" id="job-q" name="q" form="filter-form" value="{{ f.q }}" placeholder="Search your saved jobs: title, company, skill, place…" aria-label="Search your saved jobs" autocomplete="off" spellcheck="false">
+    <kbd title="Press / to search">/</kbd>
+    <details class="qhelp">
+      <summary title="Search tips" aria-label="Search tips">?</summary>
+      <div class="qhelp-panel">
+        <strong>Search tips</strong>
+        <dl>
+          <dt><code>java sofia</code></dt><dd>every word must appear, also in the description</dd>
+          <dt><code>"spring boot"</code></dt><dd>an exact phrase</dd>
+          <dt><code>-senior</code></dt><dd>leave out jobs with this word</dd>
+          <dt><code>company:acme</code></dt><dd>one field only: <code>title:</code> <code>company:</code> <code>location:</code> <code>skill:</code> <code>source:</code></dd>
+        </dl>
+      </div>
+    </details>
   </div>
-  <div class="hero-stats">
-    <a class="hstat" href="/?sort=newest"><span class="k">New this week</span><span class="v">{{ stats.new_week }}</span><span class="sub">jobs found</span></a>
-    <a class="hstat" href="/pipeline"><span class="k">Applications</span><span class="v">{{ stats.applications }}</span><span class="sub">{{ stats.applied_week }} this week</span></a>
-    <a class="hstat" href="/pipeline"><span class="k">Response rate</span><span class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</span><span class="sub">{{ stats.response.responded }} of {{ stats.response.n }} answered</span></a>
-    <a class="hstat {{ 'warn' if stats.follow_ups }}" href="/pipeline#follow-ups"><span class="k">Follow-ups due</span><span class="v">{{ stats.follow_ups }}</span><span class="sub">no reply after {{ '%g' % FOLLOW_UP_DAYS }}+ days</span></a>
-    <a class="hstat wide" href="/?sort=salary&salary=1"><span class="k">Median salary seen</span><span class="v">{{ stats.median_salary | monthly | replace('≈ ', '') or '–' }}</span><span class="sub">{{ stats.salary_n }} postings, last 60 days</span></a>
+
+  <div class="jstats">
+    <a class="hstat" href="/?days=7&sort=newest"><span class="v">{{ stats.new_week }}</span><span class="k">New this week</span></a>
+    <a class="hstat" href="/pipeline"><span class="v">{{ stats.applications }}</span><span class="k">Applications · {{ stats.applied_week }} this week</span></a>
+    <a class="hstat" href="/pipeline"><span class="v">{{ stats.response.pct ~ '%' if stats.response.pct is not none else '–' }}</span><span class="k">Response rate · {{ stats.response.responded }} of {{ stats.response.n }}</span></a>
+    <a class="hstat {{ 'warn' if stats.follow_ups }}" href="/pipeline#follow-ups"><span class="v">{{ stats.follow_ups }}</span><span class="k">Follow-ups due</span></a>
+    <a class="hstat" href="/?salary=1&sort=salary"><span class="v">{{ stats.median_salary | monthly | replace('≈ ', '') or '–' }}</span><span class="k">Median salary · {{ stats.salary_n }} postings</span></a>
   </div>
 </section>
 {% if not run %}{% for e in current.last_errors %}<div class="err">{{ e }}</div>{% endfor %}{% endif %}
 
-<div class="jobs-layout">
-  <aside class="filters">
-    <div class="fcard">
-      <div class="fhead"><h3>Filters</h3>{% if q or where or salary or only_last %}<a href="{{ query(status=status, unseen=unseen, sort=sort) }}">Clear all</a>{% endif %}</div>
-      <div class="fgroup">
-        <h4>Work mode</h4>
-        {% for v, l in [('', 'Any'), ('remote', 'Remote'), ('hybrid', 'Hybrid'), ('onsite', 'On-site')] %}
-        <a class="fopt {{ 'on' if where == v }}" href="{{ query(**dict(base, where=v)) }}"><span class="radio"></span>{{ l }}</a>
-        {% endfor %}
-      </div>
-      <div class="fgroup">
-        <h4>Narrow down</h4>
-        <a class="fopt {{ 'on' if salary }}" href="{{ query(**dict(base, salary=0 if salary else 1)) }}"><span class="box"></span>States a salary</a>
-        {% if current.last_job_ids %}<a class="fopt {{ 'on' if only_last }}" href="{{ query(**dict(base, only_last=0 if only_last else 1)) }}"><span class="box"></span>From the last search only</a>{% endif %}
-      </div>
-      <div class="fgroup">
-        <h4>Saved searches</h4>
-        {% for s in searches %}
-        <a class="fsearch {{ 'on' if s.id == current.id }}" href="/?search={{ s.id }}" title="{{ 'Runs every %g h' % s.every_hours if s.auto else 'Runs only when you start it' }}">
-          <span class="nm">{{ s.name }}</span>
-          <span class="meta">{% if running.get(s.id) %}<span class="spin"></span>{% elif s.auto %}every {{ '%g' % s.every_hours }} h{% else %}manual{% endif %}</span>
-        </a>
-        {% endfor %}
-        <a class="fsearch add" href="/?new=1">+ New search</a>
-      </div>
-      {% if roles %}
-      <div class="fgroup">
-        <h4>Role profiles</h4>
-        <div class="fchips">{% for r in roles %}<a class="pill {{ 'on' if chosen_role and chosen_role.id == r.id }}" href="/?role={{ r.id }}{% if current.id %}&search={{ current.id }}{% endif %}" title="Fill the search settings from this role">{{ r.name }}</a>{% endfor %}</div>
-      </div>
+<div class="jobs-layout {{ 'first-run' if not jobs_total }}" id="jobs-view">
+  <aside class="filters" id="filters">
+    <form class="fcard" id="filter-form" method="get" action="/">
+      {% if f.status %}<input type="hidden" name="status" value="{{ f.status }}">{% endif %}
+      {% if f.unseen %}<input type="hidden" name="unseen" value="1">{% endif %}
+      {% if f.company %}<input type="hidden" name="company" value="{{ f.company }}">{% endif %}
+      <div class="fhead"><h3>Filters{% if f.narrowing %} <span class="fcount">{{ f.narrowing }}</span>{% endif %}</h3>
+        {% if f.narrowing %}<a href="{{ f.cleared() }}" data-nav>Clear all</a>{% endif %}
+        <button type="button" class="secondary icon filters-close" data-filters-toggle aria-label="Close filters">✕</button></div>
+
+      <fieldset class="fgroup">
+        <legend>Work mode</legend>
+        {% for o in result.facets.where %}{{ opt('where', o) }}{% else %}<p class="fnone">No jobs to filter yet.</p>{% endfor %}
+      </fieldset>
+
+      {% if result.facets.level %}
+      <fieldset class="fgroup">
+        <legend title="Guessed from the job title">Seniority</legend>
+        {% for o in result.facets.level %}{{ opt('level', o) }}{% endfor %}
+      </fieldset>
       {% endif %}
+
+      <fieldset class="fgroup">
+        <legend title="Claude's 1-10 rating of how well the job fits your profile">Claude fit</legend>
+        <div class="fseg" role="radiogroup" aria-label="Minimum Claude fit">
+          {% for v, l in fopt.FIT_CHOICES %}<label><input type="radio" name="fit" value="{{ v or '' }}" {{ 'checked' if f.fit == v }}>{{ l }}</label>{% endfor %}
+        </div>
+        <label class="fopt"><input type="checkbox" name="rated" value="no" {{ 'checked' if f.rated }}><span class="box"></span><span class="lbl">Not rated yet</span></label>
+      </fieldset>
+
+      <fieldset class="fgroup">
+        <legend>Salary</legend>
+        <label class="fopt"><input type="checkbox" name="salary" value="1" {{ 'checked' if f.salary }}><span class="box"></span><span class="lbl">States a salary</span></label>
+        <label class="fline">At least
+          <select name="pay" aria-label="Minimum salary per month">
+            {% for v in fopt.PAY_CHOICES %}<option value="{{ v or '' }}" {{ 'selected' if f.pay == v }}>{{ '€{:,} a month'.format(v) if v else 'any amount' }}</option>{% endfor %}
+            {% if f.pay not in fopt.PAY_CHOICES %}<option value="{{ f.pay }}" selected>€{{ '{:,}'.format(f.pay) }} a month</option>{% endif %}
+          </select></label>
+      </fieldset>
+
+      <fieldset class="fgroup">
+        <legend title="Uses the day it was found when the posting has no date">Posted</legend>
+        <label class="fline">
+          <select name="days" aria-label="Posted within">
+            {% for v, l in fopt.DAY_CHOICES %}<option value="{{ v or '' }}" {{ 'selected' if f.days == v }}>{{ l }}</option>{% endfor %}
+            {% if f.days not in fopt.DAY_CHOICES | map('first') | list %}<option value="{{ f.days }}" selected>Last {{ f.days }} days</option>{% endif %}
+          </select></label>
+      </fieldset>
+
+      {% if result.facets.country %}
+      <fieldset class="fgroup">
+        <legend>Country</legend>
+        {% for o in result.facets.country %}{{ opt('country', o) }}{% endfor %}
+      </fieldset>
+      {% endif %}
+
+      {% if result.facets.tag %}
+      <fieldset class="fgroup">
+        <legend title="Tags the job boards put on the posting. Picking several keeps jobs that have all of them.">Skills &amp; tags</legend>
+        <div class="ftags">
+          {% for o in result.facets.tag %}<label class="ftag"><input type="checkbox" name="tag" value="{{ o.value }}" {{ 'checked' if o.on }}><span>{{ o.label }}</span><small>{{ o.count }}</small></label>{% endfor %}
+        </div>
+      </fieldset>
+      {% endif %}
+
+      {% if result.facets.source | length > 1 or f.source %}
+      <details class="fgroup fmore" data-key="source" {{ 'open' if f.source }}>
+        <summary>Source{% if f.source %} <span class="fcount">{{ f.source | length }}</span>{% endif %}</summary>
+        {% for o in result.facets.source %}{{ opt('source', o) }}{% endfor %}
+      </details>
+      {% endif %}
+
+      <details class="fgroup fmore" data-key="more" {{ 'open' if f.score or f.only_last }}>
+        <summary>More{% if f.score or f.only_last %} <span class="fcount">{{ (1 if f.score else 0) + (1 if f.only_last else 0) }}</span>{% endif %}</summary>
+        <label class="fline col" title="How many of your skills the posting mentions (0-100)">Keyword match at least <output id="score-out">{{ f.score }}</output>
+          <input type="range" name="score" min="0" max="90" step="10" value="{{ f.score }}" oninput="document.getElementById('score-out').value = this.value"></label>
+        {% if current.last_job_ids %}<label class="fopt"><input type="checkbox" name="only_last" value="1" {{ 'checked' if f.only_last }}><span class="box"></span><span class="lbl">From the last search only</span></label>{% endif %}
+      </details>
+      <noscript><button type="submit" style="width:100%;margin-top:10px">Apply filters</button></noscript>
+    </form>
+
+    {% if roles %}
+    <div class="fcard fside">
+      <h4>Role profiles</h4>
+      <p class="muted">Fill the search settings from a role.</p>
+      <div class="fchips">{% for r in roles %}<a class="pill {{ 'on' if chosen_role and chosen_role.id == r.id }}" href="/?role={{ r.id }}{% if current.id %}&search={{ current.id }}{% endif %}">{{ r.name }}</a>{% endfor %}</div>
     </div>
-    <div class="promo">
-      <div class="promo-ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0 0 0-2.9-.1z"/><path d="m12 15-3-3a22 22 0 0 1 2-4A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.6-3 2-4c1.6-1.1 5 0 5 0M12 15v5s3-.6 4-2c1.1-1.6 0-5 0-5"/></svg></div>
-      <strong>Improve your CV for this market</strong>
-      <p>Ask Claude what's missing for the jobs you're seeing, then fix it in the editor.</p>
-      <a class="btn" href="/chat">Ask Claude →</a>
-    </div>
+    {% endif %}
   </aside>
 
   <section class="results">
     <div class="rtabs">
-      <a href="{{ query(sort=sort, q=q, where=where) }}" class="{{ 'on' if not status and not unseen }}">All saved</a>
-      <a href="{{ query(unseen=1, sort=sort, q=q, where=where) }}" class="{{ 'on' if unseen }}">Not seen{% if unseen_total %} <span class="tb">{{ unseen_total }}</span>{% endif %}</a>
-      <a href="{{ query(status='liked', sort=sort, q=q, where=where) }}" class="{{ 'on' if status == 'liked' }}">Liked</a>
-      <a href="/pipeline">Applied →</a>
-      <a href="{{ query(status='hidden', sort=sort, q=q, where=where) }}" class="{{ 'on' if status == 'hidden' }}">Hidden</a>
-      <a href="{{ query(status='closed', sort=sort, q=q, where=where) }}" class="{{ 'on' if status == 'closed' }}" title="Postings that look closed or expired">Closed{% if closed_total %} <span class="tb">{{ closed_total }}</span>{% endif %}</a>
+      <a data-nav href="{{ f.url(status='', unseen='') }}" class="{{ 'on' if not f.status and not f.unseen }}">All jobs</a>
+      <a data-nav href="{{ f.url(status='', unseen=1) }}" class="{{ 'on' if f.unseen }}">Not seen{% if unseen_total %} <span class="tb">{{ unseen_total }}</span>{% endif %}</a>
+      <a data-nav href="{{ f.url(status='liked', unseen='') }}" class="{{ 'on' if f.status == 'liked' }}">Liked{% if stats.by_stage.get('liked') %} <span class="tb plain">{{ stats.by_stage.get('liked') }}</span>{% endif %}</a>
+      <a data-nav href="{{ f.url(status='hidden', unseen='') }}" class="{{ 'on' if f.status == 'hidden' }}">Hidden</a>
+      <a data-nav href="{{ f.url(status='closed', unseen='') }}" class="{{ 'on' if f.status == 'closed' }}" title="Postings that look closed or expired">Closed{% if closed_total %} <span class="tb plain">{{ closed_total }}</span>{% endif %}</a>
+      <span class="spacer"></span>
+      <a href="/pipeline" class="ext">Applied jobs are in the Pipeline →</a>
     </div>
 
     <div class="rbar">
       {% set unrated = rows | selectattr('fit', 'none') | list | length %}
-      <div class="rcount"><strong>{{ rows | length }}</strong> job{{ '' if rows | length == 1 else 's' }}{% if unrated %}<span class="muted"> · {{ unrated }} not rated by Claude</span>{% endif %}</div>
-      {% if q %}<a class="fchip" href="{{ query(**dict(base, q='')) }}">“{{ q }}” ✕</a>{% endif %}
-      {% if where %}<a class="fchip" href="{{ query(**dict(base, where='')) }}">{{ where }} ✕</a>{% endif %}
+      <button type="button" class="secondary filters-toggle" data-filters-toggle>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg> Filters{% if f.narrowing %} <span class="fcount">{{ f.narrowing }}</span>{% endif %}</button>
+      <div class="rcount" aria-live="polite"><strong>{{ result.total }}</strong> job{{ '' if result.total == 1 else 's' }}{% if result.total > result.shown %}<span class="muted"> · showing {{ result.shown }}</span>{% endif %}{% if unrated %}<span class="muted"> · {{ unrated }} not rated</span>{% endif %}</div>
       <span class="spacer"></span>
-      <label class="sort-sel">Sort by
-        <select onchange="location.href = this.value" aria-label="Sort by">
-          {% for key, label in [("match", "Best for you"), ("fit", "Claude fit"), ("score", "Keyword match"), ("newest", "Newly found"), ("posted", "Posted date"), ("salary", "Salary"), ("title", "Job title"), ("company", "Company")] %}
-          <option value="{{ query(**dict(base, sort=key)) }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
+      <label class="sort-sel">Sort
+        <select name="sort" form="filter-form" aria-label="Sort by">
+          {% if f.terms %}<option value="relevance" {{ 'selected' if f.effective_sort == 'relevance' }}>Best match for your words</option>{% endif %}
+          {% for key, label in fopt.SORT_CHOICES %}<option value="{{ key }}" {{ 'selected' if f.effective_sort == key }}>{{ label }}</option>{% endfor %}
         </select>
       </label>
       <div class="seg-icons" role="group" aria-label="Density">
-        <button type="button" class="secondary icon" data-density="comfortable" title="Cards with details"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></button>
-        <button type="button" class="secondary icon" data-density="compact" title="One line per job"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button type="button" class="secondary icon" data-density="comfortable" title="Cards with details" aria-label="Cards with details"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></button>
+        <button type="button" class="secondary icon" data-density="compact" title="One line per job" aria-label="One line per job"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       </div>
       <details class="hide-menu actions-menu">
-        <summary class="btn secondary">Actions ▾</summary>
+        <summary class="btn secondary" aria-label="More actions">Actions ▾</summary>
         <div class="menu">
           {% if unrated and not rating_tasks %}
           <form method="post" action="/rate">
-            {% for k, v in [("status", status), ("only_last", only_last), ("unseen", unseen), ("salary", salary)] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-            <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-            <button type="submit">✦ Rate {{ [unrated, prefs.rate_top] | min }} with Claude</button>
+            <input type="hidden" name="query" value="{{ request.url.query }}">
+            <input type="hidden" name="back" value="{{ here }}">
+            <button type="submit" title="Uses the filters above">✦ Rate {{ [unrated, prefs.rate_top] | min }} of these with Claude</button>
           </form>
           {% endif %}
           {% if unseen_total %}
-          <form method="post" action="/seen"><input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}"><button type="submit">✓ Mark all as seen</button></form>
+          <form method="post" action="/seen"><input type="hidden" name="back" value="{{ here }}"><button type="submit">✓ Mark all as seen</button></form>
           {% endif %}
           {% if not check_tasks %}<form method="post" action="/check/open"><button type="submit" title="Closed postings move to the Closed tab">⟳ Check they're still open</button></form>{% endif %}
-          <a href="/export.csv{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">⤓ Export CSV</a>
-          <a href="/export.xlsx{{ query(status=status, only_last=only_last, unseen=unseen, salary=salary, sort=sort, dir=dir) }}">⤓ Export XLSX</a>
+          <a href="/export.csv{{ f.url(limit='')[1:] }}">⤓ Export these as CSV</a>
+          <a href="/export.xlsx{{ f.url(limit='')[1:] }}">⤓ Export these as XLSX</a>
         </div>
       </details>
     </div>
+
+    {% if f.chips() %}
+    <div class="rchips">
+      {% for label, url in f.chips() %}<a class="fchip" data-nav href="{{ url }}" title="Remove this filter">{{ label }}<span aria-hidden="true">✕</span></a>{% endfor %}
+      {% if f.chips() | length > 1 %}<a class="fchip clear" data-nav href="{{ f.cleared() }}">Clear all</a>{% endif %}
+    </div>
+    {% endif %}
     {% for t in check_tasks %}{{ m.running(t) }}{% endfor %}
     {% for t in rating_tasks %}{{ m.running(t) }}{% endfor %}
 
-    {% if not rows %}
+    {% if not rows and not jobs_total and not f.narrowing and not f.status %}
+    <div class="empty onboarding">
+      <div class="empty-ico"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg></div>
+      <strong>Three steps to your first list of jobs</strong>
+      <ol class="steps">
+        <li class="{{ 'done' if profile_exists }}"><span class="n">{{ '✓' if profile_exists else '1' }}</span>
+          <div><b>Add your profile</b><p>Upload your CV or type it in, so jobs can be ranked against your skills.</p></div>
+          <a class="btn {{ 'secondary' if profile_exists }}" href="/profile">{{ 'Edit profile' if profile_exists else 'Set up profile' }}</a></li>
+        <li><span class="n">2</span>
+          <div><b>Say what you're looking for</b><p>Kind of job, countries, remote or not, seniority.</p></div>
+          <button class="secondary" type="button" data-open-settings>Search settings</button></li>
+        <li><span class="n">3</span>
+          <div><b>Find jobs</b><p>Searches the job boards and company career pages. Takes a minute or two.</p></div>
+          {% if current.id %}<form method="post" action="/searches/{{ current.id }}/run"><button type="submit" {% if run %}disabled{% endif %}>{{ 'Searching…' if run else 'Find new jobs' }}</button></form>{% endif %}</li>
+      </ol>
+      <p class="muted">Have a posting already? <a href="/add">Add a job by link or pasted text</a>.</p>
+    </div>
+    {% elif not rows %}
     <div class="empty">
       <div class="empty-ico"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
-      <strong>{% if q or where %}No jobs match these filters{% elif unseen %}Nothing new since you last looked{% elif status == 'closed' %}No closed postings{% else %}No jobs yet{% endif %}</strong>
-      <p class="muted">{% if q or where %}Try fewer words or another work mode.{% else %}Run a search to fill this list.{% endif %}</p>
+      <strong>{% if f.narrowing %}No jobs match these filters{% elif f.unseen %}Nothing new since you last looked{% elif f.status == 'closed' %}No closed postings{% elif f.status == 'liked' %}No liked jobs yet{% elif f.status == 'hidden' %}Nothing hidden{% else %}No jobs yet{% endif %}</strong>
+      <p class="muted">{% if f.narrowing %}Remove a filter above, or <a data-nav href="{{ f.cleared() }}">clear them all</a>.{% elif f.status == 'liked' %}Press the heart on a job to keep it here.{% elif f.unseen or f.status %}<a data-nav href="/">See all jobs</a>.{% else %}Run a search to fill this list.{% endif %}</p>
     </div>
     {% else %}
     <div class="job-list" id="job-list">
@@ -162,13 +264,14 @@
             {% if r.closed_at %}<span class="pill closed-pill" title="{{ r.closed_reason }}">closed</span>{% endif %}
           </div>
           <div class="jmeta">
-            <span class="co">{{ j.company }}</span>
+            <a class="co" data-nav href="{{ f.url(company=j.company) }}" title="Only jobs at {{ j.company }}">{{ j.company }}</a>
             {% if j.location %}<span class="sep">•</span><span>{{ j.location | truncate(48) }}</span>{% endif %}
             {% if j.remote %}<span class="mode m-remote">Remote</span>{% elif 'hybrid' in j.tags %}<span class="mode m-hybrid">Hybrid</span>{% endif %}
             <span class="sep">•</span><span class="src">{{ j.source }}</span>
             {% if seen_co %}<span class="pill company-note" title="Your earlier applications to {{ j.company }}">{{ seen_co }}</span>{% endif %}
           </div>
           <div class="jdetail">
+            {% if r.snippet %}<div class="jsnip">{{ r.snippet }}</div>{% endif %}
             {% if r.fit_data and (r.fit_data.strong or r.fit_data.missing) %}
             <div class="jtags">
               {% for x in r.fit_data.strong %}<span class="tag yes">✓ {{ x }}</span>{% endfor %}
@@ -188,15 +291,26 @@
           <div class="jwhen muted">{% if j.posted_at %}posted {{ j.posted_at[:10] }} · {% endif %}found {{ r.first_seen | ago }}</div>
         </div>
         <div class="jact">
-          <form method="post" action="/job/{{ j.id }}/status">
-            <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
-            <button class="secondary icon like {{ 'on' if r.status == 'liked' }}" name="status" value="liked" title="Like" aria-label="Like"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg></button>
+          <form method="post" action="/job/{{ j.id }}/status" data-inline>
+            <input type="hidden" name="back" value="{{ here }}">
+            {% if r.status == 'liked' %}
+            <button class="secondary icon like on" name="status" value="new" title="Liked. Click to undo" aria-label="Remove like" aria-pressed="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg></button>
+            {% else %}
+            <button class="secondary icon like" name="status" value="liked" title="Like: keep it under Liked" aria-label="Like" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg></button>
+            {% endif %}
           </form>
-          {{ m.hide_menu(j.id, hide_reasons, request.url.path ~ '?' ~ request.url.query) }}
+          {% if r.status == 'hidden' %}
+          <form method="post" action="/job/{{ j.id }}/status" data-inline><input type="hidden" name="back" value="{{ here }}">
+            <button class="secondary icon" name="status" value="new" title="Show this job again" aria-label="Unhide">↩</button></form>
+          {% else %}{{ m.hide_menu(j.id, hide_reasons, here) }}{% endif %}
         </div>
       </article>
     {% endfor %}
     </div>
+    {% if result.more_url %}
+    <div class="more-row"><a class="btn secondary" data-nav data-keep-scroll href="{{ result.more_url }}">Show {{ [fopt.PAGE_SIZE, result.total - result.shown] | min }} more</a>
+      <span class="muted">{{ result.shown }} of {{ result.total }}</span></div>
+    {% endif %}
     {% endif %}
   </section>
 </div>
@@ -527,84 +641,140 @@
 </script>
 
 <style>
-  /* hero */
-  .hero { display:grid; grid-template-columns:minmax(0, 1.6fr) minmax(280px, 1fr); gap:28px; align-items:center; padding:34px 36px; margin-bottom:22px;
-    border-radius:22px; background:var(--hero); border:1px solid var(--hero-line); position:relative; overflow:hidden; }
-  .hero h1 { font-size:clamp(28px, 3.4vw, 42px); line-height:1.08; letter-spacing:-.035em; font-weight:800; margin:10px 0 10px; }
-  .hero .grad { background:linear-gradient(90deg, #6d5efc, #a78bfa 55%, #38bdf8); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .hero .lead { color:var(--muted); font-size:15.5px; margin:0 0 20px; max-width:620px; }
-  .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--accent-soft-ink); background:color-mix(in srgb, var(--card) 70%, transparent);
-    border:1px solid var(--hero-line); padding:4px 12px; border-radius:999px; }
-  .eyebrow .dot { width:7px; height:7px; border-radius:50%; background:var(--good); }
-  .eyebrow .dot.live { background:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); animation:pulse 1.4s infinite; }
-  @keyframes pulse { 50% { box-shadow:0 0 0 7px transparent; } }
-  .hero-search { display:flex; gap:0; align-items:stretch; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px; box-shadow:var(--shadow-lg); max-width:720px; }
-  .hs-field { display:flex; align-items:center; gap:8px; margin:0; padding:0 12px; color:var(--muted); font-weight:400; font-size:14px; }
-  .hs-field svg { width:17px; height:17px; flex:none; }
-  .hs-q { flex:1; }
-  .hs-where { border-left:1px solid var(--line); }
-  .hero-search input[type=search], .hero-search select { border:0; background:transparent; box-shadow:none !important; padding:10px 2px; font-size:14.5px; color:var(--ink); }
-  .hero-search select { width:auto; cursor:pointer; }
-  .hero-search .cs-btn { border:0; background:transparent; box-shadow:none !important; padding:10px 2px; font-size:14.5px; }
-  .sort-sel .cs-btn { padding:7px 12px; font-size:13.5px; font-weight:550; }
-  .hero-search button { padding:10px 22px; border-radius:10px; }
-  .hero-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
-  .hero-actions form { margin:0; }
-  button.glow { box-shadow:0 10px 24px -10px var(--accent); }
-  .hero .running { margin-top:14px; background:color-mix(in srgb, var(--card) 70%, transparent); }
-  .hero-stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .hstat { display:flex; flex-direction:column; gap:2px; padding:14px 16px; border-radius:14px; color:inherit;
-    background:color-mix(in srgb, var(--card) 78%, transparent); border:1px solid var(--hero-line); backdrop-filter:blur(8px); transition:transform .12s, border-color .12s; }
-  .hstat:hover { text-decoration:none; transform:translateY(-1px); border-color:var(--accent); }
-  .hstat.wide { grid-column:1 / -1; }
-  .hstat .k { font-size:12px; color:var(--muted); font-weight:550; }
-  .hstat .v { font-size:24px; font-weight:750; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-  .hstat .sub { font-size:11.5px; color:var(--muted); }
-  .hstat.warn .v { color:var(--warn); }
-  @media (max-width:1100px) { .hero { grid-template-columns:1fr; } .hero-stats { grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); } .hstat.wide { grid-column:auto; } }
-  @media (max-width:640px) { .hero { padding:22px 18px; border-radius:16px; } .hero-search { flex-wrap:wrap; } .hs-where { border-left:0; border-top:1px solid var(--line); flex:1; } .hero-search button { width:100%; } }
+  .jobs-page .quick-search { visibility:hidden; }  /* this page has its own, larger search box */
 
-  /* layout */
-  .jobs-layout { display:grid; grid-template-columns:270px minmax(0, 1fr); gap:22px; align-items:start; }
-  @media (max-width:1000px) { .jobs-layout { grid-template-columns:1fr; } .filters { position:static !important; } }
-  .filters { position:sticky; top:calc(var(--head-h, 57px) + 16px); display:flex; flex-direction:column; gap:14px; }
-  .fcard { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
-  .fhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-  .fhead h3 { margin:0; font-size:16px; } .fhead a { font-size:12.5px; }
-  .fgroup { border-top:1px solid var(--line); padding:12px 0 6px; } .fgroup:first-of-type { border-top:0; }
-  .fgroup h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:650; }
-  .fopt { display:flex; align-items:center; gap:10px; padding:6px 6px; border-radius:8px; color:var(--ink); font-size:14px; }
-  .fopt:hover { background:var(--chip); text-decoration:none; }
-  .fopt .radio, .fopt .box { width:16px; height:16px; border:1.6px solid var(--line-strong); flex:none; display:grid; place-items:center; }
-  .fopt .radio { border-radius:50%; } .fopt .box { border-radius:5px; }
-  .fopt.on .radio { border-color:var(--accent); box-shadow:inset 0 0 0 3.5px var(--card); background:var(--accent); }
-  .fopt.on .box { border-color:var(--accent); background:var(--accent); }
-  .fopt.on .box::after { content:"✓"; color:#fff; font-size:11px; font-weight:800; }
-  .fsearch { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; color:var(--ink); font-size:14px; }
-  .fsearch:hover { background:var(--chip); text-decoration:none; }
-  .fsearch.on { background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:600; }
-  .fsearch .meta { font-size:11.5px; color:var(--muted); white-space:nowrap; }
-  .fsearch .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .fsearch.add { color:var(--accent); font-weight:550; }
+  /* page header: what you're searching for, the search box, the numbers */
+  .jhead { padding:24px 26px 20px; margin-bottom:20px; border-radius:20px; background:var(--hero); border:1px solid var(--hero-line); }
+  .jhead-top { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+  .jhead h1 { font-size:28px; letter-spacing:-.03em; font-weight:800; margin:0 0 2px; }
+  .jhead .lead { color:var(--muted); font-size:14.5px; margin:0; }
+  .jhead-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .jhead-actions form { margin:0; }
+  button.glow { box-shadow:0 10px 24px -10px var(--accent); }
+  .searches { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:16px; }
+  .searches-k { font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-right:4px; }
+  .spill { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; font-size:13.5px; font-weight:550; color:var(--ink);
+    background:color-mix(in srgb, var(--card) 75%, transparent); border:1px solid var(--hero-line); }
+  .spill:hover { text-decoration:none; border-color:var(--accent); }
+  .spill.on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:650; }
+  .spill small { font-size:11.5px; font-weight:500; opacity:.75; }
+  .spill .dot { width:7px; height:7px; border-radius:50%; background:var(--line-strong); }
+  .spill .dot.auto { background:var(--good); }
+  .spill.on .dot { background:currentColor; opacity:.8; }
+  .spill.add { color:var(--accent-soft-ink); border-style:dashed; background:transparent; }
+  .spill .spin { width:11px; height:11px; }
+  .searches-state { font-size:12.5px; color:var(--muted); margin-left:6px; }
+  .jhead .running { margin:14px 0 0; background:color-mix(in srgb, var(--card) 70%, transparent); }
+
+  .jsearch { position:relative; display:flex; align-items:center; gap:10px; margin-top:16px; padding:0 8px 0 16px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; box-shadow:var(--shadow-lg); transition:border-color .15s, box-shadow .15s; }
+  .jsearch:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft), var(--shadow-lg); }
+  .jsearch > svg { width:19px; height:19px; flex:none; color:var(--muted); }
+  .jsearch input[type=search] { flex:1; min-width:0; border:0; background:transparent; padding:14px 0; font:inherit; font-size:16px; color:var(--ink); }
+  .jsearch input[type=search]:focus { outline:none; box-shadow:none; }
+  .jsearch kbd { font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--muted); border:1px solid var(--line-strong); border-bottom-width:2px; border-radius:6px; padding:4px 7px; }
+  .jsearch:focus-within kbd { visibility:hidden; }
+  .qhelp { position:relative; }
+  .qhelp > summary { width:28px; height:28px; border-radius:50%; display:grid; place-items:center; cursor:pointer; color:var(--muted); font-weight:700; font-size:13px; border:1px solid var(--line); }
+  .qhelp > summary::before { display:none; }
+  .qhelp > summary:hover, .qhelp[open] > summary { color:var(--accent-soft-ink); background:var(--accent-soft); border-color:transparent; }
+  .qhelp-panel { position:absolute; right:0; top:calc(100% + 12px); z-index:15; width:min(400px, calc(100vw - 48px)); padding:14px 16px; background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow-lg); font-size:13px; }
+  .qhelp-panel dl { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:8px 0 0; }
+  .qhelp-panel dt { white-space:nowrap; } .qhelp-panel dd { margin:0; color:var(--muted); }
+  .qhelp-panel code, .jsnip mark { font-size:12.5px; }
+  .qhelp-panel code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; background:var(--chip); padding:1px 6px; border-radius:5px; color:var(--ink); }
+
+  .jstats { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; margin-top:14px; }
+  .hstat { display:flex; flex-direction:column; gap:1px; padding:10px 14px; border-radius:12px; color:inherit; min-width:0;
+    background:color-mix(in srgb, var(--card) 70%, transparent); border:1px solid var(--hero-line); transition:border-color .12s; }
+  .hstat:hover { text-decoration:none; border-color:var(--accent); }
+  .hstat .v { font-size:20px; font-weight:750; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .hstat .k { font-size:12px; color:var(--muted); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hstat.warn .v { color:var(--warn); }
+  @media (max-width:1100px) { .jstats { grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); } }
+  @media (max-width:640px) { .jhead { padding:18px 16px; border-radius:16px; } .jhead h1 { font-size:24px; } .jsearch kbd { display:none; } .jstats { grid-template-columns:1fr 1fr; } }
+
+  /* first run: nothing to search or filter yet, so only the steps show */
+  .first-run .jsearch, .first-run .jstats, .first-run .filters, .first-run .rtabs, .first-run .rbar { display:none; }
+  .jobs-layout.first-run { grid-template-columns:1fr; }
+
+  /* layout: filters beside the list */
+  .jobs-layout { display:grid; grid-template-columns:272px minmax(0, 1fr); gap:22px; align-items:start; transition:opacity .15s; }
+  .jobs-layout.loading .results { opacity:.55; }
+  .filters { position:sticky; top:calc(var(--head-h, 57px) + 16px); display:flex; flex-direction:column; gap:14px; max-height:calc(100vh - var(--head-h, 57px) - 32px); overflow-y:auto; scrollbar-width:thin; }
+  .fcard { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow); margin:0; }
+  .fhead { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; }
+  .fhead h3 { margin:0; font-size:16px; flex:1; } .fhead a { font-size:12.5px; font-weight:600; }
+  .fcount { display:inline-grid; place-items:center; min-width:19px; height:19px; padding:0 6px; border-radius:999px; background:var(--accent); color:var(--accent-ink); font-size:11px; font-weight:700; vertical-align:2px; }
+  .filters-close, .filters-toggle { display:none; }
+  .fgroup { border:0; border-top:1px solid var(--line); margin:0; padding:12px 0 8px; min-width:0; }
+  .fgroup:first-of-type { border-top:0; }
+  .fgroup legend, .fmore > summary, .fside h4 { padding:0; margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:650; }
+  .fgroup legend { float:left; width:100%; } .fgroup legend + * { clear:both; }
+  .fmore > summary { cursor:pointer; margin:0; display:flex; align-items:center; gap:6px; }
+  .fmore[open] > summary { margin-bottom:6px; }
+  .fopt { display:flex; align-items:center; gap:10px; margin:0; padding:5px 6px; border-radius:8px; color:var(--ink); font-size:14px; font-weight:450; cursor:pointer; }
+  .fopt:hover { background:var(--chip); }
+  .fopt input { position:absolute; opacity:0; pointer-events:none; }
+  .fopt .box { width:16px; height:16px; border:1.6px solid var(--line-strong); border-radius:5px; flex:none; display:grid; place-items:center; transition:background .12s, border-color .12s; }
+  .fopt input:checked + .box { border-color:var(--accent); background:var(--accent); }
+  .fopt input:checked + .box::after { content:"✓"; color:#fff; font-size:11px; font-weight:800; line-height:1; }
+  .fopt input:focus-visible + .box { outline:2px solid var(--accent); outline-offset:2px; }
+  .fopt:has(input:checked) .lbl { font-weight:600; }
+  .fopt .lbl { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fopt .n { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .fnone { font-size:13px; color:var(--muted); margin:0; }
+  .fseg { display:flex; background:var(--chip); padding:3px; border-radius:10px; gap:2px; margin-bottom:4px; }
+  .fseg label { flex:1; margin:0; padding:5px 0; border-radius:8px; text-align:center; font-size:13px; font-weight:550; color:var(--muted); cursor:pointer; }
+  .fseg label:has(input:checked) { background:var(--card); color:var(--ink); font-weight:650; box-shadow:var(--shadow); }
+  .fseg input { position:absolute; opacity:0; pointer-events:none; }
+  .fseg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:1px; }
+  .fline { display:flex; align-items:center; gap:8px; margin:4px 0 0; padding:0 6px; font-size:13.5px; font-weight:450; color:var(--ink); white-space:nowrap; }
+  .fline.col { flex-direction:column; align-items:stretch; white-space:normal; gap:4px; }
+  .fline output { font-weight:700; color:var(--accent-soft-ink); }
+  .fline select { flex:1; }
+  .fline .cs { flex:1; min-width:0; } .fline .cs-btn { padding:6px 10px; font-size:13.5px; }
+  .fline input[type=range] { width:100%; accent-color:var(--accent); margin:2px 0 6px; }
+  .ftags { display:flex; flex-wrap:wrap; gap:5px; }
+  .ftag { display:inline-flex; align-items:center; gap:6px; margin:0; padding:3px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); font-size:12.5px; font-weight:550; color:var(--ink); cursor:pointer; user-select:none; }
+  .ftag small { font-size:11px; color:var(--muted); font-weight:500; }
+  .ftag input { position:absolute; opacity:0; pointer-events:none; }
+  .ftag:hover { border-color:var(--accent); }
+  .ftag:has(input:checked) { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .ftag:has(input:checked) small { color:inherit; opacity:.8; }
+  .ftag:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
+  .fside h4 { margin-bottom:2px; } .fside p { margin:0 0 8px; font-size:12.5px; }
   .fchips { display:flex; flex-wrap:wrap; }
-  .promo { border-radius:var(--radius); padding:18px; background:var(--hero); border:1px solid var(--hero-line); text-align:center; }
-  .promo-ico { width:44px; height:44px; border-radius:12px; margin:0 auto 10px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg, #6d5efc, #a78bfa); box-shadow:0 10px 20px -10px #6d5efc; }
-  .promo strong { display:block; font-size:15px; margin-bottom:4px; }
-  .promo p { font-size:13px; color:var(--muted); margin:0 0 12px; }
+  @media (max-width:1000px) {
+    .jobs-layout { grid-template-columns:1fr; }
+    .filters-toggle { display:inline-flex; padding:7px 12px; font-size:13.5px; }
+    .filters { display:none; position:fixed; inset:0 auto 0 0; z-index:60; width:min(340px, 92vw); max-height:none; top:0; padding:14px; background:var(--bg); box-shadow:var(--shadow-lg); }
+    .filters-open .filters { display:flex; }
+    .filters-open::before { content:""; position:fixed; inset:0; z-index:55; background:rgba(8,8,20,.45); }
+    .filters-close { display:inline-grid; }
+  }
 
   /* results */
   .rtabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:12px; overflow-x:auto; scrollbar-width:none; }
   .rtabs a { padding:10px 14px; color:var(--muted); font-weight:550; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; display:inline-flex; gap:6px; align-items:center; }
   .rtabs a:hover { color:var(--ink); text-decoration:none; }
   .rtabs a.on { color:var(--ink); font-weight:650; border-bottom-color:var(--accent); }
+  .rtabs a.ext { font-size:13px; font-weight:500; }
+  .rtabs .spacer { flex:1; }
   .rtabs .tb { font-size:11.5px; font-weight:650; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent-soft-ink); }
-  .rbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .rtabs .tb.plain { background:var(--chip); color:var(--muted); }
+  .rbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
   .rcount { font-size:15px; }
-  .fchip { font-size:12.5px; padding:3px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:550; }
-  .fchip:hover { text-decoration:none; filter:brightness(.97); }
   .rbar .spacer { flex:1; }
+  .rchips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .fchip { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; padding:4px 8px 4px 11px; border-radius:999px; background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:600; }
+  .fchip span { font-size:10px; opacity:.65; }
+  .fchip:hover { text-decoration:none; background:color-mix(in srgb, var(--accent) 18%, var(--accent-soft)); } .fchip:hover span { opacity:1; }
+  .fchip.clear { background:transparent; color:var(--muted); padding:4px 8px; }
+  .fchip.clear:hover { color:var(--ink); background:var(--chip); }
   .sort-sel { display:flex; align-items:center; gap:8px; margin:0; font-size:13px; color:var(--muted); font-weight:500; }
   .sort-sel select { width:auto; padding:7px 30px 7px 12px; font-size:13.5px; font-weight:550; }
+  .sort-sel .cs-btn { padding:7px 12px; font-size:13.5px; font-weight:550; }
   .seg-icons { display:flex; gap:4px; }
   .seg-icons button.on { background:var(--accent-soft); color:var(--accent-soft-ink); border-color:var(--accent); }
   .actions-menu > summary.btn { padding:7px 12px; font-size:13.5px; }
@@ -614,8 +784,8 @@
 
   .job-list { display:flex; flex-direction:column; gap:10px; }
   .jcard { position:relative; display:grid; grid-template-columns:52px minmax(0, 1fr) auto auto; gap:16px; align-items:start; padding:16px 18px;
-    background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); transition:border-color .12s, box-shadow .12s, transform .12s; }
-  .jcard:hover { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow:var(--shadow-lg); }
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); transition:border-color .12s, box-shadow .12s; }
+  .jcard:hover, .jcard:focus-within { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow:var(--shadow-lg); }
   .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent), var(--shadow); }
   .jlogo img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; padding:7px; background:#fff; border-radius:inherit; opacity:0; transition:opacity .2s; }
   .jlogo.has-img img { opacity:1; }
@@ -626,10 +796,12 @@
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jlogo { color:hsl(var(--h) 85% 75%); background:hsl(var(--h) 45% 14%); border-color:hsl(var(--h) 40% 22%); } }
   .jtitle { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; }
   .jtitle a { font-size:16px; font-weight:700; color:var(--ink); letter-spacing:-.01em; }
+  .jcard:hover .jtitle a { color:var(--accent-soft-ink); text-decoration:none; }
   .jtitle .pill { margin:0; }
   a.stretched::after { content:""; position:absolute; inset:0; border-radius:inherit; }
   .jmeta { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; color:var(--muted); font-size:13.5px; margin-top:3px; }
-  .jmeta .co { color:var(--ink); font-weight:550; }
+  .jmeta a.co { position:relative; z-index:2; color:var(--ink); font-weight:550; }
+  .jmeta a.co:hover { color:var(--accent); }
   .jmeta .sep { opacity:.5; }
   .jmeta .src { font-size:12px; }
   .jmeta .pill { margin:0; }
@@ -637,6 +809,8 @@
   .mode::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
   .m-remote { background:var(--good-soft); color:var(--good); } .m-hybrid { background:var(--accent-soft); color:var(--accent-soft-ink); }
   .jdetail:empty { display:none; }
+  .jsnip { font-size:13px; color:var(--muted); margin-top:7px; max-width:760px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .jsnip mark { background:var(--warn-soft); color:var(--warn); font-weight:650; border-radius:3px; padding:0 2px; font-size:inherit; }
   .jtags { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
   .tag { font-size:12px; font-weight:550; padding:2px 9px; border-radius:7px; background:var(--chip); color:var(--ink); }
   .tag.yes { background:var(--good-soft); color:var(--good); } .tag.gap { background:var(--bad-soft); color:var(--bad); }
@@ -655,29 +829,41 @@
   .jact form { margin:0; }
   .jact button.icon, .jact summary.icon { width:34px; height:34px; border-radius:10px; }
   button.like.on { color:#e11d48; border-color:#e11d48; }
+  .more-row { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:16px; }
   .empty { text-align:center; padding:48px 20px; background:var(--card); border:1px dashed var(--line-strong); border-radius:var(--radius); }
   .empty-ico { width:56px; height:56px; border-radius:16px; margin:0 auto 12px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); }
   .empty strong { display:block; font-size:16px; margin-bottom:4px; }
+  .onboarding { padding:36px 24px; }
+  .onboarding > strong { font-size:18px; margin-bottom:16px; }
+  ol.steps { list-style:none; margin:0 auto 16px; padding:0; max-width:640px; text-align:left; display:flex; flex-direction:column; gap:10px; }
+  ol.steps li { display:flex; align-items:center; gap:14px; padding:12px 14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--sunken); }
+  ol.steps li > div { flex:1; min-width:0; } ol.steps p { margin:0; font-size:13px; color:var(--muted); }
+  ol.steps form { margin:0; }
+  ol.steps .n { width:28px; height:28px; border-radius:50%; flex:none; display:grid; place-items:center; font-weight:700; font-size:13px; background:var(--accent-soft); color:var(--accent-soft-ink); }
+  ol.steps li.done .n { background:var(--good-soft); color:var(--good); }
+  @media (max-width:560px) { ol.steps li { flex-wrap:wrap; } }
   @media (max-width:760px) {
     .jcard { grid-template-columns:44px minmax(0, 1fr) auto; }
     .jlogo { width:44px; height:44px; font-size:15px; }
-    .jside { grid-column:2 / -1; align-items:flex-start; text-align:left; flex-direction:row; flex-wrap:wrap; align-items:center; min-width:0; }
+    .jside { grid-column:2 / -1; text-align:left; flex-direction:row; flex-wrap:wrap; align-items:center; min-width:0; }
     .jact { grid-row:1; grid-column:3; flex-direction:row; }
+    .rtabs a.ext { display:none; }
   }
   /* compact: one line per job */
-  .job-list.compact { gap:0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); }
-  .job-list.compact .jcard { align-items:center; border:0; border-bottom:1px solid var(--line); border-radius:0; box-shadow:none; padding:9px 14px; grid-template-columns:34px minmax(0, 1fr) auto auto; gap:12px; }
-  .job-list.compact .jcard:last-child { border-bottom:0; }
-  .job-list.compact .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent); }
-  .job-list.compact .jlogo { width:34px; height:34px; border-radius:9px; font-size:12px; }
-  .job-list.compact .jlogo img { padding:4px; }
-  .job-list.compact .jdetail, .job-list.compact .jwhen, .job-list.compact .jsal small { display:none; }
-  .job-list.compact .jtitle a { font-size:14.5px; }
-  .job-list.compact .jmeta { margin-top:0; font-size:12.5px; }
-  .job-list.compact .jside { flex-direction:row; align-items:center; min-width:0; gap:12px; }
-  .job-list.compact .kw .ring { width:30px; height:30px; font-size:10.5px; }
-  .job-list.compact .jact { flex-direction:row; }
-  .job-list.compact .jact button.icon, .job-list.compact .jact summary.icon { width:30px; height:30px; }
+  .compact .job-list { gap:0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); }
+  .compact .jcard { align-items:center; border:0; border-bottom:1px solid var(--line); border-radius:0; box-shadow:none; padding:9px 14px; grid-template-columns:34px minmax(0, 1fr) auto auto; gap:12px; }
+  .compact .jcard:last-child { border-bottom:0; }
+  .compact .jcard:hover { background:var(--sunken); }
+  .compact .jcard.unseen { box-shadow:inset 3px 0 0 var(--accent); }
+  .compact .jlogo { width:34px; height:34px; border-radius:9px; font-size:12px; }
+  .compact .jlogo img { padding:4px; }
+  .compact .jdetail, .compact .jwhen, .compact .jsal small { display:none; }
+  .compact .jtitle a { font-size:14.5px; }
+  .compact .jmeta { margin-top:0; font-size:12.5px; }
+  .compact .jside { flex-direction:row; align-items:center; min-width:0; gap:12px; }
+  .compact .kw .ring { width:30px; height:30px; font-size:10.5px; }
+  .compact .jact { flex-direction:row; }
+  .compact .jact button.icon, .compact .jact summary.icon { width:30px; height:30px; }
   .pill.closed-pill { background:var(--bad-soft); color:var(--bad); }
 
   .lower { margin-top:26px; display:grid; gap:0; }
@@ -692,22 +878,125 @@
 </style>
 <script>
   (() => {
-    const list = document.getElementById("job-list");
-    const buttons = document.querySelectorAll("[data-density]");
+    const view = document.getElementById("jobs-view");
+    const qBox = document.getElementById("job-q");
+    const header = document.querySelector("header.topbar");
+    if (header) document.documentElement.style.setProperty("--head-h", header.offsetHeight + "px");
+
+    // Density is a class on the view itself, so it survives the list being replaced.
     let density = "comfortable";
     try { density = localStorage.getItem("jobs-density") || density; } catch (e) {}
-    function apply(d) {
-      if (list) list.classList.toggle("compact", d === "compact");
-      buttons.forEach(b => b.classList.toggle("on", b.dataset.density === d));
+    function applyDensity() {
+      view.classList.toggle("compact", density === "compact");
+      view.querySelectorAll("[data-density]").forEach(b => b.classList.toggle("on", b.dataset.density === density));
     }
-    buttons.forEach(b => b.addEventListener("click", () => {
-      apply(b.dataset.density);
-      try { localStorage.setItem("jobs-density", b.dataset.density); } catch (e) {}
-    }));
-    apply(density);
+
+    // Filters, tabs, sort and "show more" replace the list in place instead of reloading the page.
+    let request = null;
+    const openGroups = () => Object.fromEntries([...view.querySelectorAll("details[data-key]")].map(d => [d.dataset.key, d.open]));
+    function render(html, url, { push = true, keepScroll = true } = {}) {
+      const next = new DOMParser().parseFromString(html, "text/html").getElementById("jobs-view");
+      if (!next) { location.href = url; return; }
+      const active = document.activeElement, groups = openGroups(), filterScroll = view.querySelector(".filters")?.scrollTop || 0;
+      const focusKey = view.contains(active) && active.name ? [active.name, active.value, active.type] : null;
+      view.innerHTML = next.innerHTML;
+      view.querySelectorAll("details[data-key]").forEach(d => { if (groups[d.dataset.key]) d.open = true; });
+      window.enhanceSelects?.(view);
+      applyDensity();
+      const filters = view.querySelector(".filters");
+      if (filters) filters.scrollTop = filterScroll;
+      if (focusKey) {
+        const again = [...view.querySelectorAll(`[name="${CSS.escape(focusKey[0])}"]`)].find(el => el.type !== "checkbox" && el.type !== "radio" || el.value === focusKey[1]);
+        (again?.closest(".cs")?.querySelector(".cs-btn") || again)?.focus({ preventScroll: true });
+      }
+      if (push) history.pushState({ jobs: true }, "", url);
+      if (!keepScroll) {
+        const top = view.getBoundingClientRect().top + scrollY - (header?.offsetHeight || 0) - 12;
+        if (scrollY > top) scrollTo({ top });
+      }
+    }
+    async function go(url, options = {}) {
+      request?.abort();
+      request = new AbortController();
+      view.classList.add("loading");
+      try {
+        const res = await fetch(url, { signal: request.signal, method: options.method || "GET", body: options.body });
+        if (!res.ok) throw new Error(res.status);
+        render(await res.text(), options.method ? res.url : url, options);
+      } catch (e) {
+        if (e.name === "AbortError") return;
+        if (options.method) location.reload(); else location.href = url;
+      } finally { view.classList.remove("loading"); }
+    }
+
+    // The filter form's address: only what is set, and no sort when it is the natural one.
+    function formUrl() {
+      const form = document.getElementById("filter-form");
+      const params = new URLSearchParams();
+      for (const [k, v] of new FormData(form)) if (String(v).trim() && !(k === "score" && v === "0")) params.append(k, String(v).trim());
+      const natural = params.get("q") ? "relevance" : "match";
+      const before = new URLSearchParams(location.search);
+      // A new or removed word goes back to the natural order; picking a sort by hand keeps it.
+      if (params.get("sort") === natural || (params.get("q") || "") !== (before.get("q") || "") && !before.get("sort")) params.delete("sort");
+      const s = params.toString();
+      return s ? "/?" + s : "/";
+    }
+    const submit = (options) => go(formUrl(), { keepScroll: false, ...options });
+
+    let typing = 0;
+    document.addEventListener("change", e => {
+      if (e.target.form?.id !== "filter-form" || e.target === qBox) return;
+      submit();
+    });
+    qBox.addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => submit({ keepScroll: true }), 250); });
+    qBox.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); clearTimeout(typing); submit(); }
+      else if (e.key === "Escape" && qBox.value) { e.preventDefault(); qBox.value = ""; clearTimeout(typing); submit(); }
+    });
+    document.addEventListener("submit", e => {
+      if (e.target.id === "filter-form") { e.preventDefault(); submit(); }
+      else if (e.target.matches("#jobs-view form[data-inline]")) {
+        // Like, unlike, hide: send it and redraw the list where you are.
+        e.preventDefault();
+        e.target.closest("details")?.removeAttribute("open");
+        e.target.closest(".jcard")?.classList.add("leaving");
+        go(e.target.action, { method: "POST", body: new URLSearchParams(new FormData(e.target, e.submitter)), push: false });
+      }
+    });
+    view.addEventListener("click", e => {
+      const density_ = e.target.closest("[data-density]");
+      if (density_) {
+        density = density_.dataset.density;
+        try { localStorage.setItem("jobs-density", density); } catch (err) {}
+        return applyDensity();
+      }
+      if (e.target.closest("[data-filters-toggle]")) return view.classList.toggle("filters-open");
+      if (view.classList.contains("filters-open") && !e.target.closest(".filters")) return view.classList.remove("filters-open");
+      const link = e.target.closest("a[data-nav]");
+      if (!link || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      e.preventDefault();
+      const url = new URL(link.href);
+      if (!url.searchParams.has("q")) qBox.value = "";
+      go(url.pathname + url.search, { keepScroll: link.hasAttribute("data-keep-scroll") });
+    });
+    addEventListener("popstate", () => {
+      qBox.value = new URLSearchParams(location.search).get("q") || "";
+      go(location.pathname + location.search, { push: false });
+    });
+
+    // "/" jumps to the search box; the tips close on a click elsewhere.
+    document.addEventListener("keydown", e => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target.closest("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
+      e.preventDefault(); qBox.focus(); qBox.select();
+    });
+    const tips = document.querySelector(".qhelp");
+    document.addEventListener("click", e => { if (tips.open && !tips.contains(e.target)) tips.open = false; });
+
+    applyDensity();
 
     const dlg = document.getElementById("search-settings");
-    document.querySelectorAll("[data-open-settings]").forEach(b => b.addEventListener("click", () => dlg.showModal()));
+    document.addEventListener("click", e => { if (e.target.closest("[data-open-settings]")) dlg.showModal(); });
     dlg.querySelector("[data-close-settings]").addEventListener("click", () => dlg.close());
     dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
     if (dlg.hasAttribute("data-open")) dlg.showModal();
