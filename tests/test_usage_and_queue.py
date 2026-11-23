@@ -130,3 +130,27 @@ def test_reminders_are_emailed_in_server_mode():
         tasks.notify("Time to follow up on 2 applications", "Acme, Globex", url="/pipeline#follow-ups", email=True)
     mails = [m for m in outbox() if m["to"] == account["email"] and "follow up" in m["subject"]]
     assert mails and "http://testserver/pipeline#follow-ups" in mails[-1]["text"]
+
+
+def test_the_worker_process_knows_every_runner(tmp_path):
+    """`python -m cvmaker.worker` runs the queue in server deployments, in a process that never serves a page: it
+    must still register every runner, or the tasks the web process queues fail there as unknown."""
+    import os
+    import re
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    import cvmaker
+
+    submitted = set()
+    for path in Path(cvmaker.__file__).parent.glob("*.py"):
+        submitted |= set(re.findall(r"tasks\.submit\(\s*[^,]+,\s*[^,]+?,\s*\"([\w-]+)\"", path.read_text(), re.S))
+    env = {**os.environ, "CVMAKER_DATA": str(tmp_path), "DATABASE_URL": f"sqlite:///{tmp_path / 'central.db'}"}
+    out = subprocess.run(
+        [sys.executable, "-c", "import cvmaker.worker, cvmaker.tasks as t; print(' '.join(sorted(t._RUNNERS)))"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert out.returncode == 0, out.stderr
+    known = set(out.stdout.split())
+    assert submitted and not submitted - known, submitted - known

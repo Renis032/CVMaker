@@ -10,6 +10,7 @@ import argparse
 import signal
 import threading
 
+from . import app as _app  # noqa: F401 - importing the web app registers every task runner (most live beside their routes)
 from . import auto, tasks
 
 
