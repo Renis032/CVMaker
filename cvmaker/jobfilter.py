@@ -353,7 +353,7 @@ def apply(rows: list[dict], f: Filters) -> Result:
 
     def count(key: str, values) -> dict[str, int]:
         counts: dict[str, int] = {}
-        for row, x, _ in passing(key):
+        for _row, x, _ in passing(key):
             for v in values(x):
                 counts[v] = counts.get(v, 0) + 1
         return counts

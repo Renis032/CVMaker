@@ -1157,7 +1157,7 @@ def interview_page(request: Request, job_id: str = ""):
 
 @app.post("/interview/questions")
 def interview_questions(job_id: str = Form("")):
-    profile = _need_profile()
+    _need_profile()
     job = db.get_job(job_id)[0] if job_id else None
     url = f"/interview?job_id={job_id}" if job_id else "/interview"
 
@@ -1249,7 +1249,7 @@ def roles_delete(role_id: str):
 
 @app.post("/roles/{role_id}/cv")
 def roles_cv(role_id: str, instructions: str = Form(""), one_page: bool = Form(False), font: str = Form("auto")):
-    profile = _need_profile()
+    _need_profile()
     role = roles.get_role(role_id)
     if not role:
         return _back("/roles")

@@ -13,7 +13,6 @@ from urllib.parse import quote, urlencode
 import httpx
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
 from . import accounts, autostart, backup, billing, central, keys, mailer, people, security, settings, telegram, usage

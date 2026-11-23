@@ -184,7 +184,7 @@ def _worker_loop() -> None:
 
 
 def start_workers(count: int) -> None:
-    for i in range(count - len(_workers)):
+    for _ in range(count - len(_workers)):
         t = threading.Thread(target=_worker_loop, name=f"cvmaker-task-{len(_workers) + 1}", daemon=True)
         t.start()
         _workers.append(t)

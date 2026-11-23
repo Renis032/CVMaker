@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra server
+      - run: uv run ruff check
+      # ubuntu-latest ships Google Chrome, so the PDF export tests run too.
+      - run: uv run pytest -q
+
+  editor:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      # The built editor is committed (running the app needs no Node), so it must match editor/src.
+      - name: Built editor is up to date
+        run: git diff --exit-code -- ../cvmaker/static/editor

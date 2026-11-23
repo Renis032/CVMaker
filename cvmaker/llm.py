@@ -239,7 +239,7 @@ def _ask_api_json(system: str, content: list[dict], schema: type[T], effort: str
               f"exactly (every property present; use \"\" or [] when there is nothing):\n{spec}")
     messages: list[dict] = [{"role": "user", "content": content}]
     for attempt in range(2):
-        response = _call(lambda c: c.beta.messages.create(
+        response = _call(lambda c, messages=messages: c.beta.messages.create(
             model=model, max_tokens=32000, system=system, messages=messages, output_config={"effort": effort},
             betas=[FALLBACK_BETA], fallbacks="default",
         ))

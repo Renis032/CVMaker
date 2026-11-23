@@ -15,10 +15,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     CVMAKER_TASK_WORKERS=0 CVMAKER_CHROME_NO_SANDBOX=1
 
 WORKDIR /app
+# Install exactly what uv.lock pins (not whatever versions pip resolves on build day).
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PATH="/opt/venv/bin:$PATH"
 COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --extra server --no-install-project
 COPY cvmaker ./cvmaker
 COPY companies.yaml ./
-RUN pip install --no-cache-dir ".[server]"
+RUN uv sync --frozen --no-dev --extra server --no-editable
 
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 cvmaker && mkdir -p /data && chown cvmaker /data
