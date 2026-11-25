@@ -1,15 +1,21 @@
 """The CV editor round trip, PDF export, data export and deleting an account."""
 
 import io
-import shutil
 import zipfile
 
 import pytest
 from conftest import client, new_user
 
-from cvmaker import accounts, people, settings
+from cvmaker import accounts, people, web_fetch
 
-needs_chrome = pytest.mark.skipif(not shutil.which(settings.CHROME_BIN), reason="Chrome not installed")
+def _has_chrome() -> bool:
+    try:
+        return bool(web_fetch.chrome_bin())
+    except web_fetch.ChromeMissing:
+        return False
+
+
+needs_chrome = pytest.mark.skipif(not _has_chrome(), reason="no Chromium-based browser installed")
 
 
 def test_editor_round_trip(user):

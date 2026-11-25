@@ -8,9 +8,10 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
-from . import assistant, db, editor, pack, people, render, roles, settings, tasks, uploads
+from . import assistant, db, editor, history, linkedin, pack, people, render, roles, settings, tasks, uploads
 from .llm import LLMError
 from .models import (
+    Criteria,
     InterviewQuestions,
     Profile,
     RoleProfile,
@@ -45,6 +46,8 @@ def profile_page(request: Request, error: str = "", backup_error: str = "", rest
         imported_at=editor.load_layout().get("imported_at") if editor.exists() else None,
         cveditor_path=str(editor.CVEDITOR_DATA).replace(str(Path.home()), "~"),
         import_report=db.cache_get("editor:import-report", 24 * 30),
+        linkedin_report=db.cache_get(LINKEDIN_REPORT, 24 * 7),
+        linkedin_search=_linkedin_search(),
         history_items=[{**h, **history.summary(h["id"])} for h in history.list_snapshots()[:12]],
         history_total=len(history.list_snapshots()),
         backups=backup.list_backups(),
@@ -82,6 +85,96 @@ def _import_cv(progress, stored: str, name: str) -> str:
     assistant.save_profile(assistant.import_cv(data, name))
     uploads.drop(stored)
     return "/profile"
+
+
+LINKEDIN_REPORT = "linkedin:import-report"
+LINKEDIN_WISHES = "linkedin:job-seeker"  # the job-seeker settings, until you apply them to a search or say no
+LINKEDIN_MAX_MB = 100  # the full archive (with messages and media) is bigger than a CV; only its CSVs are read
+
+
+@router.post("/profile/import-linkedin")
+async def profile_import_linkedin(export: list[UploadFile] = File(...)):
+    """LinkedIn's data export (the zip of CSVs, or CSVs from it), read without Claude and added to the profile
+    (see linkedin.py)."""
+    try:
+        files = []
+        for upload in export[:100]:
+            data = await uploads.read(upload, kinds={"zip", "txt"}, limit=LINKEDIN_MAX_MB * 1024 * 1024)
+            if uploads.sniff(data) == "zip":
+                uploads.check_zip(data)
+            files.append((Path(upload.filename or "export.zip").name, data))
+        profile, report, wishes = linkedin.import_export(files, assistant.load_profile())
+    except (uploads.UploadError, linkedin.LinkedInError) as e:
+        return _back("/profile?error=" + quote(str(e)))
+    history.snapshot("Before the LinkedIn import", force=True)
+    assistant.save_profile(profile)
+    db.cache_put(LINKEDIN_REPORT, report)
+    if wishes.titles or wishes.locations or wishes.remote:
+        db.cache_put(LINKEDIN_WISHES, wishes.model_dump())
+    else:
+        db.cache_delete(LINKEDIN_WISHES)
+    return _back("/profile#linkedin")
+
+
+@router.post("/profile/import-linkedin/dismiss")
+def profile_import_linkedin_dismiss():
+    db.cache_delete(LINKEDIN_REPORT)
+    db.cache_delete(LINKEDIN_WISHES)
+    return _back("/profile#linkedin")
+
+
+def _linkedin_search() -> dict | None:
+    """The changes LinkedIn's job-seeker settings would make to the search you use, for the profile page to offer
+    (None when there's nothing to offer)."""
+    from . import auto
+
+    cached = db.cache_get(LINKEDIN_WISHES, 24 * 7)
+    if not cached:
+        return None
+    search = auto.active_search()
+    changes = linkedin.search_changes(linkedin.Wishes.model_validate(cached), search.criteria)
+    return {"search": search, "changes": changes}
+
+
+@router.post("/profile/import-linkedin/search")
+def profile_import_linkedin_search(
+    action: str = Form("apply"),
+    titles: list[str] = Form([]),
+    countries: list[str] = Form([]),
+    remote: bool = Form(False),
+    unexclude: list[str] = Form([]),
+):
+    """Apply the ticked job-seeker settings to the search you use, or save all of them as a new search ('new').
+    Nothing changes on 'skip'. Either way the offer goes away."""
+    from . import auto
+    from .auto import SavedSearch
+
+    cached = db.cache_get(LINKEDIN_WISHES, 24 * 7)
+    db.cache_delete(LINKEDIN_WISHES)
+    if not cached or action == "skip":
+        return _back("/profile#linkedin")
+    w = linkedin.Wishes.model_validate(cached)
+    if action == "new":
+        criteria = linkedin.apply_changes(Criteria(countries=[]), linkedin.search_changes(w, Criteria(countries=[])))
+        criteria.countries = criteria.countries or Criteria().countries  # the default country only when LinkedIn names none
+        search = auto.save_search(SavedSearch(id="", name="From LinkedIn", criteria=criteria))
+    else:
+        search = auto.active_search()
+        offered = linkedin.search_changes(w, search.criteria)
+        ticked = linkedin.SearchChanges(  # only what was offered: the form can't add anything else
+            titles=[t for t in offered.titles if t in titles],
+            countries=[c for c in offered.countries if c in countries],
+            remote=offered.remote and remote,
+            unexclude=[x for x in offered.unexclude if x in unexclude],
+        )
+        if ticked.empty():
+            return _back("/profile#linkedin")
+        search.criteria = linkedin.apply_changes(search.criteria, ticked)
+        auto.save_search(search)
+    prefs = auto.load_prefs()
+    prefs.active_search = search.id
+    auto.save_prefs(prefs)
+    return _back(f"/?search={search.id}")
 
 
 @router.post("/profile/photo")

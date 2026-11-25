@@ -1,7 +1,8 @@
 """Company logos for the job list: the company's own site icon, found once and kept on disk.
 
 The domain comes from the job's link when that is the company's own site, else from your company list, else a
-guess from the name (checked: an icon service has to know the domain). Misses are remembered too, so a company is
+guess from the name. A guessed domain only counts when its home page names the company (title or site name), so
+"Northstar Bank" never gets the icon of whoever owns northstar.com. Misses are remembered too, so a company is
 looked up at most once a month. Only the domain is sent out (to the company's site and DuckDuckGo's icon service).
 """
 
@@ -28,6 +29,9 @@ NOISE = {"bulgaria", "eood", "ood", "ad", "ltd", "llc", "inc", "gmbh", "plc", "s
          "corp", "corporation", "limited", "holding", "holdings", "international", "global", "technologies", "technology",
          "digital", "solutions", "services", "centre", "center", "software", "labs", "development", "and", "&"}
 RETRY_AFTER = 30 * 86400
+# Index entries from before guessed domains were checked carry no version and are looked up again.
+INDEX_VERSION = 2
+HOME_PAGE_BYTES = 1_500_000  # some sites inline ~1 MB of styles before <title>
 TIMEOUT = 4.0
 _lock = threading.Lock()
 
@@ -104,6 +108,51 @@ def _guesses(company: str, tld_hint: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _site_names(html: str) -> list[str]:
+    """What a home page calls itself: its title, og:site_name and application-name."""
+    names = re.findall(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)[:1]
+    for prop in ("og:site_name", "application-name", "og:title"):
+        for tag in re.findall(r"<meta\b[^>]*>", html, re.I):
+            if re.search(rf"""(?:property|name)\s*=\s*["']{prop}["']""", tag, re.I):
+                m = re.search(r"""content\s*=\s*["']([^"']*)["']""", tag, re.I)
+                if m:
+                    names.append(m.group(1))
+    return names
+
+
+def names_company(company: str, html: str) -> bool:
+    """True when the page calls itself by the company's name: every word of the name (minus legal-form and filler
+    words) appears in its title or site name, either as words or run together ("Helix Cloud" ~ "HelixCloud")."""
+    wanted = [w for w in _words(company) if w not in NOISE] or _words(company)
+    if not wanted:
+        return False
+    for name in _site_names(html):
+        words = _words(name)
+        if all(w in words for w in wanted) or "".join(wanted) in "".join(words):
+            return True
+    return False
+
+
+def _home_page_names(domain: str, company: str, c: httpx.Client) -> bool:
+    try:
+        with c.stream("GET", f"https://{domain}/") as r:
+            # Bot checks (403, 429, 503) usually still carry the site's name in their title.
+            if r.status_code not in (200, 403, 429, 503) or "html" not in r.headers.get("content-type", ""):
+                return False
+            body = b""
+            for chunk in r.iter_bytes():
+                body += chunk
+                if len(body) >= HOME_PAGE_BYTES or b"</head>" in body[-len(chunk) - 7:].lower():
+                    break
+    except (httpx.HTTPError, web_fetch.BlockedURL):
+        return False
+    return names_company(company, body.decode(r.encoding or "utf-8", "replace"))
+
+
 def _is_image(r: httpx.Response) -> bool:
     kind = r.headers.get("content-type", "")
     return r.status_code == 200 and len(r.content) > 100 and (kind.startswith("image/") or r.content[:4] in (b"\x89PNG", b"\x00\x00\x01\x00") or r.content[:3] == b"\xff\xd8\xff")
@@ -126,6 +175,8 @@ def logo(company: str, job_url: str = "", location: str = "") -> tuple[bytes, st
     """The logo image for a company (bytes, media type), looking it up the first time."""
     k = key(company)
     entry = _index().get(k)
+    if entry and entry.get("v") != INDEX_VERSION:
+        entry = None
     if entry:
         if entry.get("file"):
             path = _dir() / entry["file"]
@@ -137,30 +188,35 @@ def logo(company: str, job_url: str = "", location: str = "") -> tuple[bytes, st
     candidates = [d for d in [company_domain(job_url), _known_domains().get(k)] if d]
     with httpx.Client(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 CVMaker"},
                       event_hooks={"request": [web_fetch.guard_request]}) as c:
-        found = None
-        for domain in candidates:
-            found = _fetch_icon(domain, c)
-            if found:
-                break
-        if not found:
-            # A guessed domain only counts when the icon service knows it (it answers 404 for unknown domains).
-            for domain in _guesses(company, tld):
-                found = _fetch_icon(domain, c)
-                if found:
-                    break
+        found = find(company, candidates, _guesses(company, tld), c)
     if not found:
-        _remember(k, {"checked": time.time()})
+        _remember(k, {"checked": time.time(), "v": INDEX_VERSION})
         return None
     data, kind = found
     ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/x-icon": ".ico", "image/vnd.microsoft.icon": ".ico", "image/svg+xml": ".svg"}.get(kind, ".img")
     (_dir() / f"{k}{ext}").write_bytes(data)
-    _remember(k, {"file": f"{k}{ext}", "type": kind, "checked": time.time()})
+    _remember(k, {"file": f"{k}{ext}", "type": kind, "checked": time.time(), "v": INDEX_VERSION})
     return data, kind
+
+
+def find(company: str, known_domains: list[str], guesses: list[str], c: httpx.Client) -> tuple[bytes, str] | None:
+    """The icon of the first known domain that has one, else of the first guessed domain whose home page names the
+    company."""
+    for domain in known_domains:
+        found = _fetch_icon(domain, c)
+        if found:
+            return found
+    for domain in guesses:
+        if _home_page_names(domain, company, c):
+            found = _fetch_icon(domain, c)
+            if found:
+                return found
+    return None
 
 
 def known(company: str) -> bool | None:
     """True when a logo is cached, False when it is known to be missing, None when not looked up yet."""
     entry = _index().get(key(company))
-    if not entry:
+    if not entry or entry.get("v") != INDEX_VERSION:
         return None
     return bool(entry.get("file"))

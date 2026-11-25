@@ -16,10 +16,10 @@ uv run cvmaker     # starts the app and opens it in its own window
 Then, in the app:
 
 1. **Settings → API keys**: paste your [Anthropic API key](https://console.anthropic.com/) and press *Test the Anthropic key*. Keys are stored encrypted on your computer.
-2. **My profile → Import my CV**: a PDF, Word file, text file or photo. This profile is the only source of facts for everything the app writes.
+2. **My profile → Import my CV**: a PDF, Word file, text file or photo, or **Import from LinkedIn** with the data export LinkedIn emails you. This profile is the only source of facts for everything the app writes.
 3. **Jobs**: pick the kinds of job and the countries, and run a search.
 
-You need [uv](https://docs.astral.sh/uv/) and Google Chrome or Chromium, which loads JavaScript-heavy career pages and prints the CVs to PDF. `uv sync --extra desktop` adds a native window (pywebview); without it the app opens in Chrome's app mode or your default browser.
+You need [uv](https://docs.astral.sh/uv/) and a Chromium-based browser (Chrome, Chromium, Edge or Brave), which loads JavaScript-heavy career pages and prints the CVs to PDF. `uv sync --extra desktop` adds a native window (pywebview); without it the app opens in Chrome's app mode or your default browser.
 
 Your data stays in a folder on your computer (`~/.local/share/CVMaker`, `~/Library/Application Support/CVMaker` or `%APPDATA%\CVMaker`; in a source checkout that already has `data/`, that folder). What leaves it: the text sent to Claude through your own key, and requests to the job boards.
 
@@ -71,7 +71,7 @@ See [Server mode and security](docs/server.md). The legal pages it ships with ar
 ## Troubleshooting
 
 - **"Add your Anthropic API key" on every page**: add the key under Settings → API keys. *Test the Anthropic key* says what is wrong with it.
-- **CVs don't become PDFs, or a careers page finds no jobs**: Chrome or Chromium is missing or has another name. Install it, or set `CHROME_BIN` in `.env` (for example `CHROME_BIN=chromium`).
+- **CVs don't become PDFs, or a careers page finds no jobs**: no Chromium-based browser was found (Chrome, Chromium, Edge and Brave are found by themselves). Install one, or set `CHROME_BIN` in `.env` to the browser's program (for example `CHROME_BIN=/opt/chromium/chrome`).
 - **A search finds nothing**: the title must contain one of your title keywords and none of the excluded words ("manager" is excluded by default), and the job must be in one of your countries or remote in an allowed region. A source that failed is listed with its error under the search.
 - **A LinkedIn or jobs.bg link can't be added**: the app doesn't load those sites. Open the posting and paste its text into *Add job*.
 - **Port 8000 is taken** (`./run.sh`): `PORT=8001 ./run.sh`. `uv run cvmaker` picks a free port itself.

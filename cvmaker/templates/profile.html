@@ -105,6 +105,57 @@
   </div>
 </div>
 
+<div class="card" id="linkedin">
+  <h2>Import from LinkedIn</h2>
+  {% if linkedin_report %}
+  <div class="tile"><strong>Imported from LinkedIn</strong>
+    <ul class="tight">{% for line in linkedin_report %}<li>{{ line }}</li>{% endfor %}</ul>
+    {% if not linkedin_search %}<form method="post" action="/profile/import-linkedin/dismiss"><button class="secondary" type="submit">OK</button></form>{% endif %}
+  </div>
+  {% endif %}
+  {% if linkedin_search %}{% set ch = linkedin_search.changes %}{% set s = linkedin_search.search %}
+  <div class="tile idea" style="margin-top:12px" id="linkedin-search">
+    <strong>Use your LinkedIn job preferences in your job search?</strong>
+    {% if ch.empty() %}
+    <p class="muted" style="margin:6px 0">Your search <strong>{{ s.name }}</strong> already covers your LinkedIn job titles and locations.
+      {% if ch.not_covered %}The search can't recognise {{ ch.not_covered | join(', ') }} as a country yet, so add those by hand if you want them.{% endif %}</p>
+    <form method="post" action="/profile/import-linkedin/search"><button class="secondary" type="submit" name="action" value="skip">OK</button></form>
+    {% else %}
+    <p class="muted" style="margin:6px 0">Tick what to add to your search <strong>{{ s.name }}</strong>. Nothing changes until you click Apply, and you can edit the search afterwards on the Jobs page.</p>
+    <form method="post" action="/profile/import-linkedin/search">
+      <ul class="tight" style="list-style:none;padding-left:0">
+        {% for t in ch.titles %}<li><label><input type="checkbox" name="titles" value="{{ t }}" checked> Job title: <strong>{{ t }}</strong></label></li>{% endfor %}
+        {% for c in ch.countries %}<li><label><input type="checkbox" name="countries" value="{{ c }}" checked> Country: <strong>{{ c | country_name }}</strong> ({{ c }})</label></li>{% endfor %}
+        {% if ch.remote %}<li><label><input type="checkbox" name="remote" value="true" checked> Include <strong>remote</strong> jobs</label></li>{% endif %}
+        {% for x in ch.unexclude %}<li><label><input type="checkbox" name="unexclude" value="{{ x }}" checked> Stop excluding titles with <strong>"{{ x }}"</strong> (it would hide a title you want)</label></li>{% endfor %}
+      </ul>
+      {% if ch.narrows %}<p class="muted" style="margin:6px 0">Your search takes any job title right now, so adding titles limits it to jobs with these titles.</p>{% endif %}
+      {% if ch.not_covered %}<p class="muted" style="margin:6px 0">The search can't recognise {{ ch.not_covered | join(', ') }} as a country yet, so add those by hand if you want them.</p>{% endif %}
+      <div class="row">
+        <button type="submit" name="action" value="apply">Apply to {{ s.name }}</button>
+        <button class="secondary" type="submit" name="action" value="new">Save all as a new search</button>
+        <button class="secondary" type="submit" name="action" value="skip">No thanks</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if not linkedin_report %}
+  <p class="muted">LinkedIn doesn't let apps read your profile, but it gives you a copy of your data. On LinkedIn open
+    <strong>Me → Settings &amp; Privacy → Data privacy → Get a copy of your data</strong>, tick Profile, Positions, Education,
+    Skills, Languages, Certifications, Projects and Job seeker preferences (or take the whole archive), and request it.
+    LinkedIn emails you a zip, usually within minutes. Upload the zip, or if it was unpacked into a folder, select all
+    the .csv files in it at once.</p>
+  <p class="muted">It's read as written, without Claude.{% if profile %} Your profile only gains: empty fields are filled in,
+    jobs, schools, projects, skills and sections it doesn't have yet are added, and what you wrote yourself is kept.{% endif %}
+    Your "open to work" settings (job titles, locations, job types) go into your preferences. A restore point is saved first.</p>
+  <form method="post" action="/profile/import-linkedin" enctype="multipart/form-data" class="row">
+    <input type="file" name="export" accept=".zip,.csv,application/zip,text/csv" multiple required aria-label="LinkedIn data export (zip or .csv files)">
+    <button type="submit">Import</button>
+  </form>
+  {% endif %}
+</div>
+
 {% if profile %}
 <div class="card">
   <h2>Improve my profile</h2>

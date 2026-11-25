@@ -8,7 +8,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
-from . import editor, settings, web_fetch
+from . import cdp, editor, settings, web_fetch
 from .models import CoverLetter, CVContent, Job, Profile
 
 env = Environment(
@@ -128,6 +128,8 @@ def _print_pdf(html: str, out_path: Path) -> Path:
     html_path = out_path.with_suffix(".html")
     html_path.write_text(_with_csp(html), encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="cvmaker-chrome-") as profile:
+        if cdp.AVAILABLE:
+            return cdp.print_pdf(web_fetch.chrome_args(f"--user-data-dir={profile}"), html_path.as_uri(), out_path)
         result = subprocess.run(
             web_fetch.chrome_args(
                 f"--user-data-dir={profile}",

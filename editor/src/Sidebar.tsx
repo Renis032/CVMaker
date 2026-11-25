@@ -13,20 +13,21 @@ import { Dropdown } from './ui';
 import { newFree } from './Free';
 import { ColorPicker, Slider, type Sel } from './Toolbar';
 import { VersionsPanel } from './Panels';
+import { ChatPanel } from './Chat';
 
 type Update = (fn: (d: CvData) => void) => void;
 
-export type Tab = 'content' | 'insert' | 'design' | 'layout' | 'versions' | 'layers' | 'job' | 'history';
+export type Tab = 'content' | 'insert' | 'chat' | 'design' | 'layout' | 'versions' | 'layers' | 'job' | 'history';
 
 /** Older saved tabs (before Elements, Text and Uploads became Insert). */
 export function normalTab(t: string | null): Tab | null {
   if (t === 'elements' || t === 'text' || t === 'uploads') return 'insert';
-  return (['content', 'insert', 'design', 'layout', 'versions', 'layers', 'job', 'history'] as string[]).includes(t ?? '') ? (t as Tab) : null;
+  return (['content', 'insert', 'chat', 'design', 'layout', 'versions', 'layers', 'job', 'history'] as string[]).includes(t ?? '') ? (t as Tab) : null;
 }
 
 /** The rail, in groups: what is on the CV, how it looks, and managing versions and changes. */
 const GROUPS: [string, Tab[]][] = [
-  ['Add', ['content', 'insert']],
+  ['Add', ['content', 'insert', 'chat']],
   ['Look', ['design', 'layout']],
   ['Manage', ['versions', 'layers', 'job', 'history']],
 ];
@@ -34,6 +35,7 @@ const GROUPS: [string, Tab[]][] = [
 const TABS: [Tab, string, string][] = [
   ['content', 'Content', '<path d="M4 6h16M4 12h10M4 18h13"/><circle cx="19" cy="17" r="3"/><path d="M19 15.5v3M17.5 17h3"/>'],
   ['insert', 'Insert', '<circle cx="7" cy="7" r="4"/><rect x="13" y="3" width="8" height="8" rx="1"/><path d="M7 13l5 8H2z"/><path d="M14 17h7M17.5 13.5v7"/>'],
+  ['chat', 'Chat', '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14h4"/>'],
   ['design', 'Design', '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'],
   ['layout', 'Layout', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M3 9h12"/>'],
   ['versions', 'Versions', '<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>'],
@@ -94,6 +96,7 @@ export function Sidebar(props: Props) {
               <div id="ins-images"><UploadsTab {...props} /></div>
             </>
           )}
+          {tab === 'chat' && <ChatPanel data={props.data} variant={props.variant} update={props.update} />}
           {tab === 'design' && <DesignTab {...props} />}
           {tab === 'layout' && <LayoutTab {...props} />}
           {tab === 'versions' && <VersionsPanel data={props.data} variant={props.variant} update={props.update} select={props.select} />}
@@ -109,6 +112,7 @@ export function Sidebar(props: Props) {
 const TAB_HINTS: Record<Tab, string> = {
   content: 'Content: sections and their items, the photo, new sections',
   insert: 'Insert: text boxes, shapes, lines, icons and images placed anywhere',
+  chat: 'Chat: ask Claude for suggestions or changes to this CV',
   design: 'Design: templates, your templates, colour palettes, font sets',
   layout: 'Layout: page arrangement, text size and spacing, colours',
   versions: 'Versions: your CV versions, their names and own wording',

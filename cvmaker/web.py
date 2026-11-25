@@ -18,12 +18,14 @@ from .models import (
     Job,
     Profile,
 )
+from .countries import country_name
 from .posting import posting_html
 from .salary import format_monthly
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["md_bold"] = render.env.filters["md_bold"]
 templates.env.filters["ago"] = lambda ts: _ago(ts)
+templates.env.filters["country_name"] = country_name
 templates.env.filters["monthly"] = format_monthly
 templates.env.filters["posting"] = posting_html
 # "[the bit you still have to add]" highlighted in stories and drafted answers.

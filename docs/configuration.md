@@ -15,7 +15,7 @@ ones you are most likely to change; [`.env.example`](../.env.example) has every 
 | `ANTHROPIC_API_KEY` | none | Desktop: a default key for this computer (Settings overrides it). Server: the operator's key. |
 | `CVMAKER_MODEL_FAST` / `_STANDARD` / `_BEST` | `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` | The model for each kind of work: rating many jobs / analysis and chat / what goes to employers. |
 | `CVMAKER_BACKEND` | `api` | `claude-code` runs Claude calls through your local Claude Code login (desktop only, personal use). |
-| `CHROME_BIN` | `google-chrome` | The Chrome or Chromium binary used for PDFs and JavaScript-built pages (e.g. `chromium`). |
+| `CHROME_BIN` | the first one found | The Chromium-based browser used for PDFs and JavaScript-built pages. Unset, CVMaker looks for Chrome, Chromium, Edge and Brave. |
 | `CVMAKER_TASK_WORKERS` | `4` | Background tasks run at the same time. `0` when separate worker processes run the queue. |
 | `CVMAKER_TASK_ATTEMPTS` | `3` | How many times a task cut off by a restart is started again. |
 | `CVMAKER_FOLLOW_UP_DAYS` | `10` | Days after applying until the app reminds you to follow up. |

@@ -30,32 +30,54 @@ def _reply(text):
                            usage=SimpleNamespace(input_tokens=10, output_tokens=5))
 
 
+class _Stream:
+    """What `client.beta.messages.stream(...)` returns: a context manager whose stream gives the final message.
+    The real SDK sends the request (and raises API errors) on entering it."""
+
+    def __init__(self, make):
+        self.make = make
+
+    def __enter__(self):
+        return SimpleNamespace(get_final_message=self.make())
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _fake(replies):
+    calls = {"strict": 0, "json": []}
+
+    def stream(**kw):
+        if "output_format" in kw:
+            calls["strict"] += 1
+
+            def refuse():
+                raise _bad_request()
+            return _Stream(refuse)
+        calls["json"].append(kw)
+        message = _reply(next(replies))
+        return _Stream(lambda: lambda: message)
+
+    return SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=stream))), calls
+
+
 def test_falls_back_to_plain_json_and_retries_once(monkeypatch):
-    calls = {"parse": 0, "create": []}
     replies = iter(['{"name": "Ann"}',  # missing "skills" -> retry
-                    '```json\n{"name": "Ann", "skills": ["Java"]}\n```'])
-
-    def parse(**kw):
-        calls["parse"] += 1
-        raise _bad_request()
-
-    def create(**kw):
-        calls["create"].append(kw)
-        return _reply(next(replies))
-
-    fake = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(parse=parse, create=create)))
+                    '```json\n{"name": "Ann", "skills": ["Java"]}\n```',
+                    '{"name": "Bo", "skills": []}'])
+    fake, calls = _fake(replies)
     monkeypatch.setattr(llm, "_client_api", lambda: fake)
     llm._TOO_LARGE.discard(Big)
     _, account = new_user()
     with people.in_account(account["id"]):
         out = llm.ask("Extract.", "CV text", Big)
     assert out == Big(name="Ann", skills=["Java"])
-    assert calls["parse"] == 1 and len(calls["create"]) == 2
-    assert "JSON schema" in calls["create"][0]["system"]
-    assert "doesn't match" in json.dumps(calls["create"][1]["messages"][-1])
+    assert calls["strict"] == 1 and len(calls["json"]) == 2
+    assert "JSON schema" in calls["json"][0]["system"]
+    assert "doesn't match" in json.dumps(calls["json"][1]["messages"][-1])
+    # Large outputs (a whole CV profile) need streaming: the SDK refuses this max_tokens without it.
+    assert calls["json"][0]["max_tokens"] > 21_333
     # next time it goes straight to plain JSON
-    replies2 = iter(['{"name": "Bo", "skills": []}'])
-    fake.beta.messages.create = lambda **kw: _reply(next(replies2))
     with people.in_account(account["id"]):
         assert llm.ask("Extract.", "x", Big).name == "Bo"
-    assert calls["parse"] == 1
+    assert calls["strict"] == 1

@@ -3,7 +3,7 @@
 :root {
   --bg:#f5f5f7; --card:#ffffff; --sunken:#fafafc; --ink:#1d1d1f; --muted:#6a6a70; --line:#e8e8ed; --line-strong:#d2d2d7;
   --accent:#0071e3; --accent-ink:#ffffff; --accent-soft:#e8f1fc; --accent-soft-ink:#0058b0;
-  --bad:#d1101f; --warn:#a84a00; --chip:#ececf0; --canvas:#e8e8ed;
+  --bad:#d1101f; --good:#1a7f37; --warn:#a84a00; --chip:#ececf0; --canvas:#e8e8ed;
   --shadow:0 1px 2px rgba(0,0,0,.03);
   --shadow-lg:0 20px 48px -16px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.04);
   --radius:14px; --radius-sm:10px;
@@ -15,7 +15,7 @@
   :root:not([data-theme="light"]) {
   --bg:#000000; --card:#1c1c1e; --sunken:#151517; --ink:#f5f5f7; --muted:#a1a1a6; --line:#2a2a2d; --line-strong:#3a3a3c;
   --accent:#0a84ff; --accent-ink:#ffffff; --accent-soft:#0d2743; --accent-soft-ink:#8cc4ff;
-  --bad:#ff6961; --warn:#ff9f0a; --chip:#2c2c2e; --canvas:#0a0a0b;
+  --bad:#ff6961; --good:#32d74b; --warn:#ff9f0a; --chip:#2c2c2e; --canvas:#0a0a0b;
   --shadow:none; --shadow-lg:0 20px 48px -16px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
   color-scheme: dark;
   }
@@ -23,7 +23,7 @@
 :root[data-theme="dark"] {
   --bg:#000000; --card:#1c1c1e; --sunken:#151517; --ink:#f5f5f7; --muted:#a1a1a6; --line:#2a2a2d; --line-strong:#3a3a3c;
   --accent:#0a84ff; --accent-ink:#ffffff; --accent-soft:#0d2743; --accent-soft-ink:#8cc4ff;
-  --bad:#ff6961; --warn:#ff9f0a; --chip:#2c2c2e; --canvas:#0a0a0b;
+  --bad:#ff6961; --good:#32d74b; --warn:#ff9f0a; --chip:#2c2c2e; --canvas:#0a0a0b;
   --shadow:none; --shadow-lg:0 20px 48px -16px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
   color-scheme: dark;
 }
@@ -463,3 +463,28 @@ kbd { background: var(--card); border: 1px solid var(--line); border-radius: 4px
 /* Moving things on the page (Canva-style) */
 body.moving, body.moving * { cursor: grabbing !important; user-select: none !important; }
 .move-label { position: fixed; z-index: 1000; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: #111827; color: #fff; font: 600 11.5px/1.4 system-ui, sans-serif; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+
+/* --- Chat with Claude about the CV ------------------------------------------------------------------------------ */
+.chat-panel { display: flex; flex-direction: column; min-height: 100%; }
+.chat-log { flex: 1; display: flex; flex-direction: column; gap: 10px; margin: 4px 0 12px; }
+.chat-starters { display: flex; flex-direction: column; gap: 6px; }
+.chat-starters button { text-align: left; padding: 8px 10px; }
+.chat-starters button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-soft-ink); background: var(--accent-soft); }
+.chat-msg { font-size: 13px; line-height: 1.5; }
+.chat-msg.user { align-self: flex-end; max-width: 90%; background: var(--accent); color: var(--accent-ink); border-radius: 12px 12px 4px 12px; padding: 8px 11px; }
+.chat-msg.assistant { align-self: stretch; }
+.chat-msg.assistant .chat-text { background: var(--sunken); border: 1px solid var(--line); border-radius: 12px 12px 12px 4px; padding: 9px 11px; }
+.chat-text ul, .chat-text ol { margin: 4px 0; padding-left: 18px; }
+.chat-change { margin-top: 8px; border: 1px dashed var(--accent); border-radius: 10px; padding: 10px; background: var(--accent-soft); }
+.chat-change ul { margin: 6px 0; padding-left: 18px; }
+.chat-change details { margin: 4px 0 8px; font-size: 12px; }
+.chat-change summary { cursor: pointer; color: var(--muted); }
+.chat-diff { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow-y: auto; font-size: 12px; }
+.chat-diff li { padding: 2px 6px; border-radius: 4px; white-space: pre-wrap; }
+.chat-diff .del { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); text-decoration: line-through; }
+.chat-diff .add { color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }
+.chat-actions { display: flex; gap: 6px; }
+.chat-form { position: sticky; bottom: 0; background: var(--card); padding: 8px 0 4px; border-top: 1px solid var(--line); }
+.chat-form textarea { width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; background: var(--card); color: var(--ink, inherit); }
+.chat-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-form-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }

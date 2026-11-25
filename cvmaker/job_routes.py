@@ -1,13 +1,14 @@
 """One job and the pipeline: the application stages, insights, the job page, fit check, application pack,
 GitHub review and interview prep."""
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
-from . import assistant, claims, db, github, insights, pack, render, roles, taste, tasks
+from . import assistant, claims, db, deepdive, github, insights, pack, render, roles, taste, tasks
 from .llm import LLMError
 from .models import (
     FitAssessment,
@@ -15,6 +16,7 @@ from .models import (
     InterviewPrep,
     Job,
     Project,
+    ProjectBrief,
 )
 from .sources import ensure_description
 from .web import _back, _job_label, _need_profile, _not_found, page
@@ -117,6 +119,100 @@ def job_followed_up(job_id: str, days: float = Form(7), back: str = Form("/pipel
     return _back(back)
 
 
+# --- deep dive into a suggested project ----------------------------------------------------------------------
+# Before the job page: its /job/{job_id:path} would otherwise take these addresses.
+
+
+def _brief_links(job_id: str) -> dict[str, list[dict]]:
+    """The deep dives made so far for each suggested project of this job, by lower-case title."""
+    out: dict[str, list[dict]] = {}
+    for s in deepdive.suggestions(job_id):
+        for size, (size_label, _) in deepdive.SIZES.items():
+            for mode, (mode_label, _) in deepdive.MODES.items():
+                k = deepdive.key(s["title"], size, mode)
+                if db.cache_get(deepdive.cache_key(job_id, k), 24 * 365):
+                    out.setdefault(s["title"].strip().lower(), []).append(
+                        {"url": f"/job/{job_id}/project/{k}", "label": f"{size_label} · {mode_label}"})
+    return out
+
+
+def _cached_brief(job_id: str, brief_key: str) -> dict | None:
+    cached = db.cache_get(deepdive.cache_key(job_id, brief_key), 24 * 365)
+    if not cached:
+        return None
+    try:
+        brief = ProjectBrief.model_validate(cached["brief"])
+    except (ValidationError, KeyError):
+        return None
+    # Made with a size that no longer exists (sizes were human time before): shown as the default size.
+    size = cached.get("size") if cached.get("size") in deepdive.SIZES else deepdive.DEFAULT_SIZE
+    mode = cached.get("mode") if cached.get("mode") in deepdive.MODES else deepdive.DEFAULT_MODE
+    return {**cached, "brief": brief, "size": size, "mode": mode}
+
+
+@router.post("/job/{job_id:path}/project/deepdive")
+def job_project_deepdive(job_id: str, title: str = Form(...), size: str = Form(deepdive.DEFAULT_SIZE),
+                         mode: str = Form(deepdive.DEFAULT_MODE)):
+    _need_profile()
+    found = db.get_job(job_id)
+    if not found:
+        raise LLMError(_not_found("Job"))
+    suggestion = deepdive.find(job_id, title)
+    if not suggestion:
+        raise LLMError("That project is no longer among the suggestions for this job; run the fit check or GitHub check again.")
+    size = size if size in deepdive.SIZES else deepdive.DEFAULT_SIZE
+    mode = mode if mode in deepdive.MODES else deepdive.DEFAULT_MODE
+    k = deepdive.key(suggestion["title"], size, mode)
+    url = f"/job/{job_id}/project/{k}"
+    tasks.submit("deepdive", _job_label(f"Deep dive: {suggestion['title']}", found[0]), "deepdive",
+                 subject=f"deepdive:{job_id}:{k}", job_id=job_id, url=url,
+                 args={"job_id": job_id, "title": suggestion["title"], "size": size, "mode": mode})
+    return _back(url)
+
+
+@tasks.runner("deepdive")
+def _deepdive(progress, job_id: str, title: str, size: str, mode: str) -> str:
+    profile = _need_profile()
+    job = ensure_description(db.get_job(job_id)[0])
+    suggestion = deepdive.find(job_id, title) or {"title": title, "source": "", "seed": {"title": title}}
+    if progress:
+        progress.set(step="Claude is working out the project")
+    brief = deepdive.make(profile, job, suggestion["seed"], size, mode)
+    k = deepdive.key(title, size, mode)
+    db.cache_put(deepdive.cache_key(job_id, k), {"brief": brief.model_dump(), "title": title, "size": size, "mode": mode,
+                                                 "source": suggestion["source"]})
+    return f"/job/{job_id}/project/{k}"
+
+
+@router.get("/job/{job_id:path}/project/{brief_key}.md")
+def job_project_markdown(job_id: str, brief_key: str):
+    found = db.get_job(job_id)
+    cached = _cached_brief(job_id, brief_key) if found else None
+    if not cached:
+        return PlainTextResponse(_not_found("Project"), status_code=404)
+    text = deepdive.prompt(cached["brief"], found[0], cached["size"], cached["mode"])
+    name = re.sub(r"[^A-Za-z0-9]+", "-", cached["brief"].title).strip("-")[:60] or "project"
+    return PlainTextResponse(text, media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
+
+
+@router.get("/job/{job_id:path}/project/{brief_key}", response_class=HTMLResponse)
+def job_project_page(request: Request, job_id: str, brief_key: str):
+    found = db.get_job(job_id)
+    if not found or not re.fullmatch(r"[0-9a-f]{12}", brief_key):
+        return page(request, "error.html", message=_not_found("Project"))
+    job = found[0]
+    cached = _cached_brief(job_id, brief_key)
+    running = (db.task_active("deepdive", f"deepdive:{job_id}:{brief_key}") or [None])[0]
+    if not cached and not running:
+        return page(request, "error.html", message=_not_found("Project"))
+    return page(
+        request, "project.html", job=job, key=brief_key, running=running, cached=cached,
+        prompt=deepdive.prompt(cached["brief"], job, cached["size"], cached["mode"]) if cached else "",
+        sizes=deepdive.SIZES, modes=deepdive.MODES,
+    )
+
+
 # --- job page --------------------------------------------------------------------------------------------
 
 
@@ -142,6 +238,10 @@ def job_page(request: Request, job_id: str):
         active=db.tasks_for_job(job_id),
         fit=_cached_fit(job_id),
         gh=_cached_review(job_id),
+        brief_links=_brief_links(job_id),
+        deep_sizes=deepdive.SIZES,
+        deep_modes=deepdive.MODES,
+        deep_default=deepdive.DEFAULT_SIZE,
         profile_links=_profile_project_links(),
         cvs=_cvs_with_scores(job_id),
         letters=db.letters_for_job(job_id),

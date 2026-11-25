@@ -503,6 +503,51 @@ class ChatReply(BaseModel):
 
 
 
+class TechChoice(BaseModel):
+    name: str
+    why: str
+
+
+class Milestone(BaseModel):
+    title: str
+    goal: str
+    tasks: list[str]
+    done_when: list[str]  # checks that show the milestone is finished (tests pass, endpoint answers...)
+
+
+class ProjectBrief(BaseModel):
+    """A suggested CV project worked out in detail: a spec the candidate can hand to Claude (or follow themselves)
+    to build it."""
+    title: str
+    one_liner: str
+    why_this_job: list[str]  # which requirements of the job it proves, and how
+    what_you_build: str
+    in_scope: list[str]
+    out_of_scope: list[str]
+    tech_stack: list[TechChoice]
+    architecture: list[str]
+    data_model: list[str]
+    interfaces: list[str]  # API endpoints, CLI commands or screens
+    milestones: list[Milestone]
+    repo_layout: list[str]
+    testing: list[str]
+    ci_and_deploy: list[str]
+    readme_outline: list[str]
+    demo: list[str]  # how to show it in two minutes (screenshots, a recorded run, a live URL)
+    learn_first: list[str]  # concepts to understand well enough to explain in an interview
+    cv_bullets: list[str]  # bullets they can honestly write once it is built (placeholders for real numbers)
+    interview_points: list[str]
+    pitfalls: list[str]
+
+
+class EditorChatReply(BaseModel):
+    """One answer of the chat inside the CV editor. When the candidate asks for a change to the CV, Claude puts the
+    whole updated CV content in new_content_json and lists the changes; the candidate applies them with a click."""
+    reply: str
+    changes: list[str]
+    new_content_json: str
+
+
 class RewriteResult(BaseModel):
     """Claude's rewrites of one piece of CV text (CV editor)."""
 

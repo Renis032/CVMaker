@@ -2,6 +2,23 @@
 {% block head %}<link rel="stylesheet" href="{{ static('job.css') }}">{% endblock %}
 {% block title %}{{ job.title }} - CVMaker{% endblock %}
 {% import "_macros.html" as m %}
+{% macro deep_dive(title) -%}
+<div class="deep-dive">
+  {% for l in brief_links.get(title.strip().lower(), []) %}<a class="pill" href="{{ l.url }}">Deep dive: {{ l.label }} →</a>{% endfor %}
+  <details>
+    <summary class="btn secondary sm">Deep dive</summary>
+    <form method="post" action="/job/{{ job.id }}/project/deepdive" data-slow class="deep-form">
+      <input type="hidden" name="title" value="{{ title }}">
+      <p class="muted" style="margin:0 0 6px">Claude works this project out in full (scope, stack, architecture, milestones, tests, CV bullets) as a prompt you can paste into Claude.</p>
+      <label>Size
+        <select name="size">{% for k, v in deep_sizes.items() %}<option value="{{ k }}" {{ 'selected' if k == deep_default }}>{{ v[0] }}</option>{% endfor %}</select></label>
+      <label>How you'll build it
+        <select name="mode">{% for k, v in deep_modes.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}</select></label>
+      <button type="submit">Make the deep dive</button>
+    </form>
+  </details>
+</div>
+{%- endmacro %}
 {% block content %}
 {% set legacy_fit = fit and not fit.gap_plan.recommendation %}
 {% set applied = status in ["applied", "screening", "interview", "offer", "rejected", "ghosted"] %}
@@ -254,6 +271,7 @@
         <p style="margin:4px 0">{{ p.description }}</p>
         <div>{% for d in p.demonstrates %}<span class="pill">{{ d }}</span>{% endfor %}</div>
         <div class="muted" style="margin-top:4px">{{ p.why_employers_care }}</div>
+        {{ deep_dive(p.title) }}
       </div>
       {% endfor %}
     </div>
@@ -671,6 +689,7 @@
       </div>
       <div class="muted" style="margin-top:6px">CV bullet once built:</div>
       <div>{{ idea.cv_bullet_preview | md_bold }}</div>
+      {{ deep_dive(idea.title) }}
     </div>
     {% endfor %}
   {% else %}

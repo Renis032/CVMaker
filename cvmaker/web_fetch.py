@@ -1,15 +1,17 @@
 import ipaddress
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
 from html import unescape
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup
 
-from . import settings
+from . import cdp, settings
 
 # Fetching a link a user pasted must not reach this machine or its private network (cloud metadata, admin panels,
 # databases). Every request - and every redirect - is checked. Set CVMAKER_ALLOW_PRIVATE_FETCH=1 only for development.
@@ -63,11 +65,48 @@ def http() -> httpx.Client:
     )
 
 
+# Chromium-based browsers that print PDFs and render pages headless, in order of preference.
+CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge",
+                "microsoft-edge-stable", "brave-browser", "brave", "chrome", "msedge")
+CHROME_PATHS = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+)
+
+
+class ChromeMissing(RuntimeError):
+    pass
+
+
+def chrome_bin() -> str:
+    """The browser to run headless: CHROME_BIN when set, else the first Chromium-based browser installed."""
+    if settings.CHROME_BIN:
+        found = shutil.which(settings.CHROME_BIN) or (settings.CHROME_BIN if Path(settings.CHROME_BIN).is_file() else "")
+        if not found:
+            raise ChromeMissing(f"CHROME_BIN is set to “{settings.CHROME_BIN}”, but no such program was found.")
+        return found
+    for name in CHROME_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    for path in CHROME_PATHS:
+        if Path(path).is_file():
+            return path
+    raise ChromeMissing("No Chrome, Chromium, Edge or Brave found: CVMaker needs one to make PDFs. Install one, or "
+                        "set CHROME_BIN in .env to the browser's program.")
+
+
 def chrome_args(*extra: str) -> list[str]:
     """Headless Chrome with its sandbox on (unless CVMAKER_CHROME_NO_SANDBOX, for containers that are the sandbox),
     a throw-away profile and no background traffic."""
     args = [
-        settings.CHROME_BIN, "--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions",
+        chrome_bin(), "--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions",
         "--disable-sync", "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
         "--mute-audio",
     ]
@@ -97,6 +136,11 @@ def fetch_html(url: str, render: bool = False) -> str:
     # Chrome itself can't be limited per request: in server mode run it where the network policy blocks private
     # addresses (see Dockerfile / README). The first address is checked here.
     with tempfile.TemporaryDirectory(prefix="cvmaker-chrome-") as profile:
+        if cdp.AVAILABLE:
+            html = cdp.dump_dom(chrome_args(f"--user-data-dir={profile}", f"--user-agent={settings.USER_AGENT}"), url)
+            if not html:
+                raise RuntimeError(f"Chrome failed to render {url}")
+            return html
         result = subprocess.run(
             chrome_args(
                 f"--user-data-dir={profile}",

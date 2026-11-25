@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="{{ static('job.css') }}">{% endblock %}
+{% block title %}{{ cached.brief.title if cached else 'Project deep dive' }} · {{ job.title }} - CVMaker{% endblock %}
+{% import "_macros.html" as m %}
+{% block content %}
+{% set b = cached.brief if cached else None %}
+<div class="card">
+  <a class="muted" href="/job/{{ job.id }}">← {{ job.title }} · {{ job.company }}</a>
+  <h1 style="margin:6px 0 4px">{{ b.title if b else 'Project deep dive' }}</h1>
+  {% if cached %}
+  <p style="margin:0 0 10px">{{ b.one_liner }}</p>
+  <div class="row">
+    <span class="pill">{{ sizes[cached.size][0] }}</span>
+    <span class="pill">{{ modes[cached.mode][0] }}</span>
+  </div>
+  {% endif %}
+  {% if running %}{{ m.running(running, "Claude is working out the project") }}{% endif %}
+</div>
+
+{% if cached %}
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h2 style="margin:0">Prompt for Claude</h2>
+    <div class="row">
+      <button type="button" data-copy="brief-prompt">Copy prompt</button>
+      <a class="btn secondary" href="/job/{{ job.id }}/project/{{ key }}.md">Download .md</a>
+    </div>
+  </div>
+  <p class="muted">
+    {% if cached.mode == 'guided' %}Paste it into a Claude chat (claude.ai or Claude Code). Claude acts as your mentor: it explains, gives hints and reviews your code, and you write it yourself.
+    {% else %}Make a new, empty folder for the project, start Claude Code in it (<code>claude</code>) and paste the prompt. Or put the downloaded .md file in that folder and tell Claude to follow it. Review each milestone before going on: you'll have to explain this code in an interview.{% endif %}
+  </p>
+  <textarea id="brief-prompt" class="brief-prompt" readonly rows="14">{{ prompt }}</textarea>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">The project</h2>
+  <p>{{ b.what_you_build }}</p>
+  <div class="two">
+    <div><h3>Why it fits this job</h3><ul class="tight">{% for x in b.why_this_job %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>Tech stack</h3><ul class="tight">{% for t in b.tech_stack %}<li><strong>{{ t.name }}</strong>: {{ t.why }}</li>{% endfor %}</ul></div>
+  </div>
+  <div class="two">
+    <div><h3>In scope</h3><ul class="tight">{% for x in b.in_scope %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>Left out</h3><ul class="tight">{% for x in b.out_of_scope %}<li>{{ x }}</li>{% endfor %}</ul></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Design</h2>
+  <h3>Architecture</h3><ul class="tight">{% for x in b.architecture %}<li>{{ x }}</li>{% endfor %}</ul>
+  <div class="two">
+    <div><h3>Data model</h3><ul class="tight">{% for x in b.data_model %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>Interfaces</h3><ul class="tight">{% for x in b.interfaces %}<li>{{ x }}</li>{% endfor %}</ul></div>
+  </div>
+  <h3>Repository layout</h3><ul class="tight mono">{% for x in b.repo_layout %}<li>{{ x }}</li>{% endfor %}</ul>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Milestones</h2>
+  {% for ms in b.milestones %}
+  <details class="tile" style="margin-bottom:8px" {{ 'open' if loop.first }}>
+    <summary><strong>{{ loop.index }}. {{ ms.title }}</strong> <span class="muted">· {{ ms.goal }}</span></summary>
+    <div class="two" style="margin-top:6px">
+      <div><div class="muted">Tasks</div><ul class="tight">{% for x in ms.tasks %}<li>{{ x }}</li>{% endfor %}</ul></div>
+      <div><div class="muted">Done when</div><ul class="tight">{% for x in ms.done_when %}<li><label class="check"><input type="checkbox"> {{ x }}</label></li>{% endfor %}</ul></div>
+    </div>
+  </details>
+  {% endfor %}
+  <div class="two">
+    <div><h3>Testing</h3><ul class="tight">{% for x in b.testing %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>CI and deployment</h3><ul class="tight">{% for x in b.ci_and_deploy %}<li>{{ x }}</li>{% endfor %}</ul></div>
+  </div>
+  <div class="two">
+    <div><h3>README</h3><ul class="tight">{% for x in b.readme_outline %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>Two-minute demo</h3><ul class="tight">{% for x in b.demo %}<li>{{ x }}</li>{% endfor %}</ul></div>
+  </div>
+  <h3>Pitfalls</h3><ul class="tight">{% for x in b.pitfalls %}<li>{{ x }}</li>{% endfor %}</ul>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">For the CV and the interview</h2>
+  <div class="two">
+    <div>
+      <h3>Understand these well</h3><ul class="tight">{% for x in b.learn_first %}<li>{{ x }}</li>{% endfor %}</ul>
+      <h3>CV bullets once it's built</h3>
+      <ul class="tight">{% for x in b.cv_bullets %}<li>{{ x | md_bold }}</li>{% endfor %}</ul>
+      <p class="muted">Replace each [placeholder] with what you actually measured, then add the project under My profile.</p>
+    </div>
+    <div><h3>What interviewers will ask</h3><ul class="tight">{% for x in b.interview_points %}<li>{{ x }}</li>{% endfor %}</ul></div>
+  </div>
+</div>
+{% endif %}
+
+{% if cached or not running %}
+<div class="card">
+  <h2 style="margin-top:0">{{ 'Another version' if cached else 'Make the deep dive' }}</h2>
+  <form method="post" action="/job/{{ job.id }}/project/deepdive" data-slow class="deep-form">
+    <input type="hidden" name="title" value="{{ cached.title if cached else '' }}">
+    <label>Size
+      <select name="size">{% for k, v in sizes.items() %}<option value="{{ k }}" {{ 'selected' if cached and k == cached.size }}>{{ v[0] }}</option>{% endfor %}</select></label>
+    <label>How you'll build it
+      <select name="mode">{% for k, v in modes.items() %}<option value="{{ k }}" {{ 'selected' if cached and k == cached.mode }}>{{ v[0] }}</option>{% endfor %}</select></label>
+    <button type="submit" class="secondary">Make it</button>
+  </form>
+  <p class="muted">The same size and way of building gives a fresh take on the project.</p>
+</div>
+{% endif %}
+
+<script src="{{ static('job.js') }}"></script>
+{% endblock %}

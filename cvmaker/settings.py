@@ -112,7 +112,8 @@ GITHUB_USER = _env("GITHUB_USER")
 GITHUB_TOKEN = _env("GITHUB_TOKEN")
 
 # --- headless Chrome (PDFs and JavaScript-built career pages) ---------------------------------------------------
-CHROME_BIN = _env("CHROME_BIN", "google-chrome")
+# Empty: the first Chromium-based browser found (Chrome, Chromium, Edge, Brave; see web_fetch.chrome_bin).
+CHROME_BIN = _env("CHROME_BIN")
 # Chrome's own sandbox stays on unless this is set. Only turn it off inside a container that is itself the sandbox
 # (Docker without the needed kernel features); never on a normal server.
 CHROME_NO_SANDBOX = _flag("CVMAKER_CHROME_NO_SANDBOX")

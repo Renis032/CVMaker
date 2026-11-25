@@ -96,3 +96,19 @@ dl.notes { display:grid; grid-template-columns:110px 1fr; gap:6px 10px; } dl.not
 .clause .dot { margin:0 6px 0 0; }
 .clause blockquote { margin:6px 0; padding:4px 10px; border-left:3px solid var(--line-strong); color:var(--muted); font-size:13px; }
 pre.market { white-space:pre-wrap; font-size:12.5px; }
+
+/* Deep dive into a suggested project */
+.deep-dive { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:flex-start; }
+.deep-dive > a.pill { text-decoration:none; }
+.deep-dive details { width:100%; }
+.deep-dive summary { list-style:none; cursor:pointer; }
+.deep-dive summary::-webkit-details-marker { display:none; }
+.deep-dive details[open] summary { background:var(--accent-soft, var(--chip)); }
+.deep-form { margin-top:8px; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--card); display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; align-items:end; }
+.deep-form > p, .deep-form > button { grid-column:1 / -1; }
+.deep-form > button { justify-self:start; margin-top:8px; }
+.deep-form label { margin:4px 0 0; }
+.deep-form select { width:100%; margin-top:4px; }
+@media (max-width:640px) { .deep-form { grid-template-columns:1fr; } }
+.brief-prompt { width:100%; font:12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize:vertical; background:var(--sunken, var(--card)); }
+ul.mono li { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12.5px; }

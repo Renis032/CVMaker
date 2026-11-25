@@ -1,7 +1,9 @@
 """The CV editor: the built React app at /editor/, its API at /editor/api/ and uploaded images.
 Included by app.py; the page helpers come from web.py."""
 
+import copy
 import json
+import subprocess
 from pathlib import Path
 from urllib.parse import quote
 
@@ -9,8 +11,8 @@ from fastapi import APIRouter, Form, Request
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
-from . import assistant, cvcheck, db, editor, llm, render, settings
-from .models import RewriteResult
+from . import assistant, cvcheck, db, editor, llm, log, render, settings, web_fetch
+from .models import EditorChatReply, RewriteResult
 from .cv_routes import refresh_cv_pdf
 from .web import _back, _not_found, page
 
@@ -169,7 +171,18 @@ def _versions_dir() -> Path:
 
 @router.post("/editor/api/export")
 async def editor_export(request: Request, cv: str = ""):
-    body = json.loads((await request.body()) or b"{}")
+    try:
+        body = json.loads((await request.body()) or b"{}")
+    except json.JSONDecodeError:
+        return _error("Not valid JSON")
+    try:
+        return await run_in_threadpool(_export, body, cv)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        log.warning("PDF export failed: %s", e)
+        return _error(str(e) if isinstance(e, web_fetch.ChromeMissing) else f"Could not make the PDF: {e}", 500)
+
+
+def _export(body: dict, cv: str):
     if cv:
         target = _cv_target(cv)
         if not target:
@@ -277,3 +290,112 @@ async def editor_rewrite(request: Request, cv: str = ""):
     except llm.LLMError as e:
         return _error(str(e), 502)
     return {"options": [o.strip() for o in result.options if o.strip()][:3], "note": result.note}
+
+
+# --- Chat with Claude about the CV on the page ---------------------------------------------------------------------
+
+CHAT_HISTORY = 20
+# What Claude may change in the editor's content, with the type each field must keep. The photo, logos and
+# section headings belong to the design and are never taken from Claude's answer.
+CHAT_FIELDS = {"name": str, "title": str, "summary": str, "contact": list, "projectsLink": str, "experience": list,
+               "projects": list, "skills": list, "softSkills": list, "languages": list, "interests": list,
+               "education": list, "custom": list}
+
+CHAT_SYSTEM = f"""You are the assistant inside the CV editor of CVMaker. The candidate is looking at one CV on the page and talks to you about it: they ask for suggestions, for your opinion, or for changes ("replace the projects", "make the summary shorter", "add a bullet about X").
+
+You get the CV content exactly as this version shows it (JSON, the editor's own format), the candidate's profile (the facts you may use), and for a CV tailored to a job, the job posting.
+
+Answer like a sharp, honest CV reviewer and senior engineer: direct, specific, short. Plain text with light markdown only (**bold**, "- " lists). Give a clear recommendation, not a menu. Don't open with praise or "You're right"; disagree when a change would hurt their chances, and say what you'd do instead. The decision is theirs.
+
+Changing the CV:
+- Only when the candidate asks for a change. Suggestions alone go in the reply, with an offer to make them.
+- Then put the COMPLETE updated content in new_content_json: the same JSON structure and keys you were given, every item kept with its "id". A new item (job, project, bullet, skill group, education, section, entry) gets an id starting with "new-". Copy everything you don't change exactly, in the same order.
+- List every change in plain words in `changes` (e.g. "Projects: replaced queue-viz with a payments simulator").
+- Text marked **like this** is bold on the page; keep that markup for key phrases.
+- Items listed as hidden are not shown in this version but are still in the content: keep them unless asked to remove them.
+- Otherwise new_content_json is an empty string and `changes` is empty.
+- Nothing changes until the candidate clicks Apply, so say "here's the change", not "I've changed it".
+- The CV should fit on one page: when you add, say what you'd cut if it no longer fits.
+
+New facts may come only from the profile or from what the candidate tells you in this chat. If a change needs a detail you don't have (a number, a date, a technology), ask for it or leave a clear [placeholder]; never make it up.
+{assistant.TRUTH_RULES}"""
+
+
+def _chat_text(message: dict) -> str:
+    who = "Candidate" if message.get("role") == "user" else "You"
+    text = str(message.get("text", ""))[:4000]
+    changes = [str(c) for c in message.get("changes") or []][:20]
+    if who == "You" and changes:
+        text += f"\n(You proposed: {'; '.join(changes)}. Status: {message.get('state') or 'not applied'}.)"
+    return f"{who}: {text}"
+
+
+def proposed_content(raw: str, current: dict) -> dict | None:
+    """Claude's updated content, checked against the shape of the current one, with the photo, logos and headings
+    kept. None when there is no proposal or it is not usable."""
+    if not raw.strip():
+        return None
+    try:
+        new = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(new, dict):
+        return None
+    out = dict(current)
+    for key, kind in CHAT_FIELDS.items():
+        if key in new:
+            if not isinstance(new[key], kind):
+                return None
+            out[key] = new[key]
+    logos = {e.get("id"): e.get("logo", "") for e in current.get("experience", []) if isinstance(e, dict)}
+    for e in out.get("experience", []):
+        if not isinstance(e, dict):
+            return None
+        e["logo"] = logos.get(e.get("id"), "")
+    for p in out.get("projects", []):
+        if not isinstance(p, dict):
+            return None
+        p["tech"] = editor._tech_display(str(p.get("tech", "")))  # shown in brackets after the title, like the rest
+    return out if out != current else None
+
+
+@router.post("/editor/api/chat")
+async def editor_chat(request: Request, cv: str = ""):
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        return _error("Not valid JSON")
+    messages = [m for m in body.get("messages") or [] if isinstance(m, dict)]
+    content = body.get("content")
+    if not messages or messages[-1].get("role") != "user" or not str(messages[-1].get("text", "")).strip():
+        return _error("Write a message first.")
+    if not isinstance(content, dict):
+        return _error("The CV content is missing.")
+    profile = assistant.load_profile()
+    if not profile:
+        return _error("Set up your profile first.")
+    shown = copy.deepcopy({k: v for k, v in content.items() if k in CHAT_FIELDS})
+    for e in shown.get("experience") or []:
+        if isinstance(e, dict):
+            e.pop("logo", None)
+    parts = [f"The CV on the page (version “{str(body.get('version', ''))[:80]}”):\n{json.dumps(shown, ensure_ascii=False, indent=1)}"]
+    hidden = [str(h) for h in body.get("hidden") or []][:200]
+    if hidden:
+        parts.append("Hidden in this version (section keys and item ids): " + ", ".join(hidden))
+    parts.append(f"The candidate's profile (the only source of facts besides this chat):\n{profile.model_dump_json()}")
+    if cv:
+        target = _cv_target(cv)
+        job = _cv_job(target[0]) if target else None
+        if job:
+            parts.append(f"This CV is tailored for this job:\n{assistant._job_text(job)}")
+    parts.append("The conversation so far (answer the candidate's last message):\n\n"
+                 + "\n\n".join(_chat_text(m) for m in messages[-CHAT_HISTORY:]))
+    try:
+        reply = await run_in_threadpool(llm.ask, CHAT_SYSTEM, "\n\n".join(parts), EditorChatReply, "medium")
+    except llm.LLMError as e:
+        return _error(str(e), 502)
+    text = reply.reply.strip()
+    new = proposed_content(reply.new_content_json, content)
+    if reply.new_content_json.strip() and new is None and reply.changes:
+        text += "\n\n(I tried to prepare the change, but it came out malformed. Ask me again.)"
+    return {"reply": text, "changes": [c for c in reply.changes if c.strip()] if new else [], "content": new}

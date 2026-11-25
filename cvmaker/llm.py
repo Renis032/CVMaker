@@ -171,10 +171,10 @@ def _ask_api(system: str, text: str, schema: type[T], effort: str, pdf: bytes | 
         })
     if schema not in _TOO_LARGE:
         try:
-            response = _call(lambda c: c.beta.messages.parse(
-                model=model, max_tokens=16000, system=system, messages=[{"role": "user", "content": content}],
+            response = _call(lambda c: _final(c.beta.messages.stream(
+                model=model, max_tokens=MAX_TOKENS, system=system, messages=[{"role": "user", "content": content}],
                 output_config={"effort": effort}, output_format=schema, betas=[FALLBACK_BETA], fallbacks="default",
-            ))
+            )))
         except _GrammarTooLarge:
             _TOO_LARGE.add(schema)
         else:
@@ -183,6 +183,17 @@ def _ask_api(system: str, text: str, schema: type[T], effort: str, pdf: bytes | 
                 raise LLMError("Claude returned no structured output")
             return response.parsed_output
     return _ask_api_json(system, content, schema, effort, model)
+
+
+# Requests are streamed: the SDK refuses a non-streamed request whose max_tokens could take over 10 minutes
+# (a full CV profile needs a large one), and streaming has no such limit.
+MAX_TOKENS = 64000
+
+
+def _final(stream_manager):
+    """Run a streamed request to the end and return the whole message."""
+    with stream_manager as stream:
+        return stream.get_final_message()
 
 
 # Schemas the API refused as too large for strict structured output (e.g. the full CV profile). These are asked
@@ -239,10 +250,10 @@ def _ask_api_json(system: str, content: list[dict], schema: type[T], effort: str
               f"exactly (every property present; use \"\" or [] when there is nothing):\n{spec}")
     messages: list[dict] = [{"role": "user", "content": content}]
     for attempt in range(2):
-        response = _call(lambda c, messages=messages: c.beta.messages.create(
-            model=model, max_tokens=32000, system=system, messages=messages, output_config={"effort": effort},
+        response = _call(lambda c, messages=messages: _final(c.beta.messages.stream(
+            model=model, max_tokens=MAX_TOKENS, system=system, messages=messages, output_config={"effort": effort},
             betas=[FALLBACK_BETA], fallbacks="default",
-        ))
+        )))
         _check(response)
         reply = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
         try:
